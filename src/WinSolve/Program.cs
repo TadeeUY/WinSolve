@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using WinSolve.Core;
+using WinSolve.Services;
 using WinSolve.UI;
 
 // Native DLLs are only loaded from System32, never from the application folder.
@@ -30,11 +31,18 @@ internal static class Program
         TaskScheduler.UnobservedTaskException += (_, e) => { Logger.Write($"Unobserved task exception: {e.Exception}"); e.SetObserved(); };
 
         Logger.Write($"WinSolve started. Admin: {Admin.IsElevated}. OS: {Environment.OSVersion}");
+        if (args.Any(a => a.Equals("--maintenance", StringComparison.OrdinalIgnoreCase)))
+        {
+            // Headless scheduled run: no window, no single-instance check.
+            Maintenance.RunAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         // Single instance: if WinSolve is already running (e.g. in the notification area), don't start another.
         using var mutex = new Mutex(true, @"Local\WinSolve.SingleInstance", out var isNew);
         if (!isNew)
         {
-            MessageBox.Show("WinSolve is already running. Look for its icon in the notification area next to the clock.", "WinSolve",
+            Localization.Loc.Show(null, "WinSolve is already running. Look for its icon in the notification area next to the clock.", "WinSolve",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -46,7 +54,7 @@ internal static class Program
     private static void Report(Exception? ex)
     {
         Logger.Write($"Unhandled exception: {ex}");
-        MessageBox.Show(
+        Localization.Loc.Show(null, 
             $"An unexpected error occurred:\n\n{ex?.Message}\n\nDetails were saved to {Logger.LogDirectory}",
             "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Error);
     }

@@ -34,6 +34,13 @@ public static class OneClickOptimizer
 
     public static async Task<OptimizeSummary> RunAsync(Action<string> log, Action<int, int> progress, CancellationToken ct)
     {
+        log("Measuring the system before optimizing...");
+        var run = new OptimizationRun
+        {
+            Profile = AppSettings.Current.UseCustomOneClick ? "Custom list" : $"{CurrentDevice}, {AppSettings.Current.Level}",
+            Before = await OptimizationHistory.TakeAsync(),
+        };
+
         var tasks = SelectedTasks().ToList();
         if (!AppSettings.Current.UseCustomOneClick)
         {
@@ -98,6 +105,11 @@ public static class OneClickOptimizer
         {
             await TaskCatalog.ExplorerRestart(ctx);
         }
+
+        log("Measuring the system after optimizing...");
+        run.After = await OptimizationHistory.TakeAsync();
+        run.FreedBytes = ctx.FreedBytes;
+        OptimizationHistory.Add(run);
 
         return new OptimizeSummary(ok, failed, applied, ctx.FreedBytes, ctx.RebootRecommended, explorer);
     }

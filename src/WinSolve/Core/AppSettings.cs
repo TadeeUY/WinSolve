@@ -47,6 +47,17 @@ public sealed class AppSettings
     /// <summary>Alert kinds the user chose not to see again.</summary>
     public List<string> MutedAlerts { get; set; } = [];
 
+    /// <summary>Check GitHub for new versions once a day.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
+    public DateTime? LastUpdateCheck { get; set; }
+
+    /// <summary>Automatic maintenance schedule: Off, Daily, Weekly or Monthly.</summary>
+    public string MaintenanceSchedule { get; set; } = "Off";
+
+    /// <summary>UI language: "en" or "es".</summary>
+    public string Language { get; set; } = "en";
+
     /// <summary>Accent color as #RRGGBB.</summary>
     public string AccentColor { get; set; } = "#0067C0";
 

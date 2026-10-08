@@ -1,5 +1,6 @@
 using System.Drawing.Drawing2D;
 using WinSolve.Core;
+using WinSolve.Localization;
 
 namespace WinSolve.UI;
 
@@ -146,7 +147,7 @@ public sealed class LogBox : RichTextBox
             : line.StartsWith("Done", StringComparison.Ordinal) || line.StartsWith("OK", StringComparison.Ordinal) ? Theme.Good
             : line.StartsWith('>') ? Theme.Text
             : Theme.Muted;
-        AppendText(line + Environment.NewLine);
+        AppendText(Loc.T(line) + Environment.NewLine);
         ScrollToCaret();
         Logger.Write(line);
     }
@@ -219,7 +220,7 @@ public sealed class NavButton : Control
         Key = key;
         Glyph = glyph;
         Text = text;
-        Height = 38;
+        Height = 36;
         Margin = new Padding(0, 1, 0, 1);
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
     }
@@ -255,7 +256,7 @@ public sealed class NavButton : Control
 
         TextRenderer.DrawText(g, Glyph, Theme.Icons, new Rectangle(18, 0, 24, Height), Theme.Text,
             TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
-        TextRenderer.DrawText(g, Text, Theme.Body, new Rectangle(52, 0, Width - 56, Height), _selected ? Theme.Text : Color.FromArgb(220, 220, 220),
+        TextRenderer.DrawText(g, Loc.T(Text), Theme.Body, new Rectangle(52, 0, Width - 56, Height), _selected ? Theme.Text : Color.FromArgb(220, 220, 220),
             TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
 }
@@ -425,6 +426,7 @@ public abstract class Page : UserControl
         header.Controls.Add(Theme.Label(title, Theme.H1));
         header.Controls.Add(sub);
         AddRow(header);
+        HandleCreated += (_, _) => Loc.Apply(this);
     }
 
     /// <summary>Adds a row. <paramref name="fill"/> takes the remaining height.</summary>
@@ -441,22 +443,25 @@ public abstract class Page : UserControl
     /// <summary>Called every time the page is shown.</summary>
     public virtual void OnShown() { }
 
+    /// <summary>Called when another page is shown or the window goes to the notification area.</summary>
+    public virtual void OnHidden() { }
+
     protected bool Confirm(string message, string title = "WinSolve")
     {
         if (!AppSettings.Current.ConfirmActions) return true;
-        return MessageBox.Show(this, message, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+        return Loc.Show(this, message, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
     }
 
     /// <summary>Always asks, regardless of settings (destructive actions).</summary>
     protected bool ConfirmDanger(string message, string title = "WinSolve")
-        => MessageBox.Show(this, message, title, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+        => Loc.Show(this, message, title, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
 
     protected void Info(string message, string title = "WinSolve")
-        => MessageBox.Show(this, message, title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        => Loc.Show(this, message, title, MessageBoxButtons.OK, MessageBoxIcon.Information);
 
     protected static void AskReboot(IWin32Window owner, string message = "Some changes need a restart. Restart now?")
     {
-        if (MessageBox.Show(owner, message, "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+        if (Loc.Show(owner, message, "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             ProcessRunner.Reboot();
     }
 }

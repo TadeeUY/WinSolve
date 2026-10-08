@@ -207,7 +207,7 @@ public static class DiskHealthService
     /// ATA SMART layout: 2-byte revision, then 30 entries of 12 bytes:
     /// [id][flags x2][current][worst][raw x6][reserved].
     /// </summary>
-    private static void ParseAttributes(byte[] raw, byte[]? thr, DiskInfo disk)
+    internal static void ParseAttributes(byte[] raw, byte[]? thr, DiskInfo disk)
     {
         for (int i = 0; i < 30; i++)
         {
@@ -242,7 +242,7 @@ public static class DiskHealthService
         }
     }
 
-    private static void Evaluate(DiskInfo d)
+    internal static void Evaluate(DiskInfo d)
     {
         var level = HealthLevel.Good;
 

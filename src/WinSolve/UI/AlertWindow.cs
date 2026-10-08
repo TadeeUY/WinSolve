@@ -60,7 +60,7 @@ public sealed class AlertWindow : Form
         row.Controls.Add(Theme.Button("Close", (_, _) => CloseAnimated()));
         var mute = new LinkLabel
         {
-            Text = "Don't show again",
+            Text = Localization.Loc.T("Don't show again"),
             AutoSize = true,
             LinkColor = Theme.Muted,
             ActiveLinkColor = Theme.Text,

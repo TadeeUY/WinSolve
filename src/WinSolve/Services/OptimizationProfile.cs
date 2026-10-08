@@ -20,10 +20,19 @@ public sealed class HardwareProfile
 
     public bool LowRam => RamGb <= 8.5;
 
-    public string Describe() =>
-        $"{(IsLaptop ? "Laptop" : "Desktop PC")}, {RamGb:0} GB RAM, {CpuThreads} threads, " +
-        $"{(SystemOnSsd ? "Windows on SSD" : "Windows on HDD")}{(HasHdd && SystemOnSsd ? " + HDD" : "")}, " +
-        $"{(HasDedicatedGpu ? "dedicated" : "integrated")} {GpuVendor} GPU".Replace("  ", " ");
+    public string Describe()
+    {
+        string T(string s) => Localization.Loc.T(s);
+        var parts = new List<string>
+        {
+            T(IsLaptop ? "Laptop" : "Desktop PC"),
+            T($"{RamGb:0} GB RAM"),
+            T($"{CpuThreads} threads"),
+            T(SystemOnSsd ? "Windows on SSD" : "Windows on HDD") + (HasHdd && SystemOnSsd ? " + HDD" : ""),
+            T(HasDedicatedGpu ? $"dedicated {GpuVendor} GPU" : $"integrated {GpuVendor} GPU").Replace("  ", " "),
+        };
+        return string.Join(", ", parts);
+    }
 
     private static HardwareProfile? _cached;
 

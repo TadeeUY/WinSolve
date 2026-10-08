@@ -19,6 +19,11 @@ public sealed class MainForm : Form
     private bool _exiting;
     private bool _animating;
     private bool _trayHintShown;
+    private readonly FlatBtn _updateButton = Theme.Button("Update available", primary: true);
+    private UpdateInfo? _update;
+    private Label? _brandSubtitle, _versionLabel;
+
+    private static string BrandSubtitle => Admin.IsElevated ? "PC health & maintenance" : "Not running as administrator";
 
     public MainForm(bool startHidden = false)
     {
@@ -30,7 +35,7 @@ public sealed class MainForm : Form
         AutoScaleMode = AutoScaleMode.Dpi;
         AutoScaleDimensions = new SizeF(96f, 96f);
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(1000, 640);
+        MinimumSize = new Size(1000, 700);
         Size = new Size(1240, 800);
         try { Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? Application.ExecutablePath); } catch { }
 
@@ -40,6 +45,7 @@ public sealed class MainForm : Form
             ["optimize"] = () => new OptimizePage(),
             ["space"] = () => new SpacePage(),
             ["tools"] = () => new ToolsPage(),
+            ["monitor"] = () => new MonitorPage(),
             ["hardware"] = () => new HardwarePage(),
             ["tweaks"] = () => new TweaksPage(),
             ["startup"] = () => new StartupPage(),
@@ -58,6 +64,7 @@ public sealed class MainForm : Form
         {
             ErrorMonitor.Instance.AlertRaised += OnAlert;
             ErrorMonitor.Instance.Apply();
+            _ = CheckForUpdateAsync();
             if (!_startHidden) Navigate("home");
         };
         Shown += async (_, _) => await AnimateInAsync();
@@ -91,7 +98,7 @@ public sealed class MainForm : Form
 
         var tray = new NotifyIcon
         {
-            Text = "WinSolve - watching for Windows errors",
+            Text = Localization.Loc.T("WinSolve - watching for Windows errors"),
             Icon = Icon ?? SystemIcons.Shield,
             ContextMenuStrip = menu,
             Visible = true,
@@ -107,6 +114,7 @@ public sealed class MainForm : Form
             Opacity = 0;
             Show();
             if (_pages.Count == 0) Navigate("home");
+            else CurrentPage?.OnShown();
         }
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         Activate();
@@ -122,22 +130,55 @@ public sealed class MainForm : Form
         }
         e.Cancel = true;
         await AnimateOutAsync();
+        CurrentPage?.OnHidden();
         Hide();
         Opacity = 1;
         if (!_trayHintShown)
         {
             _trayHintShown = true;
-            _tray.ShowBalloonTip(3000, "WinSolve is still running",
-                "You'll be alerted if Windows reports an error. Double-click the icon to open WinSolve.", ToolTipIcon.Info);
+            _tray.ShowBalloonTip(3000, Localization.Loc.T("WinSolve is still running"),
+                Localization.Loc.T("You'll be alerted if Windows reports an error. Double-click the icon to open WinSolve."), ToolTipIcon.Info);
         }
     }
 
-    private void ExitApp()
+    public void ExitApp()
     {
         _exiting = true;
         _tray.Visible = false;
         ErrorMonitor.Instance.Dispose();
         Application.Exit();
+    }
+
+    // ───────────── Updates ─────────────
+
+    private async Task CheckForUpdateAsync()
+    {
+        var update = await UpdateService.CheckIfDueAsync();
+        if (update is not null) ShowUpdate(update);
+    }
+
+    public void ShowUpdate(UpdateInfo update)
+    {
+        _update = update;
+        _updateButton.Text = $"Update to {update.Tag}";
+        _updateButton.Visible = true;
+        if (!Visible)
+            _tray.ShowBalloonTip(4000, Localization.Loc.T("WinSolve update available"), Localization.Loc.T($"Version {update.Tag} is ready to install."), ToolTipIcon.Info);
+    }
+
+    public void InstallUpdate(UpdateInfo update)
+    {
+        if (Localization.Loc.Show(this, $"Install WinSolve {update.Tag}? WinSolve will close and restart when the update is installed.\n\nWhat's new:\n{update.Notes}",
+                "WinSolve update", MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes)
+            return;
+
+        var ok = false;
+        RunDialog.Run(this, "Updating WinSolve", async (log, progress, ct) =>
+        {
+            await UpdateService.InstallAsync(update, log, progress, ct);
+            ok = true;
+        });
+        if (ok) ExitApp();
     }
 
     // ───────────── Alerts ─────────────
@@ -264,6 +305,7 @@ public sealed class MainForm : Form
             ("optimize", "\uE945", "One-click optimization"),
             ("tools", "\uE90F", "Cleanup & repair"),
             ("space", "\uEDA2", "Disk space"),
+            ("monitor", "\uE9D9", "Monitor"),
             ("hardware", "\uE950", "Hardware"),
             ("drivers", "\uE772", "Drivers"),
             ("tweaks", "\uE9E9", "Tweaks"),
@@ -291,9 +333,9 @@ public sealed class MainForm : Form
             UseMnemonic = false,
             Location = new Point(18, 2),
         });
-        brand.Controls.Add(new Label
+        brand.Controls.Add(_brandSubtitle = new Localization.LocLabel
         {
-            Text = Admin.IsElevated ? "PC health & maintenance" : "Not running as administrator",
+            Text = BrandSubtitle,
             Font = Theme.Small,
             ForeColor = Admin.IsElevated ? Theme.Muted : Theme.Warn,
             AutoSize = true,
@@ -301,7 +343,11 @@ public sealed class MainForm : Form
             Location = new Point(19, 28),
         });
 
-        var version = new Label
+        _updateButton.Dock = DockStyle.Bottom;
+        _updateButton.Visible = false;
+        _updateButton.Click += (_, _) => { if (_update is not null) InstallUpdate(_update); };
+
+        var version = _versionLabel = new Localization.LocLabel
         {
             Dock = DockStyle.Bottom,
             Height = 22,
@@ -312,6 +358,7 @@ public sealed class MainForm : Form
         };
 
         side.Controls.Add(list);
+        side.Controls.Add(_updateButton);
         side.Controls.Add(version);
         side.Controls.Add(brand);
         return side;
@@ -333,6 +380,8 @@ public sealed class MainForm : Form
             _pages[key] = page;
         }
 
+        if (CurrentPage is { } previous && previous != page) previous.OnHidden();
+
         _content.SuspendLayout();
         _content.Controls.Clear();
         _content.Controls.Add(page);
@@ -342,6 +391,8 @@ public sealed class MainForm : Form
         page.OnShown();
     }
 
+    private Page? CurrentPage => _content.Controls.Count > 0 ? _content.Controls[0] as Page : null;
+
     /// <summary>Recreates every page (e.g. after the accent color changes).</summary>
     public void Reload(string current)
     {
@@ -349,6 +400,10 @@ public sealed class MainForm : Form
         foreach (var p in _pages.Values) p.Dispose();
         _pages.Clear();
         foreach (var b in _nav) b.Invalidate();
+        if (_brandSubtitle is not null) _brandSubtitle.Text = BrandSubtitle;
+        if (_versionLabel is not null) _versionLabel.Text = $"Version {Application.ProductVersion.Split('+')[0]}";
+        if (_update is not null) _updateButton.Text = $"Update to {_update.Tag}";
+        _tray.Text = Localization.Loc.T("WinSolve - watching for Windows errors");
         Navigate(current);
     }
 

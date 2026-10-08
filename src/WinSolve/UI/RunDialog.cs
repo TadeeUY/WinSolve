@@ -10,7 +10,7 @@ public sealed class RunDialog : Form
 
     private RunDialog(string title)
     {
-        Text = title;
+        Text = Localization.Loc.T(title);
         BackColor = Theme.Background;
         ForeColor = Theme.Text;
         Font = Theme.Body;

@@ -43,7 +43,7 @@ public sealed class StartupPage : Page
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"Could not change '{item.Name}': {ex.Message}", "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                Localization.Loc.Show(this, $"Could not change '{item.Name}': {ex.Message}", "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             UpdateStatus();
         };

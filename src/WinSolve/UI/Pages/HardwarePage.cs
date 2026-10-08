@@ -248,7 +248,7 @@ public sealed class HardwarePage : Page
         {
             if (_grid.CurrentRow?.Tag is not ProblemDevice d)
             {
-                MessageBox.Show(this, "Select a device in the list first.", "WinSolve");
+                Localization.Loc.Show(this, "Select a device in the list first.", "WinSolve");
                 return;
             }
             await _runner.RunAsync($"{title}: {d.Name}", async (log, _, ct) => { await action(d.InstanceId, log, ct); });

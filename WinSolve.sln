@@ -9,6 +9,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WinSolve", "src\WinSolve\Wi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WinSolve.Setup", "src\WinSolve.Setup\WinSolve.Setup.csproj", "{A28E6357-4322-4BFC-B962-9BB1F478BF25}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{AE9A34AA-37AE-4E80-B2F2-7C5DDE51A65D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WinSolve.Tests", "tests\WinSolve.Tests\WinSolve.Tests.csproj", "{0B715673-B16B-4087-978F-98AE7CB10959}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,9 +30,14 @@ Global
 		{A28E6357-4322-4BFC-B962-9BB1F478BF25}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A28E6357-4322-4BFC-B962-9BB1F478BF25}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A28E6357-4322-4BFC-B962-9BB1F478BF25}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0B715673-B16B-4087-978F-98AE7CB10959}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0B715673-B16B-4087-978F-98AE7CB10959}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0B715673-B16B-4087-978F-98AE7CB10959}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0B715673-B16B-4087-978F-98AE7CB10959}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{3E3A81E5-B1B1-4482-8156-992372085B42} = {4FDA374F-993B-4043-9885-D44EC5C9F48D}
 		{A28E6357-4322-4BFC-B962-9BB1F478BF25} = {4FDA374F-993B-4043-9885-D44EC5C9F48D}
+		{0B715673-B16B-4087-978F-98AE7CB10959} = {AE9A34AA-37AE-4E80-B2F2-7C5DDE51A65D}
 	EndGlobalSection
 EndGlobal

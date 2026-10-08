@@ -39,5 +39,5 @@ public sealed class SystemTask
 
     public bool NeedsReboot { get; init; }
 
-    public override string ToString() => Title;
+    public override string ToString() => Localization.Loc.T(Title);
 }

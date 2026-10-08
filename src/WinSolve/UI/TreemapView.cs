@@ -116,7 +116,7 @@ public sealed class TreemapView : Control
         if (_root is null || Width < 4 || Height < 4)
         {
             e.Graphics.Clear(BackColor);
-            TextRenderer.DrawText(e.Graphics, "Choose a drive and select Scan.", Theme.Body, ClientRectangle, Theme.Muted,
+            TextRenderer.DrawText(e.Graphics, Localization.Loc.T("Choose a drive and select Scan."), Theme.Body, ClientRectangle, Theme.Muted,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             return;
         }

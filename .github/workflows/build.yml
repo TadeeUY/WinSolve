@@ -20,6 +20,9 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Run tests
+        run: dotnet test tests/WinSolve.Tests/WinSolve.Tests.csproj -c Release --logger "console;verbosity=normal"
+
       - name: Publish WinSolve.exe
         run: dotnet publish src/WinSolve/WinSolve.csproj -c Release -o out/app
 
@@ -27,12 +30,21 @@ jobs:
         if: hashFiles('src/WinSolve.Setup/WinSolve.Setup.csproj') != ''
         run: dotnet build src/WinSolve.Setup/WinSolve.Setup.csproj -c Release -p:AppExe=${{ github.workspace }}/out/app/WinSolve.exe -o out/setup
 
+      - name: Checksum
+        if: hashFiles('out/setup/WinSolveSetup.exe') != ''
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash out/setup/WinSolveSetup.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  WinSolveSetup.exe" | Out-File -Encoding ascii -NoNewline out/setup/WinSolveSetup.exe.sha256
+          Write-Host "SHA-256: $hash"
+
       - uses: actions/upload-artifact@v4
         with:
           name: WinSolve
           path: |
             out/app/WinSolve.exe
             out/setup/WinSolveSetup.exe
+            out/setup/WinSolveSetup.exe.sha256
 
       - name: Publish release
         if: github.event_name != 'pull_request'
@@ -47,9 +59,9 @@ jobs:
           gh release view $tag --repo ${{ github.repository }} *> $null
           if ($LASTEXITCODE -eq 0) {
             Write-Host "Release $tag exists; updating its files."
-            gh release upload $tag out/setup/WinSolveSetup.exe out/app/WinSolve.exe --clobber --repo ${{ github.repository }}
+            gh release upload $tag out/setup/WinSolveSetup.exe out/setup/WinSolveSetup.exe.sha256 out/app/WinSolve.exe --clobber --repo ${{ github.repository }}
           } else {
-            gh release create $tag out/setup/WinSolveSetup.exe out/app/WinSolve.exe `
+            gh release create $tag out/setup/WinSolveSetup.exe out/setup/WinSolveSetup.exe.sha256 out/app/WinSolve.exe `
               --repo ${{ github.repository }} --target ${{ github.sha }} --title "WinSolve $tag" `
               --notes "Download **WinSolveSetup.exe** and run it. Choose *Only me* or *All users (recommended)*. It installs the .NET 8 Desktop Runtime automatically if needed.`n`nWinSolve.exe is the app alone (requires the .NET 8 Desktop Runtime)."
           }

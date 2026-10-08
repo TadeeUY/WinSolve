@@ -169,7 +169,7 @@ public sealed class DashboardPage : Page
                 if (issue.FixTaskIds.Length > 0)
                 {
                     var tasks = issue.FixTaskIds.Select(TaskCatalog.Find).OfType<SystemTask>().ToList();
-                    if (!Confirm($"The following will run:\n\n- {string.Join("\n- ", tasks.Select(t => t.Title))}\n\nContinue?")) return;
+                    if (!Confirm($"The following will run:\n\n- {string.Join("\n- ", tasks.Select(t => Localization.Loc.T(t.Title)))}\n\nContinue?")) return;
                     RunDialog.RunTasks(this, issue.Title, tasks);
                     await ScanAsync();
                 }

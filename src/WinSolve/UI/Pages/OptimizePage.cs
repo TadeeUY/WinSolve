@@ -12,6 +12,7 @@ public sealed class OptimizePage : Page
     private readonly FlatBtn _start;
     private readonly FlatBtn _desktop, _laptop, _custom;
     private readonly FlatBtn[] _levels;
+    private readonly StackCard _results = new() { Visible = false };
 
     public override string Key => "optimize";
 
@@ -49,7 +50,7 @@ public sealed class OptimizePage : Page
             _plan,
             Theme.Row(_start, Theme.Button("Edit custom list", (_, _) => Main.Navigate("settings"))));
 
-        AddRow(new Stack(scroll: true).Add(card), fill: true);
+        AddRow(new Stack(scroll: true).Add(_results, card), fill: true);
         AddRow(_runner, height: 240);
     }
 
@@ -102,9 +103,62 @@ public sealed class OptimizePage : Page
         if (!custom) lines.AddRange(OneClickOptimizer.CurrentPlan().Reasons.Select(r => "• " + r));
         if (AppSettings.Current.CreateRestorePoint) lines.Add("• A System Restore point is created first, so every change can be undone.");
         lines.Add($"• {pendingTweaks.Count} tweak(s) to apply ({tweaks.Count - pendingTweaks.Count} already applied)" +
-                  (pendingTweaks.Count > 0 ? ": " + string.Join(", ", pendingTweaks.Select(t => t.Title).Take(6)) + (pendingTweaks.Count > 6 ? ", ..." : "") : ""));
-        lines.Add($"• {tasks.Count} task(s): " + string.Join(", ", tasks.Select(t => t.Title)));
+                  (pendingTweaks.Count > 0 ? ": " + string.Join(", ", pendingTweaks.Select(t => Localization.Loc.T(t.Title)).Take(6)) + (pendingTweaks.Count > 6 ? ", ..." : "") : ""));
+        lines.Add($"• {tasks.Count} task(s): " + string.Join(", ", tasks.Select(t => Localization.Loc.T(t.Title))));
         _plan.Text = string.Join("\n", lines);
+
+        RenderResults(await Task.Run(OptimizationHistory.Latest));
+    }
+
+    /// <summary>Before / after table of the most recent optimization.</summary>
+    private void RenderResults(OptimizationRun? run)
+    {
+        _results.Body.Controls.Clear();
+        if (run?.After is not { } after)
+        {
+            _results.Visible = false;
+            return;
+        }
+        var before = run.Before;
+        _results.Visible = true;
+        _results.Add(Theme.Label($"Last optimization  ·  {run.Time:g}  ·  {run.Profile}", Theme.H2));
+
+        var table = new TableLayoutPanel { ColumnCount = 4, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 4, 0, 4) };
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220));
+        for (int i = 0; i < 3; i++) table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+
+        void Header(string text) => table.Controls.Add(Theme.Label(text, Theme.Small, Theme.Muted));
+        Header(""); Header("Before"); Header("After"); Header("Change");
+
+        void Row(string name, string b, string a, string change, bool better)
+        {
+            table.Controls.Add(Theme.Label(name, Theme.Body, Theme.Muted));
+            table.Controls.Add(Theme.Label(b, Theme.Body));
+            table.Controls.Add(Theme.Label(a, Theme.BodyBold));
+            table.Controls.Add(Theme.Label(change, Theme.Body, change == "—" ? Theme.Muted : better ? Theme.Good : Theme.Warn));
+        }
+
+        static string Signed(long v) => (v >= 0 ? "+" : "-") + Format.Bytes(Math.Abs(v));
+        static string SignedInt(int v) => v == 0 ? "—" : (v > 0 ? "+" : "") + v;
+
+        var freeDelta = after.SystemDriveFree - before.SystemDriveFree;
+        Row("Free space on system drive", Format.Bytes(before.SystemDriveFree), Format.Bytes(after.SystemDriveFree), Signed(freeDelta), freeDelta >= 0);
+        var ramDelta = after.RamUsed - before.RamUsed;
+        Row("Memory in use", Format.Bytes(before.RamUsed), Format.Bytes(after.RamUsed), Signed(ramDelta), ramDelta <= 0);
+        Row("Startup apps enabled", $"{before.StartupApps}", $"{after.StartupApps}", SignedInt(after.StartupApps - before.StartupApps), after.StartupApps <= before.StartupApps);
+        Row("Running processes", $"{before.Processes}", $"{after.Processes}", SignedInt(after.Processes - before.Processes), after.Processes <= before.Processes);
+        Row("Running services", $"{before.RunningServices}", $"{after.RunningServices}", SignedInt(after.RunningServices - before.RunningServices), after.RunningServices <= before.RunningServices);
+        Row("Tweaks on", $"{before.TweaksOn}", $"{after.TweaksOn}", SignedInt(after.TweaksOn - before.TweaksOn), true);
+
+        var bootBefore = before.BootSeconds is { } bb ? $"{bb:0.0} s" : "—";
+        if (run.BootSecondsAfter is { } ba)
+            Row("Windows boot time", bootBefore, $"{ba:0.0} s",
+                before.BootSeconds is { } b0 ? $"{ba - b0:+0.0;-0.0} s" : "—", before.BootSeconds is null || ba <= before.BootSeconds);
+        else
+            Row("Windows boot time", bootBefore, "after restart", "—", true);
+
+        _results.Add(table);
+        _results.Add(Theme.Paragraph("Memory and process counts vary with what you have open; boot time is measured by Windows on the next restart."));
     }
 
     private async Task StartAsync()

@@ -1,6 +1,7 @@
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using WinSolve.Core;
+using WinSolve.Localization;
 using WinSolve.Services;
 
 namespace WinSolve.UI;
@@ -98,7 +99,7 @@ public static class Theme
 
     // ───────────── Control factories ─────────────
 
-    public static Label Label(string text, Font? font = null, Color? color = null) => new()
+    public static Label Label(string text, Font? font = null, Color? color = null) => new LocLabel
     {
         Text = text,
         Font = font ?? Body,
@@ -173,6 +174,7 @@ public static class Theme
             WrapMode = DataGridViewTriState.False,
         };
         g.AlternatingRowsDefaultCellStyle = g.DefaultCellStyle;
+        g.CellFormatting += (_, e) => { if (e.Value is string s && s.Length > 0) { e.Value = Loc.T(s); e.FormattingApplied = true; } };
         typeof(DataGridView).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?.SetValue(g, true);
     }
@@ -183,7 +185,7 @@ public static class Theme
         ForeColor = Text,
         BorderStyle = BorderStyle.FixedSingle,
         Font = Body,
-        PlaceholderText = placeholder,
+        PlaceholderText = Loc.T(placeholder),
         Width = 260,
         Margin = new Padding(0, 5, 8, 5),
     };
@@ -192,6 +194,7 @@ public static class Theme
     {
         var c = new ComboBox
         {
+            FormattingEnabled = true,
             DropDownStyle = ComboBoxStyle.DropDownList,
             FlatStyle = FlatStyle.Flat,
             BackColor = Control,
@@ -200,12 +203,13 @@ public static class Theme
             Width = 200,
             Margin = new Padding(0, 5, 8, 5),
         };
+        c.Format += (_, e) => e.Value = Loc.T(e.ListItem?.ToString());
         c.Items.AddRange(items);
         if (items.Length > 0) c.SelectedIndex = 0;
         return c;
     }
 
-    public static CheckBox Check(string text, bool value) => new()
+    public static CheckBox Check(string text, bool value) => new LocCheckBox
     {
         Text = text,
         Checked = value,
@@ -223,6 +227,13 @@ public static class Theme
 /// <summary>Flat button with slightly rounded corners (Windows 11 style).</summary>
 public sealed class FlatBtn : Button
 {
+    [System.Diagnostics.CodeAnalysis.AllowNull]
+    public override string Text
+    {
+        get => base.Text;
+        set => base.Text = Loc.T(value);
+    }
+
     private bool _primary;
     private bool _hover;
     private bool _pressed;
@@ -308,7 +319,7 @@ public class Card : Panel
 }
 
 /// <summary>Label that grows in height to fit wrapped text at its container's width.</summary>
-public sealed class WrapLabel : Label
+public sealed class WrapLabel : LocLabel
 {
     public WrapLabel() => AutoSize = false;
 
@@ -340,13 +351,13 @@ public sealed class StatusLabel : Control
     public StatusLabel(string text, Color dot)
     {
         _dot = dot;
-        Text = text;
+        Text = Loc.T(text);
         Font = Theme.Body;
         ForeColor = Theme.Text;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
         BackColor = Color.Transparent;
         Margin = new Padding(0, 0, 0, 4);
-        var sz = TextRenderer.MeasureText(text, Font);
+        var sz = TextRenderer.MeasureText(Text, Font);
         Size = new Size(sz.Width + 18, Math.Max(sz.Height, 18));
     }
 
@@ -364,7 +375,8 @@ public sealed class StatusLabel : Control
 public static class Menus
 {
     public static ContextMenuStrip Create()
-        => new()
+    {
+        var menu = new ContextMenuStrip
         {
             BackColor = Theme.Card,
             ForeColor = Theme.Text,
@@ -372,6 +384,9 @@ public static class Menus
             Font = Theme.Body,
             Renderer = new ToolStripProfessionalRenderer(new DarkColors()),
         };
+        menu.ItemAdded += (_, e) => { if (e.Item is { } item) item.Text = Loc.T(item.Text); };
+        return menu;
+    }
 
     private sealed class DarkColors : ProfessionalColorTable
     {

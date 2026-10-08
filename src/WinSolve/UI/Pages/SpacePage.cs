@@ -8,7 +8,7 @@ namespace WinSolve.UI.Pages;
 public sealed class SpacePage : Page
 {
     private readonly ComboBox _drives;
-    private readonly FlatBtn _scan, _cancel, _up;
+    private readonly FlatBtn _scan, _cancel, _up, _dupes;
     private readonly Label _status = Theme.Label("", Theme.Small, Theme.Muted);
     private readonly Label _hoverInfo = Theme.Label("", Theme.Small, Theme.Text);
     private readonly TreeView _tree = new();
@@ -30,10 +30,17 @@ public sealed class SpacePage : Page
         _cancel.Enabled = false;
         _up = Theme.Button("Up one level", (_, _) => ZoomUp());
         _up.Enabled = false;
+        _dupes = Theme.Button("Find duplicates", (_, _) =>
+        {
+            if (_result is null) return;
+            using var dlg = new DuplicatesDialog(_result.Root);
+            dlg.ShowDialog(this);
+        });
+        _dupes.Enabled = false;
 
         AddRow(Theme.Row(_drives,
             Theme.Button("Choose folder", (_, _) => PickFolder()),
-            _scan, _cancel, _up,
+            _scan, _cancel, _up, _dupes,
             Theme.Button("Clean junk files", (_, _) => Main.Navigate("tools"))));
         AddRow(_status);
 
@@ -166,6 +173,7 @@ public sealed class SpacePage : Page
             _status.Text = $"{Format.Bytes(_result.Root.Size)} in {_result.Root.FileCount:N0} files  ·  scanned in {_result.Elapsed.TotalSeconds:0.0} s" +
                            (_result.Inaccessible > 0 ? $"  ·  {_result.Inaccessible:N0} folders not accessible" : "");
             ShowResult();
+            _dupes.Enabled = true;
         }
         catch (OperationCanceledException)
         {
@@ -314,7 +322,7 @@ public sealed class SpacePage : Page
             ? "\n\nWarning: this is inside a system or program folder. Deleting it can break Windows or applications. To remove programs use the Apps page instead."
             : "";
 
-        if (MessageBox.Show(this, $"Move to the Recycle Bin?\n\n{path}\n({Format.Bytes(n.Size)}){warning}", "Delete",
+        if (Localization.Loc.Show(this, $"Move to the Recycle Bin?\n\n{path}\n({Format.Bytes(n.Size)}){warning}", "Delete",
                 MessageBoxButtons.YesNo, isProtected ? MessageBoxIcon.Warning : MessageBoxIcon.Question) != DialogResult.Yes)
             return;
 
@@ -335,39 +343,5 @@ public sealed class SpacePage : Page
     public override void OnShown()
     {
         if (_drives.Items.Count == 0) LoadDrives();
-    }
-
-    private static class RecycleBin
-    {
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-        private struct SHFILEOPSTRUCT
-        {
-            public IntPtr hwnd;
-            public uint wFunc;
-            public string pFrom;
-            public string? pTo;
-            public ushort fFlags;
-            public bool fAnyOperationsAborted;
-            public IntPtr hNameMappings;
-            public string? lpszProgressTitle;
-        }
-
-        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-        private static extern int SHFileOperation(ref SHFILEOPSTRUCT op);
-
-        private const uint FO_DELETE = 3;
-        private const ushort FOF_ALLOWUNDO = 0x40, FOF_NOCONFIRMATION = 0x10, FOF_WANTNUKEWARNING = 0x4000;
-
-        public static bool Send(string path, IntPtr owner)
-        {
-            var op = new SHFILEOPSTRUCT
-            {
-                hwnd = owner,
-                wFunc = FO_DELETE,
-                pFrom = path + "\0\0",
-                fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_WANTNUKEWARNING,
-            };
-            return SHFileOperation(ref op) == 0 && !op.fAnyOperationsAborted;
-        }
     }
 }

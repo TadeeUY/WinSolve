@@ -31,7 +31,7 @@ public sealed class TweaksPage : Page
         AddRow(_status);
 
         Theme.StyleGrid(_grid);
-        _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "on", HeaderText = "On", Width = 50, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
+        _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "on", HeaderText = "On", Width = 66, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "title", HeaderText = "Tweak", ReadOnly = true, Width = 320, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cat", HeaderText = "Category", ReadOnly = true, Width = 110, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "desc", HeaderText = "Description", ReadOnly = true, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
@@ -134,7 +134,7 @@ public sealed class TweaksPage : Page
         if (reboot) msg += "\n\nSome changes take effect after a restart.";
         if (explorer)
         {
-            if (MessageBox.Show(this, msg + "\n\nRestart Explorer now to see the changes?", "WinSolve",
+            if (Localization.Loc.Show(this, msg + "\n\nRestart Explorer now to see the changes?", "WinSolve",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
                 _ = TaskCatalog.ExplorerRestart(new TaskContext(Logger.Write, default));
         }
