@@ -188,7 +188,8 @@ public class LocalizationTests
             Assert.Equal("Limpieza y reparación", Loc.T("Cleanup & repair"));
             Assert.Equal("3 de 28 ajustes activos", Loc.T("3 of 28 tweaks on"));
             Assert.Equal("Optimizando: completado", Loc.T("Optimizing: completed"));
-            Assert.Equal("  Explorer restarted.", Loc.T("  Explorer restarted.")); // unknown text is left alone
+            Assert.Equal("  Explorador reiniciado.", Loc.T("  Explorer restarted.")); // indentation is kept
+            Assert.Equal("C:\\Some\\Unknown path", Loc.T("C:\\Some\\Unknown path")); // unknown text is left alone
             Assert.Equal("Se ejecutará:\n\n- X\n\n¿Continuar?", Loc.T("The following will run:\n\n- X\n\nContinue?"));
         }
         finally
