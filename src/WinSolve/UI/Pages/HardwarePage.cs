@@ -130,6 +130,7 @@ public sealed class HardwarePage : Page
                 _diskButtons.Controls.Add(b);
             }
             _diskButtons.Controls.Add(Theme.Button("Refresh", (_, _) => Refresh(true)));
+            _detail.Visible = _attrs.Visible = _disks.Count > 0;
             if (_disks.Count > 0) ShowDisk(0);
             else _diskButtons.Controls.Add(Theme.Label("No drives found. Is WinSolve running as administrator?", Theme.Body, Theme.Warn));
         }

@@ -104,6 +104,7 @@ public static class Theme
         Font = font ?? Body,
         ForeColor = color ?? Text,
         AutoSize = true,
+        UseMnemonic = false,
         BackColor = Color.Transparent,
         Margin = new Padding(0, 0, 0, 4),
     };
@@ -112,6 +113,7 @@ public static class Theme
     public static Label Paragraph(string text, Color? color = null, Font? font = null) => new WrapLabel
     {
         Text = text,
+        UseMnemonic = false,
         Font = font ?? Body,
         ForeColor = color ?? Muted,
         BackColor = Color.Transparent,
@@ -272,7 +274,7 @@ public sealed class FlatBtn : Button
         }
 
         TextRenderer.DrawText(g, Text, Font, ClientRectangle, Enabled ? ForeColor : Color.FromArgb(120, 120, 120),
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
     }
 }
 
@@ -354,7 +356,7 @@ public sealed class StatusLabel : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         using (var b = new SolidBrush(_dot)) g.FillEllipse(b, 1, Height / 2 - 4, 8, 8);
         TextRenderer.DrawText(g, Text, Font, new Rectangle(16, 0, Width - 16, Height), ForeColor,
-            TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+            TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
     }
 }
 

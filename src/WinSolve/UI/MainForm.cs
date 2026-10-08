@@ -255,7 +255,7 @@ public sealed class MainForm : Form
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             BackColor = Theme.Sidebar,
-            AutoScroll = true,
+            AutoScroll = false,
         };
 
         (string key, string glyph, string text)[] items =
@@ -275,7 +275,7 @@ public sealed class MainForm : Form
 
         foreach (var (key, glyph, text) in items)
         {
-            var b = new NavButton(key, glyph, text) { Width = side.Width };
+            var b = new NavButton(key, glyph, text) { Width = side.Width - side.Padding.Horizontal - 2 };
             b.Click += (_, _) => Navigate(key);
             _nav.Add(b);
             list.Controls.Add(b);
@@ -288,6 +288,7 @@ public sealed class MainForm : Form
             Font = Theme.H2,
             ForeColor = Theme.Text,
             AutoSize = true,
+            UseMnemonic = false,
             Location = new Point(18, 2),
         });
         brand.Controls.Add(new Label
@@ -296,6 +297,7 @@ public sealed class MainForm : Form
             Font = Theme.Small,
             ForeColor = Admin.IsElevated ? Theme.Muted : Theme.Warn,
             AutoSize = true,
+            UseMnemonic = false,
             Location = new Point(19, 28),
         });
 

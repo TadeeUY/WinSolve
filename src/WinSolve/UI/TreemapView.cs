@@ -132,7 +132,7 @@ public sealed class TreemapView : Control
         }
         e.Graphics.DrawImageUnscaled(_cache, 0, 0);
 
-        Outline(e.Graphics, _selected, Color.White, 2);
+        if (_selected != _root) Outline(e.Graphics, _selected, Color.White, 2);
         if (_hover != _selected) Outline(e.Graphics, _hover, Color.FromArgb(200, 255, 255, 255), 1);
     }
 

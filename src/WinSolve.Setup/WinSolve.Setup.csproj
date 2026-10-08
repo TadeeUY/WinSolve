@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Installer for WinSolve. Targets .NET Framework 4.8 (built into Windows 10/11) so it
+    always runs, then installs the .NET 8 Desktop Runtime for WinSolve if needed.
+    The published WinSolve.exe is embedded as a resource.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>WinSolveSetup</AssemblyName>
+    <RootNamespace>WinSolve.Setup</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>0.1.0</Version>
+    <Product>WinSolve Setup</Product>
+    <Company>WinSolve</Company>
+    <Description>WinSolve installer</Description>
+    <DebugType>none</DebugType>
+    <AppExe Condition="'$(AppExe)' == ''">$(MSBuildThisFileDirectory)..\WinSolve\bin\Release\net8.0-windows\win-x64\publish\WinSolve.exe</AppExe>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="$(AppExe)" LogicalName="WinSolve.exe" />
+  </ItemGroup>
+
+  <Target Name="CheckAppExe" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(AppExe)')" Text="WinSolve.exe not found at $(AppExe). Run 'dotnet publish src/WinSolve -c Release' first or pass -p:AppExe=path." />
+  </Target>
+
+</Project>

@@ -91,10 +91,10 @@ public sealed class SpacePage : Page
         mapPanel.Controls.Add(_map, 0, 0);
         mapPanel.Controls.Add(_hoverInfo, 0, 1);
 
-        var split = new SplitContainer { Dock = DockStyle.Fill, SplitterWidth = 8, BackColor = Theme.Background };
+        var split = new SplitContainer { Dock = DockStyle.Fill, SplitterWidth = 8, BackColor = Theme.Background, FixedPanel = FixedPanel.Panel1 };
         split.Panel1.Controls.Add(leftSplit);
         split.Panel2.Controls.Add(mapPanel);
-        split.HandleCreated += (_, _) => { try { split.SplitterDistance = 340; } catch { } };
+        split.HandleCreated += (_, _) => { try { split.SplitterDistance = Math.Min(360, split.Width / 3); } catch { } };
         AddRow(split, fill: true);
 
         _map.HoverChanged += n => _hoverInfo.Text = n is null ? "" : $"{n.FullPath}   ·   {Format.Bytes(n.Size)}" +

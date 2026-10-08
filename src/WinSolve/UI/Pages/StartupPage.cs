@@ -23,7 +23,7 @@ public sealed class StartupPage : Page
 
         Theme.StyleGrid(_grid);
         _grid.MultiSelect = true;
-        _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "on", HeaderText = "Enabled", Width = 70, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
+        _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "on", HeaderText = "Enabled", Width = 84, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "name", HeaderText = "Name", ReadOnly = true, Width = 240, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "loc", HeaderText = "Location", ReadOnly = true, Width = 220, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cmd", HeaderText = "Command", ReadOnly = true, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });

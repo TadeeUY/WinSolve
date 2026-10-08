@@ -47,14 +47,12 @@ public sealed class SettingsPage : Page
         foreach (var t in TaskCatalog.All) _tasks.Items.Add(t);
         foreach (var t in TweakCatalog.All) _tweaks.Items.Add(new TweakItem(t));
 
-        var lists = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, Height = 320, MinimumSize = new Size(0, 320), BackColor = Color.Transparent };
-        lists.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        lists.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        lists.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        _tasks.Dock = DockStyle.Fill;
+        var lists = new Panel { Height = 320, BackColor = Color.Transparent };
         _tweaks.Dock = DockStyle.Fill;
-        lists.Controls.Add(_tasks, 0, 0);
-        lists.Controls.Add(_tweaks, 1, 0);
+        _tasks.Dock = DockStyle.Left;
+        lists.Controls.Add(_tweaks);
+        lists.Controls.Add(_tasks);
+        lists.Resize += (_, _) => _tasks.Width = lists.Width / 2 - 6;
 
         var oneClick = new StackCard().Add(
             Theme.Label("Custom one-click list", Theme.H2),

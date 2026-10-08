@@ -82,13 +82,14 @@ public sealed class DashboardPage : Page
         }
     }
 
-    private static Control Tile(string caption, string value, string detail, Color? valueColor = null)
+    private static Control Tile(string caption, string value, string detail, Color? valueColor = null, bool last = false)
     {
         var card = new StackCard { Margin = new Padding(0, 0, 8, 0), Padding = new Padding(14, 12, 14, 12) };
         var v = Theme.Label(value, Theme.H2, valueColor);
         v.AutoEllipsis = true;
         card.Add(Theme.Label(caption, Theme.Small, Theme.Muted), v, Theme.Paragraph(detail, font: Theme.Small));
         card.Dock = DockStyle.Fill;
+        if (last) card.Margin = new Padding(0);
         return card;
     }
 
@@ -111,9 +112,9 @@ public sealed class DashboardPage : Page
         _tiles.Controls.Add(Tile("Processor", s.Threads > 0 ? $"{s.Cores} cores / {s.Threads} threads" : "—", s.Cpu), 1, 0);
         _tiles.Controls.Add(Tile("Memory", Format.Bytes(s.RamTotal), $"{Format.Bytes(s.RamFree)} available"), 2, 0);
         _tiles.Controls.Add(sysDrive is null
-            ? Tile("System drive", "—", "")
+            ? Tile("System drive", "—", "", last: true)
             : Tile($"System drive ({sysDrive.Name})", $"{Format.Bytes(sysDrive.Free)} free", $"of {Format.Bytes(sysDrive.Total)}",
-                sysDrive.FreePercent < 10 ? Theme.Warn : null), 3, 0);
+                sysDrive.FreePercent < 10 ? Theme.Warn : null, last: true), 3, 0);
 
         _issues.Body.Controls.Clear();
         _issues.Add(Theme.Label(r.Issues.Count == 0 ? "No problems found" : $"Recommendations ({r.Issues.Count})", Theme.H2));

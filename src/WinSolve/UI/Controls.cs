@@ -37,11 +37,18 @@ public class Stack : FlowLayoutPanel
         return this;
     }
 
+    // Don't jump to the focused control when the content changes.
+    protected override Point ScrollToControl(Control activeControl) => DisplayRectangle.Location;
+
     public static void PinWidth(Control c, int width)
     {
         if (width <= 0) return;
-        c.MinimumSize = new Size(width, c.MinimumSize.Height);
-        c.MaximumSize = new Size(width, c.MaximumSize.Height);
+        if (c.AutoSize)
+        {
+            // Auto-sized controls grow to their content: pin the width through the size limits.
+            c.MinimumSize = new Size(width, c.MinimumSize.Height);
+            c.MaximumSize = new Size(width, 0);
+        }
         c.Width = width;
     }
 
@@ -249,7 +256,7 @@ public sealed class NavButton : Control
         TextRenderer.DrawText(g, Glyph, Theme.Icons, new Rectangle(18, 0, 24, Height), Theme.Text,
             TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
         TextRenderer.DrawText(g, Text, Theme.Body, new Rectangle(52, 0, Width - 56, Height), _selected ? Theme.Text : Color.FromArgb(220, 220, 220),
-            TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+            TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
 }
 
