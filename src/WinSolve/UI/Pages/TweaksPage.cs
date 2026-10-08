@@ -24,7 +24,7 @@ public sealed class TweaksPage : Page
 
         AddRow(Theme.Row(
             _category, _search,
-            Theme.Button("Apply changes", (_, _) => ApplyChanges(), primary: true),
+            Theme.Button("Apply changes", (_, _) => ApplyChanges(), primary: true, glyph: "\uE73E"),
             Theme.Button("Select recommended", (_, _) => { foreach (var t in TweakCatalog.All.Where(t => t.Recommended)) _desired[t.Id] = true; Fill(); }),
             Theme.Button("Discard changes", (_, _) => Reload()),
             Theme.Button("Restart Explorer", async (_, _) => await TaskCatalog.ExplorerRestart(new TaskContext(Logger.Write, default)))));

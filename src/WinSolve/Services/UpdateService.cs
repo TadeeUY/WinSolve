@@ -66,12 +66,12 @@ public static class UpdateService
             root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "");
     }
 
-    /// <summary>Automatic check at most once a day.</summary>
+    /// <summary>Automatic check when WinSolve starts and every few hours while it runs.</summary>
     public static async Task<UpdateInfo?> CheckIfDueAsync()
     {
         var s = AppSettings.Current;
         if (!s.CheckForUpdates) return null;
-        if (s.LastUpdateCheck is { } last && DateTime.Now - last < TimeSpan.FromHours(20)) return null;
+        if (s.LastUpdateCheck is { } last && DateTime.Now - last < TimeSpan.FromHours(4)) return null;
         try
         {
             return await CheckAsync();

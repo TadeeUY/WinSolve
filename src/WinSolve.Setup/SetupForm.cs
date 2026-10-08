@@ -44,11 +44,23 @@ namespace WinSolve.Setup
             Font = new Font("Segoe UI", 9.5f);
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
-            var title = new Label { Text = "Install WinSolve", Font = new Font("Segoe UI", 18f, FontStyle.Bold), AutoSize = true, Location = new Point(28, 22) };
+            var logo = new PictureBox
+            {
+                Size = new Size(40, 40),
+                Location = new Point(28, 24),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BackColor = Color.Transparent,
+            };
+            try { logo.Image = new Icon(Icon.ExtractAssociatedIcon(Application.ExecutablePath), 48, 48).ToBitmap(); } catch { }
+            var title = new Label
+            {
+                Text = autoStart && preset.Launch ? "Updating WinSolve" : "Install WinSolve",
+                Font = new Font("Segoe UI", 18f, FontStyle.Bold), AutoSize = true, Location = new Point(76, 20),
+            };
             var subtitle = new Label
             {
                 Text = $"Version {Installer.Version}  ·  Windows diagnostics, repair and optimization",
-                ForeColor = Muted, AutoSize = true, Location = new Point(30, 62),
+                ForeColor = Muted, AutoSize = true, Location = new Point(78, 60),
             };
 
             _options = new Panel { Location = new Point(28, 96), Size = new Size(464, 228), BackColor = Card };
@@ -76,7 +88,7 @@ namespace WinSolve.Setup
             _cancel.Location = new Point(284, 372);
             _cancel.Click += (s, e) => { if (_cts != null) _cts.Cancel(); else Close(); };
 
-            Controls.AddRange(new Control[] { title, subtitle, _options, _status, _progress, _install, _cancel });
+            Controls.AddRange(new Control[] { logo, title, subtitle, _options, _status, _progress, _install, _cancel });
             AcceptButton = _install;
 
             HandleCreated += (s, e) => DarkTitleBar(Handle);

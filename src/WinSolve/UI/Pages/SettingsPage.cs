@@ -7,7 +7,7 @@ public sealed class SettingsPage : Page
 {
     private readonly CheckedListBox _tasks = NewList();
     private readonly CheckedListBox _tweaks = NewList();
-    private readonly CheckBox _restorePoint, _confirm, _scanOnStartup, _alerts, _tray, _animations, _autoStart, _updates;
+    private readonly CheckBox _restorePoint, _confirm, _scanOnStartup, _alerts, _tray, _animations, _autoStart, _updates, _autoUpdate;
     private readonly ComboBox _schedule = Theme.Combo(Maintenance.Schedules);
     private readonly ComboBox _language = Theme.Combo("English", "Español");
     private readonly Panel _accentPreview = new() { Size = new Size(36, 36), Margin = new Padding(0, 4, 8, 4) };
@@ -37,6 +37,7 @@ public sealed class SettingsPage : Page
         _animations = Theme.Check("Minimize and restore animations", s.Animations);
         _autoStart = Theme.Check("Start WinSolve with Windows (in the notification area)", false);
         _updates = Theme.Check("Check for updates automatically", s.CheckForUpdates);
+        _autoUpdate = Theme.Check("Install updates automatically (no need to click)", s.AutoInstallUpdates);
         _schedule.SelectedItem = Maintenance.Schedules.Contains(s.MaintenanceSchedule) ? s.MaintenanceSchedule : "Off";
         _language.SelectedIndex = s.Language == "es" ? 1 : 0;
 
@@ -44,6 +45,7 @@ public sealed class SettingsPage : Page
             Theme.Label("General", Theme.H2),
             _restorePoint, _confirm, _scanOnStartup, _alerts, _tray, _animations, _autoStart,
             _updates,
+            _autoUpdate,
             Theme.Row(Theme.Button("Show a test alert", (_, _) => ErrorMonitor.Instance.RaiseTest()),
                 Theme.Button("Check for updates now", async (_, _) => await CheckUpdatesNow())),
             Theme.Label("Language", Theme.BodyBold),
@@ -104,19 +106,7 @@ public sealed class SettingsPage : Page
         if (!AutoStart.IsAllowed) _autoStart.Text = "Start WinSolve with Windows (requires an all-users install)";
     }
 
-    private async Task CheckUpdatesNow()
-    {
-        try
-        {
-            var update = await UpdateService.CheckAsync();
-            if (update is null) Info($"You have the latest version ({UpdateService.CurrentVersion}).");
-            else Main.InstallUpdate(update);
-        }
-        catch (Exception ex)
-        {
-            Info("Could not check for updates: " + ex.Message);
-        }
-    }
+    private Task CheckUpdatesNow() => Main.CheckForUpdatesNowAsync();
 
     private async Task CreateBugReport()
     {
@@ -201,7 +191,8 @@ public sealed class SettingsPage : Page
         s.ErrorAlerts = _alerts.Checked;
         s.CloseToTray = _tray.Checked;
         s.Animations = _animations.Checked;
-        s.CheckForUpdates = _updates.Checked;
+        s.CheckForUpdates = _updates.Checked || _autoUpdate.Checked;
+        s.AutoInstallUpdates = _autoUpdate.Checked;
         var languageChanged = s.Language != (_language.SelectedIndex == 1 ? "es" : "en");
         s.Language = _language.SelectedIndex == 1 ? "es" : "en";
         var schedule = _schedule.SelectedItem as string ?? "Off";

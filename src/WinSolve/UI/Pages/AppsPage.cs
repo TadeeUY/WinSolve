@@ -30,7 +30,7 @@ public sealed class AppsPage : Page
         AddRow(Theme.Row(_tabPrograms, _tabStore));
         AddRow(Theme.Row(_search,
             Theme.Button("Uninstall", async (_, _) => await UninstallSelected(force: false)),
-            Theme.Button("Force uninstall", async (_, _) => await UninstallSelected(force: true), primary: true),
+            Theme.Button("Force uninstall", async (_, _) => await UninstallSelected(force: true), primary: true, glyph: "\uE74D"),
             Theme.Button("Refresh", async (_, _) => await LoadAsync(true)),
             _onlyBloat));
 

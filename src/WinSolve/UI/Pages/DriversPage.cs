@@ -84,7 +84,7 @@ public sealed class DriversPage : Page
             {
                 case GpuVendor.Nvidia:
                     row.Controls.Add(Theme.Button("Check latest version", async (_, _) => await CheckNvidia(gpu)));
-                    row.Controls.Add(Theme.Button("Download and clean install", async (_, _) => await NvidiaCleanInstall(gpu), primary: true));
+                    row.Controls.Add(Theme.Button("Download and clean install", async (_, _) => await NvidiaCleanInstall(gpu), primary: true, glyph: "\uE896"));
                     row.Controls.Add(Theme.Button("Clean install from file", async (_, _) => await CleanInstallFromFile(gpu)));
                     row.Controls.Add(Theme.Button("NVIDIA drivers website", (_, _) => ProcessRunner.ShellOpen(DriverService.NvidiaDownloadPage)));
                     break;

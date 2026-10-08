@@ -19,7 +19,7 @@ public sealed class OptimizePage : Page
     public OptimizePage() : base("One-click optimization",
         "Choose the device type and level. WinSolve tailors the changes to the hardware it detects.")
     {
-        _start = Theme.Button("Start optimization", async (_, _) => await StartAsync(), primary: true);
+        _start = Theme.Button("Start optimization", async (_, _) => await StartAsync(), primary: true, glyph: "\uE945");
         _runner.BusyChanged += busy => _start.Enabled = !busy;
 
         _desktop = Theme.Button("Desktop PC", (_, _) => SetDevice(DeviceKind.PC));

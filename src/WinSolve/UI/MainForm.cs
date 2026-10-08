@@ -19,8 +19,9 @@ public sealed class MainForm : Form
     private bool _exiting;
     private bool _animating;
     private bool _trayHintShown;
-    private readonly FlatBtn _updateButton = Theme.Button("Update available", primary: true);
+    private readonly InfoBar _infoBar = new() { Dock = DockStyle.Top, Visible = false };
     private UpdateInfo? _update;
+    private bool _updating;
     private Label? _brandSubtitle, _versionLabel;
 
     private static string BrandSubtitle => Admin.IsElevated ? "PC health & maintenance" : "Not running as administrator";
@@ -37,7 +38,7 @@ public sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1000, 700);
         Size = new Size(1240, 800);
-        try { Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? Application.ExecutablePath); } catch { }
+        Icon = Theme.AppIcon(32);
 
         _factories = new()
         {
@@ -55,7 +56,14 @@ public sealed class MainForm : Form
             ["settings"] = () => new SettingsPage(),
         };
 
-        Controls.Add(_content);
+        // Content area: optional info bar (updates) above the current page.
+        var main = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Padding = new Padding(0) };
+        var barHost = new Panel { Dock = DockStyle.Top, AutoSize = true, BackColor = Theme.Background, Padding = new Padding(32, 14, 32, 0) };
+        barHost.Controls.Add(_infoBar);
+        barHost.Visible = false;
+        main.Controls.Add(_content);
+        main.Controls.Add(barHost);
+        Controls.Add(main);
         Controls.Add(BuildSidebar());
 
         _tray = BuildTray();
@@ -65,6 +73,10 @@ public sealed class MainForm : Form
             ErrorMonitor.Instance.AlertRaised += OnAlert;
             ErrorMonitor.Instance.Apply();
             _ = CheckForUpdateAsync();
+            // Keep checking while WinSolve sits in the notification area.
+            var updateTimer = new System.Windows.Forms.Timer { Interval = (int)TimeSpan.FromHours(4).TotalMilliseconds };
+            updateTimer.Tick += async (_, _) => await CheckForUpdateAsync();
+            updateTimer.Start();
             if (!_startHidden) Navigate("home");
         };
         Shown += async (_, _) => await AnimateInAsync();
@@ -99,7 +111,7 @@ public sealed class MainForm : Form
         var tray = new NotifyIcon
         {
             Text = Localization.Loc.T("WinSolve - watching for Windows errors"),
-            Icon = Icon ?? SystemIcons.Shield,
+            Icon = Theme.AppIcon(16),
             ContextMenuStrip = menu,
             Visible = true,
         };
@@ -154,31 +166,74 @@ public sealed class MainForm : Form
     private async Task CheckForUpdateAsync()
     {
         var update = await UpdateService.CheckIfDueAsync();
-        if (update is not null) ShowUpdate(update);
+        if (update is null) return;
+        if (AppSettings.Current.AutoInstallUpdates) await InstallUpdateAsync(update);
+        else ShowUpdate(update);
     }
 
+    /// <summary>Shows the "update available" bar at the top of every page.</summary>
     public void ShowUpdate(UpdateInfo update)
     {
         _update = update;
-        _updateButton.Text = $"Update to {update.Tag}";
-        _updateButton.Visible = true;
+        var install = Theme.Button("Update now", async (_, _) => await InstallUpdateAsync(update), primary: true, glyph: "");
+        var notes = Theme.Button("What's new", (_, _) => ProcessRunner.ShellOpen(update.ReleaseUrl));
+        _infoBar.Show($"WinSolve {update.Tag} is available",
+            $"You have {UpdateService.CurrentVersion}. Updating takes less than a minute and keeps your settings.", install, notes);
         if (!Visible)
             _tray.ShowBalloonTip(4000, Localization.Loc.T("WinSolve update available"), Localization.Loc.T($"Version {update.Tag} is ready to install."), ToolTipIcon.Info);
     }
 
-    public void InstallUpdate(UpdateInfo update)
+    /// <summary>
+    /// One-click update: downloads the new installer (SHA-256 verified), runs it silently for
+    /// the same install scope and reopens WinSolve. No dialogs.
+    /// </summary>
+    public async Task InstallUpdateAsync(UpdateInfo update)
     {
-        if (Localization.Loc.Show(this, $"Install WinSolve {update.Tag}? WinSolve will close and restart when the update is installed.\n\nWhat's new:\n{update.Notes}",
-                "WinSolve update", MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes)
-            return;
-
-        var ok = false;
-        RunDialog.Run(this, "Updating WinSolve", async (log, progress, ct) =>
+        if (_updating) return;
+        _updating = true;
+        ShowFromTray();
+        _infoBar.Show($"Updating to WinSolve {update.Tag}", "Downloading...");
+        _infoBar.SetProgress(0);
+        try
         {
-            await UpdateService.InstallAsync(update, log, progress, ct);
-            ok = true;
-        });
-        if (ok) ExitApp();
+            await Task.Run(() => UpdateService.InstallAsync(update,
+                line => Logger.Write("[update] " + line),
+                (done, total) => BeginInvoke(() =>
+                {
+                    _infoBar.SetProgress(total == 0 ? 1 : (double)done / total);
+                    _infoBar.SetMessage($"Downloading... {done}%");
+                }),
+                CancellationToken.None));
+            _infoBar.SetMessage("Installing. WinSolve will reopen in a moment.");
+            _infoBar.SetProgress(-1);
+            await Task.Delay(800);
+            ExitApp();
+        }
+        catch (Exception ex)
+        {
+            Logger.Write($"Update failed: {ex}");
+            _updating = false;
+            var retry = Theme.Button("Try again", async (_, _) => await InstallUpdateAsync(update), primary: true);
+            var manual = Theme.Button("Download manually", (_, _) => ProcessRunner.ShellOpen(update.ReleaseUrl));
+            _infoBar.Show("The update could not be installed", ex.Message, retry, manual);
+        }
+    }
+
+    /// <summary>Manual check from Settings: shows the bar, or says you're up to date.</summary>
+    public async Task CheckForUpdatesNowAsync()
+    {
+        try
+        {
+            var update = await UpdateService.CheckAsync();
+            if (update is null)
+                _infoBar.Show("WinSolve is up to date", $"Version {UpdateService.CurrentVersion} is the latest release.");
+            else
+                ShowUpdate(update);
+        }
+        catch (Exception ex)
+        {
+            _infoBar.Show("Could not check for updates", ex.Message);
+        }
     }
 
     // ───────────── Alerts ─────────────
@@ -288,7 +343,7 @@ public sealed class MainForm : Form
 
     private Control BuildSidebar()
     {
-        var side = new Panel { Dock = DockStyle.Left, Width = 240, BackColor = Theme.Sidebar, Padding = new Padding(4, 14, 4, 10) };
+        var side = new Panel { Dock = DockStyle.Left, Width = 248, BackColor = Theme.Sidebar, Padding = new Padding(4, 12, 4, 10) };
 
         var list = new FlowLayoutPanel
         {
@@ -299,31 +354,42 @@ public sealed class MainForm : Form
             AutoScroll = false,
         };
 
-        (string key, string glyph, string text)[] items =
+        // A null key is a section header.
+        (string? key, string glyph, string text)[] items =
         [
-            ("home", "\uE80F", "Home"),
-            ("optimize", "\uE945", "One-click optimization"),
-            ("tools", "\uE90F", "Cleanup & repair"),
-            ("space", "\uEDA2", "Disk space"),
-            ("monitor", "\uE9D9", "Monitor"),
-            ("hardware", "\uE950", "Hardware"),
-            ("drivers", "\uE772", "Drivers"),
-            ("tweaks", "\uE9E9", "Tweaks"),
-            ("startup", "\uE7E8", "Startup apps"),
-            ("apps", "\uE71D", "Apps"),
-            ("activation", "\uE8D7", "Activation"),
-            ("settings", "\uE713", "Settings"),
+            ("home", "", "Home"),
+            ("optimize", "", "One-click optimization"),
+            (null, "", "Maintain"),
+            ("tools", "", "Cleanup & repair"),
+            ("space", "", "Disk space"),
+            ("startup", "", "Startup apps"),
+            ("apps", "", "Apps"),
+            ("drivers", "", "Drivers"),
+            (null, "", "Diagnose"),
+            ("monitor", "", "Monitor"),
+            ("hardware", "", "Hardware"),
+            (null, "", "System"),
+            ("tweaks", "", "Tweaks"),
+            ("activation", "", "Activation"),
         ];
 
+        var width = side.Width - side.Padding.Horizontal - 2;
         foreach (var (key, glyph, text) in items)
         {
-            var b = new NavButton(key, glyph, text) { Width = side.Width - side.Padding.Horizontal - 2 };
-            b.Click += (_, _) => Navigate(key);
-            _nav.Add(b);
-            list.Controls.Add(b);
+            if (key is null) list.Controls.Add(new NavHeader(text) { Width = width });
+            else list.Controls.Add(NavItem(key, glyph, text, width));
         }
 
-        var brand = new Panel { Dock = DockStyle.Top, Height = 58, BackColor = Theme.Sidebar };
+        // Brand: logo + name.
+        var brand = new Panel { Dock = DockStyle.Top, Height = 62, BackColor = Theme.Sidebar };
+        brand.Controls.Add(new PictureBox
+        {
+            Image = Theme.AppIcon(32).ToBitmap(),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            Size = new Size(32, 32),
+            Location = new Point(16, 6),
+            BackColor = Color.Transparent,
+        });
         brand.Controls.Add(new Label
         {
             Text = "WinSolve",
@@ -331,7 +397,7 @@ public sealed class MainForm : Form
             ForeColor = Theme.Text,
             AutoSize = true,
             UseMnemonic = false,
-            Location = new Point(18, 2),
+            Location = new Point(56, 2),
         });
         brand.Controls.Add(_brandSubtitle = new Localization.LocLabel
         {
@@ -340,28 +406,34 @@ public sealed class MainForm : Form
             ForeColor = Admin.IsElevated ? Theme.Muted : Theme.Warn,
             AutoSize = true,
             UseMnemonic = false,
-            Location = new Point(19, 28),
+            Location = new Point(57, 26),
         });
 
-        _updateButton.Dock = DockStyle.Bottom;
-        _updateButton.Visible = false;
-        _updateButton.Click += (_, _) => { if (_update is not null) InstallUpdate(_update); };
-
-        var version = _versionLabel = new Localization.LocLabel
+        // Footer: settings + version.
+        var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.TopDown, AutoSize = true, BackColor = Theme.Sidebar, WrapContents = false };
+        footer.Controls.Add(new Divider { Width = width - 24, Margin = new Padding(12, 4, 12, 4), BackColor = Theme.Border });
+        footer.Controls.Add(NavItem("settings", "", "Settings", width));
+        footer.Controls.Add(_versionLabel = new Localization.LocLabel
         {
-            Dock = DockStyle.Bottom,
-            Height = 22,
             Text = $"Version {Application.ProductVersion.Split('+')[0]}",
-            ForeColor = Theme.Muted,
+            ForeColor = Color.FromArgb(120, 120, 120),
             Font = Theme.Small,
-            Padding = new Padding(18, 0, 0, 0),
-        };
+            AutoSize = true,
+            Margin = new Padding(18, 6, 0, 0),
+        });
 
         side.Controls.Add(list);
-        side.Controls.Add(_updateButton);
-        side.Controls.Add(version);
+        side.Controls.Add(footer);
         side.Controls.Add(brand);
         return side;
+    }
+
+    private NavButton NavItem(string key, string glyph, string text, int width)
+    {
+        var b = new NavButton(key, glyph, text) { Width = width };
+        b.Click += (_, _) => Navigate(key);
+        _nav.Add(b);
+        return b;
     }
 
     /// <summary>Navigates to a page, or opens an external URI (ms-settings:, https:...).</summary>
@@ -402,7 +474,7 @@ public sealed class MainForm : Form
         foreach (var b in _nav) b.Invalidate();
         if (_brandSubtitle is not null) _brandSubtitle.Text = BrandSubtitle;
         if (_versionLabel is not null) _versionLabel.Text = $"Version {Application.ProductVersion.Split('+')[0]}";
-        if (_update is not null) _updateButton.Text = $"Update to {_update.Tag}";
+        if (_update is not null && !_updating) ShowUpdate(_update);
         _tray.Text = Localization.Loc.T("WinSolve - watching for Windows errors");
         Navigate(current);
     }

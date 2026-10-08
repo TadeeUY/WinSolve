@@ -25,7 +25,7 @@ public sealed class SpacePage : Page
     {
         _drives = Theme.Combo();
         _drives.Width = 240;
-        _scan = Theme.Button("Scan", async (_, _) => await ScanAsync(), primary: true);
+        _scan = Theme.Button("Scan", async (_, _) => await ScanAsync(), primary: true, glyph: "\uE721");
         _cancel = Theme.Button("Cancel", (_, _) => _cts?.Cancel());
         _cancel.Enabled = false;
         _up = Theme.Button("Up one level", (_, _) => ZoomUp());

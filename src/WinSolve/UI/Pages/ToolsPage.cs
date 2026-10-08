@@ -29,7 +29,7 @@ public sealed class ToolsPage : Page
         _filter = Theme.Combo(Filters.Select(f => f.Label).ToArray());
         _filter.SelectedIndexChanged += (_, _) => Fill();
 
-        _run = Theme.Button("Run selected", async (_, _) => await RunSelected(), primary: true);
+        _run = Theme.Button("Run selected", async (_, _) => await RunSelected(), primary: true, glyph: "\uE768");
         _runner.BusyChanged += busy => _run.Enabled = !busy;
 
         var toolbar = Theme.Row(_filter, _run,

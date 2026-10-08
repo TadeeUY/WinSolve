@@ -43,7 +43,10 @@ public static class Theme
     public static readonly Font H2 = new(DisplayFamily, 12f, FontStyle.Bold);
     public static readonly Font Big = new(DisplayFamily, 26f, FontStyle.Bold);
     public static readonly Font Mono = new("Consolas", 9f);
-    public static readonly Font Icons = new(FontExists("Segoe Fluent Icons") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets", 12f);
+    private static readonly string IconFamily = FontExists("Segoe Fluent Icons") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets";
+    public static readonly Font Icons = new(IconFamily, 12f);
+    public static readonly Font IconsSmall = new(IconFamily, 10f);
+    public static readonly Font IconsLarge = new(IconFamily, 18f);
 
     private static bool FontExists(string name)
     {
@@ -77,6 +80,18 @@ public static class Theme
         path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
         path.CloseFigure();
         return path;
+    }
+
+    private static readonly Dictionary<int, Icon> IconCache = [];
+
+    /// <summary>The WinSolve icon at the requested size (embedded resource).</summary>
+    public static Icon AppIcon(int size = 32)
+    {
+        if (IconCache.TryGetValue(size, out var cached)) return cached;
+        using var stream = typeof(Theme).Assembly.GetManifestResourceStream("WinSolve.ico");
+        var icon = stream is null ? SystemIcons.Application : new Icon(stream, size, size);
+        IconCache[size] = icon;
+        return icon;
     }
 
     [DllImport("dwmapi.dll")]
@@ -121,9 +136,9 @@ public static class Theme
         Margin = new Padding(0, 0, 0, 6),
     };
 
-    public static FlatBtn Button(string text, EventHandler? onClick = null, bool primary = false)
+    public static FlatBtn Button(string text, EventHandler? onClick = null, bool primary = false, string? glyph = null)
     {
-        var b = new FlatBtn(primary) { Text = text };
+        var b = new FlatBtn(primary) { Text = text, Glyph = glyph };
         if (onClick is not null) b.Click += onClick;
         return b;
     }
@@ -174,6 +189,9 @@ public static class Theme
             WrapMode = DataGridViewTriState.False,
         };
         g.AlternatingRowsDefaultCellStyle = g.DefaultCellStyle;
+        // Subtle row highlight under the mouse.
+        g.CellMouseEnter += (_, e) => { if (e.RowIndex >= 0 && !g.Rows[e.RowIndex].Selected) g.Rows[e.RowIndex].DefaultCellStyle.BackColor = Color.FromArgb(48, 48, 48); };
+        g.CellMouseLeave += (_, e) => { if (e.RowIndex >= 0 && e.RowIndex < g.Rows.Count) g.Rows[e.RowIndex].DefaultCellStyle.BackColor = Color.Empty; };
         g.CellFormatting += (_, e) => { if (e.Value is string s && s.Length > 0) { e.Value = Loc.T(s); e.FormattingApplied = true; } };
         typeof(DataGridView).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
             ?.SetValue(g, true);
@@ -244,6 +262,15 @@ public sealed class FlatBtn : Button
         set { _primary = value; ForeColor = value ? Color.White : Theme.Text; Invalidate(); }
     }
 
+    private string? _glyph;
+
+    /// <summary>Optional icon (Segoe Fluent Icons / MDL2 code point) drawn before the text.</summary>
+    public string? Glyph
+    {
+        get => _glyph;
+        set { _glyph = value; Padding = value is null ? new Padding(12, 3, 12, 3) : new Padding(34, 3, 12, 3); Invalidate(); }
+    }
+
     public FlatBtn(bool primary)
     {
         _primary = primary;
@@ -284,7 +311,15 @@ public sealed class FlatBtn : Button
             g.DrawPath(pen, path);
         }
 
-        TextRenderer.DrawText(g, Text, Font, ClientRectangle, Enabled ? ForeColor : Color.FromArgb(120, 120, 120),
+        var color = Enabled ? ForeColor : Color.FromArgb(120, 120, 120);
+        var textRect = ClientRectangle;
+        if (_glyph is not null)
+        {
+            TextRenderer.DrawText(g, _glyph, Theme.IconsSmall, new Rectangle(10, 0, 20, Height), color,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
+            textRect = new Rectangle(28, 0, Width - 34, Height);
+        }
+        TextRenderer.DrawText(g, Text, Font, textRect, color,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
     }
 }

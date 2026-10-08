@@ -6,11 +6,9 @@ namespace WinSolve.UI.Pages;
 public sealed class DashboardPage : Page
 {
     private readonly Stack _body = new(scroll: true);
-    private readonly Label _score = Theme.Label("--", Theme.Big);
-    private readonly Label _scoreCaption = Theme.Label("Health score", Theme.Small, Theme.Muted);
+    private readonly ScoreRing _ring = new();
     private readonly Label _summary = Theme.Label("Not scanned yet", Theme.H2);
     private readonly Label _scanStatus = Theme.Label("", Theme.Small, Theme.Muted);
-    private readonly ProgressLine _scoreBar = new() { Height = 4, Width = 160, Margin = new Padding(0, 6, 0, 0) };
     private readonly TableLayoutPanel _tiles = new() { ColumnCount = 4, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 8) };
     private readonly StackCard _issues = new();
     private readonly FlatBtn _scanButton;
@@ -21,26 +19,44 @@ public sealed class DashboardPage : Page
 
     public DashboardPage() : base("Home", "Overall health of this PC and the problems that need attention.")
     {
-        _scanButton = Theme.Button("Scan again", async (_, _) => await ScanAsync());
+        _scanButton = Theme.Button("Scan again", async (_, _) => await ScanAsync(), glyph: "\uE72C");
 
-        var hero = new Card { Height = 116, Padding = new Padding(20, 16, 20, 16) };
+        // Hero: score ring + summary + main actions.
+        var hero = new Card { Height = 156, Padding = new Padding(20, 16, 20, 16) };
         var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, BackColor = Color.Transparent };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var left = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false };
-        left.Controls.AddRange([_scoreCaption, _score, _scoreBar]);
-        var right = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false };
+        _ring.Anchor = AnchorStyles.Left;
+        var right = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, Dock = DockStyle.Fill, BackColor = Color.Transparent, WrapContents = false, Padding = new Padding(0, 14, 0, 0) };
         right.Controls.AddRange([
             _summary, _scanStatus,
-            Theme.Row(Theme.Button("Optimize now", (_, _) => Main.Navigate("optimize"), primary: true), _scanButton),
+            Theme.Row(Theme.Button("Optimize now", (_, _) => Main.Navigate("optimize"), primary: true, glyph: "\uE945"), _scanButton),
         ]);
-        grid.Controls.Add(left, 0, 0);
+        grid.Controls.Add(_ring, 0, 0);
         grid.Controls.Add(right, 1, 0);
         hero.Controls.Add(grid);
 
+        // Quick actions.
+        var actions = new TableLayoutPanel { ColumnCount = 4, Height = 92, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 8) };
+        (string Glyph, string Title, string Subtitle, string Target)[] quick =
+        [
+            ("\uE74D", "Clean junk files", "Temp files, caches and logs", "tools"),
+            ("\uEDA2", "Disk space", "See what takes up space", "space"),
+            ("\uE772", "Drivers", "Update or clean install", "drivers"),
+            ("\uE9D9", "Monitor", "Live usage and temperatures", "monitor"),
+        ];
+        for (int i = 0; i < quick.Length; i++)
+        {
+            actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+            var q = quick[i];
+            var tile = new ActionTile(q.Glyph, q.Title, q.Subtitle) { Dock = DockStyle.Fill, Margin = new Padding(0, 0, i == quick.Length - 1 ? 0 : 8, 0) };
+            tile.Click += (_, _) => Main.Navigate(q.Target);
+            actions.Controls.Add(tile, i, 0);
+        }
+
         for (int i = 0; i < 4; i++) _tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
 
-        _body.Add(hero, _tiles, _issues);
+        _body.Add(hero, actions, Theme.Label("This PC", Theme.H2), _tiles, _issues);
         AddRow(_body, fill: true);
     }
 
@@ -58,9 +74,8 @@ public sealed class DashboardPage : Page
         if (_scanning) return;
         _scanning = true;
         _scanButton.Enabled = false;
-        _score.Text = "--";
+        _ring.Score = null;
         _summary.Text = "Scanning...";
-        _scoreBar.Indeterminate = true;
 
         try
         {
@@ -75,7 +90,6 @@ public sealed class DashboardPage : Page
         }
         finally
         {
-            _scoreBar.Indeterminate = false;
             _scanning = false;
             _scanButton.Enabled = true;
             _scanButton.Text = "Scan again";
@@ -97,9 +111,7 @@ public sealed class DashboardPage : Page
     {
         SuspendLayout();
         var score = r.Score;
-        _score.Text = $"{score}";
-        _scoreCaption.Text = "Health score (out of 100)";
-        _scoreBar.Value = score / 100.0;
+        _ring.Score = score;
         _summary.Text = score >= 85 ? "Your PC is in good shape"
             : score >= 60 ? "A few things could be improved"
             : "Your PC needs attention";

@@ -52,6 +52,9 @@ public sealed class AppSettings
 
     public DateTime? LastUpdateCheck { get; set; }
 
+    /// <summary>Install new versions without asking (still SHA-256 verified).</summary>
+    public bool AutoInstallUpdates { get; set; }
+
     /// <summary>Automatic maintenance schedule: Off, Daily, Weekly or Monthly.</summary>
     public string MaintenanceSchedule { get; set; } = "Off";
 

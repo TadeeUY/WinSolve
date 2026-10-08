@@ -17,7 +17,7 @@ All-in-one Windows 10/11 maintenance tool: diagnostics, repair, cleanup, drivers
 | **Apps** | Uninstall or **force uninstall** desktop programs (silent uninstall + leftover folders, shortcuts and registry) and Microsoft Store apps (all users + deprovisioned). |
 | **Activation** | License status, activation with the OEM key stored in the firmware or a product key, Microsoft's activation troubleshooter. |
 | **Monitor** | Live CPU, RAM, GPU, disk and network usage with charts; GPU temperature (same source as Task Manager) and the ACPI CPU temperature when the firmware reports it. |
-| **Updates & maintenance** | Checks GitHub Releases daily and updates itself (SHA-256 verified). Optional scheduled background cleanup (daily/weekly/monthly). Before/after comparison of every optimization. Bug report zip from Settings. |
+| **Updates & maintenance** | Checks GitHub Releases at startup and every 4 hours; one-click "Update now" bar (or fully automatic updates), SHA-256 verified. Optional scheduled background cleanup (daily/weekly/monthly). Before/after comparison of every optimization. Bug report zip from Settings. |
 | **Languages** | English and Spanish (Settings → Language). |
 | **Error alerts** | Watches the event log in the background and pops up an alert with **Fix** / **Close** when Windows reports an error. Runs from the notification area. |
 

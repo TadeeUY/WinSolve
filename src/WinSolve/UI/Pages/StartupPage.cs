@@ -15,7 +15,7 @@ public sealed class StartupPage : Page
         "Disable is instant and reversible (same as Task Manager). Remove deletes the startup entry for good; the program stays installed.")
     {
         AddRow(Theme.Row(
-            Theme.Button("Remove selected", async (_, _) => await RemoveSelected(), primary: true),
+            Theme.Button("Remove selected", async (_, _) => await RemoveSelected(), primary: true, glyph: "\uE74D"),
             Theme.Button("Refresh", async (_, _) => await FillAsync()),
             Theme.Button("Open Startup folder", (_, _) => ProcessRunner.ShellOpen(Environment.GetFolderPath(Environment.SpecialFolder.Startup))),
             Theme.Button("Task Scheduler", (_, _) => ProcessRunner.ShellOpen("taskschd.msc"))));
