@@ -36,5 +36,6 @@ The UI is Windows Forms written entirely in code, so it builds on Windows, Linux
 ## Notes
 
 - WinSolve requires administrator rights (most repairs do).
-- Every system change is logged to `%LocalAppData%\WinSolve\logs`.
-- Settings live in `%AppData%\WinSolve\settings.json`.
+- Every system change is logged to `%ProgramData%\WinSolve\logs`.
+- Settings live in `%ProgramData%\WinSolve\settings.json`.
+- See [SECURITY.md](SECURITY.md) for the security review.
