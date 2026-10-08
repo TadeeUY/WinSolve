@@ -140,10 +140,7 @@ public sealed class DriversPage : Page
         await _runner.RunAsync("NVIDIA clean install", async (log, progress, ct) =>
         {
             var file = await DriverService.DownloadAsync(latest.DownloadUrl, log, progress, ct);
-            if (!DriverService.HasValidSignature(file, GpuVendor.Nvidia, out var signer))
-                throw new InvalidOperationException($"The downloaded file is not signed by NVIDIA (signer: {signer ?? "none"}). Installation stopped.");
-            log("Signature verified: NVIDIA Corporation.");
-            await DriverService.CleanInstallAsync(GpuVendor.Nvidia, file, log, ct);
+            await DriverService.CleanInstallAsync(GpuVendor.Nvidia, file, requireVendorSignature: true, log, ct);
         });
         _gpus = DriverService.GetGpus();
         _latest.Clear();
@@ -161,16 +158,15 @@ public sealed class DriversPage : Page
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
-        if (!DriverService.HasValidSignature(dlg.FileName, gpu.Vendor, out var signer))
-        {
-            if (!ConfirmDanger($"This file is not digitally signed by {gpu.VendorName} (signer: {signer ?? "none"}).\n\nOnly continue if you are sure it is a genuine driver installer. Continue anyway?"))
-                return;
-        }
+        var signed = DriverService.HasValidSignature(dlg.FileName, gpu.Vendor, out var signer);
+        if (!signed && !ConfirmDanger($"This file is not digitally signed by {gpu.VendorName} (signer: {signer ?? "none"}).\n\n" +
+                                      "It will run with administrator rights. Only continue if you are sure it is a genuine driver installer. Continue anyway?"))
+            return;
 
         if (!ConfirmDanger($"Clean install using {Path.GetFileName(dlg.FileName)}?\n\nEvery installed {gpu.VendorName} display driver is removed first, then the installer runs. The screen will flicker."))
             return;
 
-        await _runner.RunAsync($"{gpu.VendorName} clean install", (log, _, ct) => DriverService.CleanInstallAsync(gpu.Vendor, dlg.FileName, log, ct));
+        await _runner.RunAsync($"{gpu.VendorName} clean install", (log, _, ct) => DriverService.CleanInstallAsync(gpu.Vendor, dlg.FileName, requireVendorSignature: signed, log, ct));
         _gpus = DriverService.GetGpus();
         Render();
         AskReboot(this, "Restart now to finish the driver installation?");

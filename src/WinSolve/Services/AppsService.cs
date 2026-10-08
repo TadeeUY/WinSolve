@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 using WinSolve.Core;
 
@@ -166,7 +167,7 @@ public static class AppsService
                         UninstallString = uninstallString,
                         QuietUninstallString = k.GetValue("QuietUninstallString") as string ?? "",
                         SizeBytes = (k.GetValue("EstimatedSize") is int kb ? kb : 0) * 1024L,
-                        MsiProductCode = isMsi && sub.StartsWith('{') ? sub : null,
+                        MsiProductCode = isMsi && MsiGuid.IsMatch(sub) ? sub : null,
                         Hive = hive,
                         View = view,
                         KeyPath = UninstallPath + "\\" + sub,
@@ -184,66 +185,119 @@ public static class AppsService
             .OrderBy(p => p.DisplayName, StringComparer.CurrentCultureIgnoreCase).ToList();
     }
 
-    /// <summary>Runs the program's own uninstaller (interactive).</summary>
-    public static async Task UninstallAsync(InstalledProgram p, Action<string> log, CancellationToken ct = default)
+    private static readonly Regex MsiGuid = new(@"^\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Splits an UninstallString into executable and arguments the way CreateProcess does,
+    /// so it can be started directly instead of through cmd.exe (no shell metacharacters).
+    /// </summary>
+    public static (string Exe, string Args)? SplitCommand(string command)
     {
-        var command = p.MsiProductCode is not null ? $"msiexec.exe /x {p.MsiProductCode}" : p.UninstallString;
-        log($"> {command}");
-        var r = await ProcessRunner.RunAsync("cmd.exe", $"/d /c \"{command}\"", log, ct);
-        log(r.Success ? "Uninstaller finished." : $"Uninstaller exited with code {r.ExitCode}.");
+        command = command.Trim();
+        if (command.Length == 0) return null;
+        if (command[0] == '"')
+        {
+            var end = command.IndexOf('"', 1);
+            if (end < 0) return null;
+            return (command[1..end], command[(end + 1)..].Trim());
+        }
+        // Unquoted path with spaces: take the shortest prefix that is an existing file.
+        var parts = command.Split(' ');
+        for (int i = 1; i <= parts.Length; i++)
+        {
+            var candidate = string.Join(' ', parts.Take(i));
+            if (File.Exists(candidate)) return (candidate, string.Join(' ', parts.Skip(i)));
+            if (File.Exists(candidate + ".exe")) return (candidate + ".exe", string.Join(' ', parts.Skip(i)));
+        }
+        return (parts[0], string.Join(' ', parts.Skip(1)));
+    }
+
+    private static (string Exe, string Args)? Command(InstalledProgram p, bool silent)
+    {
+        if (p.MsiProductCode is { } code && MsiGuid.IsMatch(code))
+            return ("msiexec.exe", silent ? $"/x {code} /qn /norestart" : $"/x {code}");
+
+        if (silent && p.QuietUninstallString.Length > 0) return SplitCommand(p.QuietUninstallString);
+        var cmd = SplitCommand(p.UninstallString);
+        if (cmd is not { } c) return null;
+
+        if (c.Exe.EndsWith("msiexec.exe", StringComparison.OrdinalIgnoreCase) || c.Exe.Equals("msiexec", StringComparison.OrdinalIgnoreCase))
+        {
+            // Only accept "/I{GUID}" or "/X{GUID}" from the registry; never arbitrary msiexec arguments.
+            var m = Regex.Match(c.Args, @"\{[0-9A-Fa-f-]{36}\}");
+            if (!m.Success) return null;
+            return ("msiexec.exe", silent ? $"/x {m.Value} /qn /norestart" : $"/x {m.Value}");
+        }
+        if (!silent) return c;
+
+        var exeName = Path.GetFileName(c.Exe);
+        var extra = exeName.StartsWith("unins0", StringComparison.OrdinalIgnoreCase) ? "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" // Inno Setup
+            : exeName.Contains("uninst", StringComparison.OrdinalIgnoreCase) ? "/S"                                               // NSIS
+            : "/S /quiet /silent";
+        return (c.Exe, (c.Args + " " + extra).Trim());
     }
 
     /// <summary>
-    /// Force uninstall: silent uninstaller (if any), then kills its processes and deletes the
-    /// install folder, leftover data folders, shortcuts and the registry entry.
+    /// Starts an uninstaller. Per-user (HKCU) entries can be written by any program the user
+    /// runs, so they are started with a non-administrator token (runas /trustlevel) instead
+    /// of inheriting WinSolve's elevation.
     /// </summary>
-    public static async Task ForceUninstallAsync(InstalledProgram p, Action<string> log, CancellationToken ct = default)
+    private static async Task RunUninstallerAsync(InstalledProgram p, (string Exe, string Args) cmd, Action<string> log, TimeSpan timeout, CancellationToken ct)
     {
-        // 1) Silent uninstall.
-        var silent = SilentCommand(p);
-        if (silent is not null)
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        linked.CancelAfter(timeout);
+        try
         {
-            log($"Running the uninstaller silently: {silent}");
-            try
+            if (p.Hive == RegistryHive.CurrentUser)
             {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeout.CancelAfter(TimeSpan.FromMinutes(5));
-                var r = await ProcessRunner.RunAsync("cmd.exe", $"/d /c \"{silent}\"", log, timeout.Token);
+                log($"Running without administrator rights: {cmd.Exe} {cmd.Args}");
+                var psi = new ProcessStartInfo(ProcessRunner.Resolve("runas.exe")) { UseShellExecute = false, CreateNoWindow = true };
+                psi.ArgumentList.Add("/trustlevel:0x20000");
+                psi.ArgumentList.Add($"\"{cmd.Exe}\" {cmd.Args}".Trim());
+                using (var runas = Process.Start(psi)) await runas!.WaitForExitAsync(linked.Token);
+                // runas returns immediately; wait for the uninstaller itself.
+                var name = Path.GetFileNameWithoutExtension(cmd.Exe);
+                while (Process.GetProcessesByName(name).Length > 0) await Task.Delay(1000, linked.Token);
+            }
+            else
+            {
+                log($"> {cmd.Exe} {cmd.Args}");
+                var r = await ProcessRunner.RunAsync(cmd.Exe, cmd.Args, log, linked.Token);
                 log($"Uninstaller exit code: {r.ExitCode}");
             }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                log("The uninstaller took too long; continuing with forced removal.");
-            }
         }
-        // Inno/NSIS uninstallers copy themselves to %TEMP% and keep running after the parent exits.
-        await Task.Delay(3000, ct);
-
-        // 2) Kill processes running from the install folder.
-        var folder = SafeFolder(p.InstallLocation);
-        if (folder is not null)
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            foreach (var proc in Process.GetProcesses())
-            {
-                try
-                {
-                    var path = proc.MainModule?.FileName;
-                    if (path is not null && path.StartsWith(folder + "\\", StringComparison.OrdinalIgnoreCase))
-                    {
-                        log($"Closing {proc.ProcessName} (PID {proc.Id})");
-                        proc.Kill(entireProcessTree: true);
-                    }
-                }
-                catch { /* protected or already gone */ }
-                finally { proc.Dispose(); }
-            }
+            log("The uninstaller took too long; continuing.");
         }
+    }
 
-        // 3) Delete the install folder and data folders with the same name.
-        var leftovers = new List<string>();
-        if (folder is not null && Directory.Exists(folder)) leftovers.Add(folder);
-        var leaf = folder is null ? null : Path.GetFileName(folder);
-        if (leaf is { Length: >= 4 } && !CommonFolderNames.Contains(leaf))
+    /// <summary>Runs the program's own uninstaller (interactive).</summary>
+    public static async Task UninstallAsync(InstalledProgram p, Action<string> log, CancellationToken ct = default)
+    {
+        if (Command(p, silent: false) is not { } cmd)
+        {
+            log("This program has no usable uninstall command. Use Force uninstall instead.");
+            return;
+        }
+        await RunUninstallerAsync(p, cmd, log, TimeSpan.FromMinutes(30), ct);
+        log("Uninstaller finished.");
+    }
+
+    /// <summary>
+    /// Folders that a force uninstall would delete. Paths come from the registry, so they are
+    /// validated: never system or shell folders, never junctions, and for per-user entries
+    /// only folders inside the current user's profile.
+    /// </summary>
+    public static List<string> GetForceRemovalFolders(InstalledProgram p)
+    {
+        var result = new List<string>();
+        var folder = ValidateFolder(p, p.InstallLocation);
+        if (folder is null) return result;
+        result.Add(folder);
+
+        var leaf = Path.GetFileName(folder);
+        if (leaf.Length >= 4 && !CommonFolderNames.Contains(leaf))
         {
             foreach (var baseDir in new[]
                      {
@@ -252,15 +306,67 @@ public static class AppsService
                          Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
                      })
             {
-                var candidate = Path.Combine(baseDir, leaf);
-                if (Directory.Exists(candidate)) leftovers.Add(candidate);
+                if (ValidateFolder(p, Path.Combine(baseDir, leaf), allowProfileForMachine: true) is { } d) result.Add(d);
             }
         }
-        foreach (var dir in leftovers.Distinct(StringComparer.OrdinalIgnoreCase))
+        return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static string? ValidateFolder(InstalledProgram p, string path, bool allowProfileForMachine = false)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        string full;
+        try { full = Path.GetFullPath(path.Trim().Trim('"')).TrimEnd('\\'); }
+        catch { return null; }
+
+        if (!Directory.Exists(full) || SafePath.IsProtectedFolder(full) || SafePath.HasReparsePoint(full)) return null;
+
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (p.Hive == RegistryHive.CurrentUser && !SafePath.IsSameOrInside(full, profile)) return null;
+        if (p.Hive == RegistryHive.LocalMachine && !allowProfileForMachine && SafePath.IsSameOrInside(full, Path.GetDirectoryName(profile)!)) return null;
+        return full;
+    }
+
+    /// <summary>
+    /// Force uninstall: silent uninstaller (if any), then closes its processes and deletes the
+    /// given folders (from <see cref="GetForceRemovalFolders"/>), its shortcuts and its registry entry.
+    /// </summary>
+    public static async Task ForceUninstallAsync(InstalledProgram p, IReadOnlyList<string> folders, Action<string> log, CancellationToken ct = default)
+    {
+        // 1) Silent uninstall.
+        if (Command(p, silent: true) is { } silent)
+            await RunUninstallerAsync(p, silent, log, TimeSpan.FromMinutes(5), ct);
+        // Inno/NSIS uninstallers copy themselves to %TEMP% and keep running after the parent exits.
+        await Task.Delay(3000, ct);
+
+        // 2) Close processes running from the folders.
+        foreach (var proc in Process.GetProcesses())
         {
             try
             {
-                foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                var path = proc.MainModule?.FileName;
+                if (path is not null && folders.Any(f => SafePath.IsSameOrInside(path, f)))
+                {
+                    log($"Closing {proc.ProcessName} (PID {proc.Id})");
+                    proc.Kill(entireProcessTree: true);
+                }
+            }
+            catch { /* protected or already gone */ }
+            finally { proc.Dispose(); }
+        }
+
+        // 3) Delete the folders (re-checked right before deleting).
+        foreach (var dir in folders)
+        {
+            if (!Directory.Exists(dir)) continue;
+            if (SafePath.IsProtectedFolder(dir) || SafePath.HasReparsePoint(dir))
+            {
+                log($"Skipped {dir}: protected location or junction.");
+                continue;
+            }
+            try
+            {
+                foreach (var f in Directory.EnumerateFiles(dir, "*", SafePath.NoLinks(recursive: true)))
                     try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
                 Directory.Delete(dir, recursive: true);
                 log($"Deleted folder: {dir}");
@@ -272,18 +378,18 @@ public static class AppsService
             }
         }
 
-        // 4) Shortcuts in the Start menu and on the desktop that point to the removed folder.
-        if (folder is not null)
+        // 4) Start menu and desktop shortcuts that point into the removed folders.
+        foreach (var folder in folders)
         {
             var shortcutScript = $$"""
-                $target = {{Quote(folder)}}
+                $target = {{Quote(folder.TrimEnd('\\') + "\\")}}
                 $shell = New-Object -ComObject WScript.Shell
                 $roots = @([Environment]::GetFolderPath('StartMenu'), [Environment]::GetFolderPath('CommonStartMenu'),
                            [Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('CommonDesktopDirectory'))
                 foreach ($r in $roots) {
                     Get-ChildItem -Path $r -Filter *.lnk -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
                         $t = $shell.CreateShortcut($_.FullName).TargetPath
-                        if ($t -and $t.StartsWith($target, [StringComparison]::OrdinalIgnoreCase)) { Remove-Item $_.FullName -Force; "Removed shortcut: $($_.Name)" }
+                        if ($t -and $t.StartsWith($target, [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $_.FullName -Force; "Removed shortcut: $($_.Name)" }
                     }
                 }
                 """;
@@ -302,65 +408,23 @@ public static class AppsService
             log($"Could not remove the registry entry: {ex.Message}");
         }
 
-        Logger.Write($"Force uninstall: {p.DisplayName}");
+        Logger.Write($"Force uninstall: {p.DisplayName} ({string.Join("; ", folders)})");
     }
 
     private static readonly HashSet<string> CommonFolderNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "Microsoft", "Google", "Adobe", "Intel", "NVIDIA", "NVIDIA Corporation", "AMD", "Packages", "Programs", "Temp", "Common Files",
-        "Mozilla", "Apple", "Windows", "Steam", "Epic Games", "Riot Games",
+        "Mozilla", "Apple", "Windows", "Steam", "Epic Games", "Riot Games", "Roaming", "Local", "LocalLow", "Application Data",
     };
-
-    /// <summary>Only folders at least two levels deep, and never system folders.</summary>
-    private static string? SafeFolder(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return null;
-        try
-        {
-            var full = Path.GetFullPath(path).TrimEnd('\\');
-            var depth = full.Split('\\', StringSplitOptions.RemoveEmptyEntries).Length;
-            if (depth < 3) return null;
-            string[] forbidden =
-            [
-                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFiles),
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ];
-            if (forbidden.Any(f => f.Length > 0 && (full.Equals(f, StringComparison.OrdinalIgnoreCase)
-                                                    || f.StartsWith(full + "\\", StringComparison.OrdinalIgnoreCase))))
-                return null;
-            if (full.StartsWith(forbidden[0] + "\\", StringComparison.OrdinalIgnoreCase)) return null;
-            return full;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    /// <summary>Best guess at a silent uninstall command.</summary>
-    private static string? SilentCommand(InstalledProgram p)
-    {
-        if (p.MsiProductCode is not null) return $"msiexec.exe /x {p.MsiProductCode} /qn /norestart";
-        if (p.QuietUninstallString.Length > 0) return p.QuietUninstallString;
-        var u = p.UninstallString;
-        if (u.Length == 0) return null;
-        if (u.Contains("msiexec", StringComparison.OrdinalIgnoreCase))
-            return u.Replace("/I", "/X", StringComparison.OrdinalIgnoreCase) + " /qn /norestart";
-        if (u.Contains("unins0", StringComparison.OrdinalIgnoreCase)) return u + " /VERYSILENT /SUPPRESSMSGBOXES /NORESTART";
-        if (u.Contains("uninst", StringComparison.OrdinalIgnoreCase) || u.Contains("uninstall.exe", StringComparison.OrdinalIgnoreCase)) return u + " /S";
-        return u + " /S /quiet /silent";
-    }
 
     private static void ScheduleDeleteOnReboot(string dir)
     {
         try
         {
-            foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+            var opts = SafePath.NoLinks(recursive: true);
+            foreach (var f in Directory.EnumerateFiles(dir, "*", opts))
                 MoveFileEx(f, null, 4 /* MOVEFILE_DELAY_UNTIL_REBOOT */);
-            foreach (var d in Directory.EnumerateDirectories(dir, "*", SearchOption.AllDirectories).OrderByDescending(x => x.Length))
+            foreach (var d in Directory.EnumerateDirectories(dir, "*", opts).OrderByDescending(x => x.Length))
                 MoveFileEx(d, null, 4);
             MoveFileEx(dir, null, 4);
         }

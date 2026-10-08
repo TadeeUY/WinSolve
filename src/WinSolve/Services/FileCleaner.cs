@@ -9,17 +9,18 @@ public static class FileCleaner
     public static long DeleteContents(string directory, TaskContext ctx, string pattern = "*", bool recursive = true)
     {
         if (!Directory.Exists(directory)) return 0;
+        if (SafePath.HasReparsePoint(directory))
+        {
+            // Never follow a junction/symlink planted in a user-writable folder.
+            ctx.Log($"  Skipped {directory}: it is (or is inside) a junction or symbolic link.");
+            return 0;
+        }
         long freed = 0;
         int skipped = 0;
 
         try
         {
-            var enumOptions = new EnumerationOptions
-            {
-                RecurseSubdirectories = recursive,
-                IgnoreInaccessible = true,
-                AttributesToSkip = FileAttributes.ReparsePoint, // never follow junctions
-            };
+            var enumOptions = SafePath.NoLinks(recursive); // never follow junctions
 
             foreach (var file in Directory.EnumerateFiles(directory, pattern, enumOptions))
             {

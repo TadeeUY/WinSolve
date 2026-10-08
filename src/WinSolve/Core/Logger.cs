@@ -1,12 +1,11 @@
 namespace WinSolve.Core;
 
-/// <summary>Plain text log in %LocalAppData%\WinSolve\logs.</summary>
+/// <summary>Plain text log in %ProgramData%\WinSolve\logs (administrators-only).</summary>
 public static class Logger
 {
     private static readonly object Gate = new();
 
-    public static string LogDirectory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinSolve", "logs");
+    public static string LogDirectory => Path.Combine(SafePath.DataFolder, "logs");
 
     public static void Write(string message)
     {

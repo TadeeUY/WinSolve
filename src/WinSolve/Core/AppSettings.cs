@@ -3,10 +3,13 @@ using WinSolve.Services;
 
 namespace WinSolve.Core;
 
-/// <summary>User preferences, stored in %AppData%\WinSolve\settings.json.</summary>
+/// <summary>Preferences, stored in %ProgramData%\WinSolve\settings.json (administrators-only).</summary>
 public sealed class AppSettings
 {
-    public static string FilePath { get; } = Path.Combine(
+    public static string FilePath => Path.Combine(SafePath.DataFolder, "settings.json");
+
+    // Location used by version 0.1.0; read once to migrate.
+    private static readonly string LegacyPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WinSolve", "settings.json");
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
@@ -53,8 +56,9 @@ public sealed class AppSettings
     {
         try
         {
-            if (File.Exists(FilePath))
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath)) ?? new AppSettings();
+            var path = File.Exists(FilePath) ? FilePath : File.Exists(LegacyPath) ? LegacyPath : null;
+            if (path is not null)
+                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
         }
         catch (Exception ex)
         {

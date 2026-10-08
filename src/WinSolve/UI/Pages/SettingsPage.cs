@@ -87,6 +87,8 @@ public sealed class SettingsPage : Page
     public override async void OnShown()
     {
         _autoStart.Checked = await Task.Run(AutoStart.IsEnabled);
+        _autoStart.Enabled = AutoStart.IsAllowed || _autoStart.Checked;
+        if (!AutoStart.IsAllowed) _autoStart.Text = "Start WinSolve with Windows (requires an all-users install)";
     }
 
     private sealed record TweakItem(Tweak Tweak)
@@ -167,8 +169,9 @@ public sealed class SettingsPage : Page
         s.AccentColor = _accent;
         s.Save();
 
-        if (_autoStart.Checked != await Task.Run(AutoStart.IsEnabled))
-            await AutoStart.SetAsync(_autoStart.Checked);
+        if (_autoStart.Checked != await Task.Run(AutoStart.IsEnabled) && !await AutoStart.SetAsync(_autoStart.Checked))
+            Info("Start with Windows is only available when WinSolve is installed for all users (in Program Files). " +
+                 "Running it elevated at sign-in from a folder your user account can write to would let other programs gain administrator rights.");
 
         ErrorMonitor.Instance.Apply();
 

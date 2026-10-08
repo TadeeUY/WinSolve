@@ -47,8 +47,6 @@ public static class DriverService
         return c;
     }
 
-    public static string DownloadFolder { get; } = Path.Combine(Path.GetTempPath(), "WinSolve", "Drivers");
-
     // ═══════════════════ Detection ═══════════════════
 
     public static List<GpuInfo> GetGpus()
@@ -153,23 +151,31 @@ public static class DriverService
 
     // ═══════════════════ Download ═══════════════════
 
+    /// <summary>Only official NVIDIA download hosts over HTTPS are accepted.</summary>
+    private static bool IsTrustedDownload(Uri uri)
+        => uri.Scheme == Uri.UriSchemeHttps
+           && (uri.Host.Equals("nvidia.com", StringComparison.OrdinalIgnoreCase) || uri.Host.EndsWith(".nvidia.com", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Downloads an installer into a fresh folder that only administrators can write to,
+    /// so a non-elevated process cannot swap the file before it is executed.
+    /// </summary>
     public static async Task<string> DownloadAsync(string url, Action<string> log, Action<int, int> progress, CancellationToken ct)
     {
-        Directory.CreateDirectory(DownloadFolder);
-        var file = Path.Combine(DownloadFolder, Path.GetFileName(new Uri(url).LocalPath));
+        var uri = new Uri(url);
+        if (!IsTrustedDownload(uri)) throw new InvalidOperationException($"Refusing to download from an untrusted location: {uri.Host}");
+
+        var file = Path.Combine(SafePath.CreateAdminOnlyFolder("Drivers"), Path.GetFileName(uri.LocalPath));
         log($"Downloading {url}");
 
-        using var response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await Http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
+        if (!IsTrustedDownload(response.RequestMessage?.RequestUri ?? uri))
+            throw new InvalidOperationException("The download was redirected to an untrusted location.");
         var total = response.Content.Headers.ContentLength ?? 0;
-        if (File.Exists(file) && new FileInfo(file).Length == total && total > 0)
-        {
-            log("Already downloaded.");
-            return file;
-        }
 
         await using var source = await response.Content.ReadAsStreamAsync(ct);
-        await using var target = File.Create(file);
+        await using var target = new FileStream(file, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         var buffer = new byte[1 << 16];
         long done = 0;
         int read, lastPct = -1;
@@ -192,35 +198,18 @@ public static class DriverService
         return file;
     }
 
-    /// <summary>
-    /// Checks the Authenticode signature of an installer and that the signer belongs to the GPU vendor.
-    /// </summary>
-    public static bool HasValidSignature(string file, GpuVendor vendor, out string? signer)
+    /// <summary>Signer names accepted for each vendor's driver installers.</summary>
+    public static string[] TrustedSigners(GpuVendor vendor) => vendor switch
     {
-        signer = null;
-        try
-        {
-            var r = ProcessRunner.PowerShellAsync(
-                $"$s = Get-AuthenticodeSignature -LiteralPath '{file.Replace("'", "''")}'; \"$($s.Status)|$($s.SignerCertificate.Subject)\"")
-                .GetAwaiter().GetResult();
-            var line = r.Output.Trim().Split('\n').LastOrDefault()?.Trim() ?? "";
-            var parts = line.Split('|', 2);
-            if (parts.Length < 2) return false;
-            signer = parts[1];
-            var expected = vendor switch
-            {
-                GpuVendor.Nvidia => "NVIDIA Corporation",
-                GpuVendor.Amd => "Advanced Micro Devices",
-                GpuVendor.Intel => "Intel Corporation",
-                _ => "\0",
-            };
-            return parts[0] == "Valid" && signer.Contains(expected, StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return false;
-        }
-    }
+        GpuVendor.Nvidia => ["NVIDIA Corporation"],
+        GpuVendor.Amd => ["Advanced Micro Devices, Inc.", "Advanced Micro Devices Inc.", "Advanced Micro Devices INC."],
+        GpuVendor.Intel => ["Intel Corporation"],
+        _ => [],
+    };
+
+    /// <summary>Checks the Authenticode signature and that the signer is the GPU vendor.</summary>
+    public static bool HasValidSignature(string file, GpuVendor vendor, out string? signer)
+        => Authenticode.IsSignedBy(file, TrustedSigners(vendor), out signer);
 
     // ═══════════════════ Clean install ═══════════════════
 
@@ -258,7 +247,7 @@ public static class DriverService
                          Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "D3DSCache"),
                      })
             {
-                try { if (Directory.Exists(dir)) { Directory.Delete(dir, true); log($"Cleared {dir}"); } } catch { }
+                ClearCache(dir, log);
             }
         }
         else if (vendor == GpuVendor.Amd)
@@ -270,48 +259,78 @@ public static class DriverService
                          Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "D3DSCache"),
                      })
             {
-                try { if (Directory.Exists(dir)) { Directory.Delete(dir, true); log($"Cleared {dir}"); } } catch { }
+                ClearCache(dir, log);
             }
         }
     }
 
+    private static void ClearCache(string dir, Action<string> log)
+    {
+        if (!Directory.Exists(dir) || SafePath.HasReparsePoint(dir)) return;
+        try { Directory.Delete(dir, true); log($"Cleared {dir}"); } catch { /* in use */ }
+    }
+
     /// <summary>
     /// Clean install: restore point, full removal of the old driver, then the new installer.
-    /// NVIDIA packages are installed silently with -clean; AMD's installer is opened so you can
-    /// pick "Factory Reset" / the components you want.
+    /// The installer is copied into an administrators-only folder and kept open (no writes,
+    /// no deletes) while its signature is verified and it runs, so it cannot be swapped.
+    /// NVIDIA packages install silently with -clean; AMD's installer opens so you can pick
+    /// "Factory Reset" and the components you want.
     /// </summary>
-    public static async Task CleanInstallAsync(GpuVendor vendor, string installer, Action<string> log, CancellationToken ct)
+    public static async Task CleanInstallAsync(GpuVendor vendor, string installer, bool requireVendorSignature, Action<string> log, CancellationToken ct)
     {
+        var protectedRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSolve", "Drivers");
+        string safeCopy;
+        if (SafePath.IsSameOrInside(installer, protectedRoot))
+        {
+            safeCopy = installer;
+        }
+        else
+        {
+            log("Copying the installer to a protected folder...");
+            safeCopy = Path.Combine(SafePath.CreateAdminOnlyFolder("Drivers"), Path.GetFileName(installer));
+            await using var src = new FileStream(installer, FileMode.Open, FileAccess.Read, FileShare.Read);
+            await using var dst = new FileStream(safeCopy, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            await src.CopyToAsync(dst, ct);
+        }
+
+        // Hold the file open (read sharing only) until the installer has finished.
+        await using var lockHandle = new FileStream(safeCopy, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (!HasValidSignature(safeCopy, vendor, out var signer))
+        {
+            if (requireVendorSignature)
+                throw new InvalidOperationException($"The installer is not signed by {vendor} (signer: {signer ?? "none"}). Installation stopped.");
+            log($"Warning: installer signer is '{signer ?? "none"}', continuing because you confirmed it.");
+        }
+        else
+        {
+            log($"Signature verified: {signer}");
+        }
+
         var ctx = new TaskContext(log, ct);
         if (AppSettings.Current.CreateRestorePoint)
             await TaskCatalog.CreateRestorePoint(ctx, "WinSolve - before graphics driver clean install");
 
         await RemoveDisplayDriversAsync(vendor, log, ct);
 
-        log($"Starting the installer: {Path.GetFileName(installer)}");
-        switch (vendor)
+        log($"Starting the installer: {Path.GetFileName(safeCopy)}");
+        if (vendor == GpuVendor.Nvidia)
         {
-            case GpuVendor.Nvidia:
-            {
-                log("Installing silently with a clean profile (-s -clean -noreboot). This takes a few minutes...");
-                var r = await ProcessRunner.RunAsync(installer, "-s -clean -noreboot -noeula", log, ct);
-                log(r.Success ? "NVIDIA driver installed." : $"Installer exit code: {r.ExitCode}. If nothing was installed, run the downloaded file manually.");
-                break;
-            }
-            case GpuVendor.Amd:
-            {
+            log("Installing silently with a clean profile (-s -clean -noreboot). This takes a few minutes...");
+            var r = await ProcessRunner.RunAsync(safeCopy, "-s -clean -noreboot -noeula", log, ct);
+            log(r.Success ? "NVIDIA driver installed." : $"Installer exit code: {r.ExitCode}. If nothing was installed, run the installer manually.");
+        }
+        else
+        {
+            if (vendor == GpuVendor.Amd)
                 log("The AMD installer is opening. Choose 'Factory Reset' if it is offered, then follow the steps.");
-                using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(installer) { UseShellExecute = true });
-                if (p is not null) await p.WaitForExitAsync(ct);
-                log("AMD installer closed.");
-                break;
-            }
-            default:
+            using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(safeCopy)
             {
-                using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(installer) { UseShellExecute = true });
-                if (p is not null) await p.WaitForExitAsync(ct);
-                break;
-            }
+                UseShellExecute = true,
+                WorkingDirectory = Path.GetDirectoryName(safeCopy)!,
+            });
+            if (p is not null) await p.WaitForExitAsync(ct);
+            log("Installer closed.");
         }
         log("Restart the PC to finish the clean install.");
     }
@@ -382,6 +401,7 @@ public static class DriverService
     {
         var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "WinSolve Driver Backup", DateTime.Now.ToString("yyyy-MM-dd_HHmm"));
         Directory.CreateDirectory(folder);
+        if (SafePath.HasReparsePoint(folder)) throw new InvalidOperationException("The backup folder is a link; choose another location.");
         log($"Exporting drivers to {folder}");
         await ProcessRunner.RunAsync("dism.exe", $"/Online /Export-Driver /Destination:\"{folder}\" /English", log, ct);
         return folder;

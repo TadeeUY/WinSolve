@@ -15,6 +15,25 @@ public sealed record ProcessResult(int ExitCode, string Output)
 /// </summary>
 public static class ProcessRunner
 {
+    /// <summary>
+    /// Turns a bare tool name ("cmd.exe", "pnputil.exe", "devmgmt.msc") into its full path in
+    /// System32 or the Windows folder. Process search order checks the application folder
+    /// and the current directory first, where a planted copy would otherwise run elevated.
+    /// </summary>
+    public static string Resolve(string fileName)
+    {
+        if (fileName.IndexOfAny(['\\', '/', ':']) >= 0) return fileName;
+        var name = Path.HasExtension(fileName) ? fileName : fileName + ".exe";
+        if (name.Equals("powershell.exe", StringComparison.OrdinalIgnoreCase))
+            return Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+        foreach (var dir in new[] { Environment.SystemDirectory, Environment.GetFolderPath(Environment.SpecialFolder.Windows) })
+        {
+            var candidate = Path.Combine(dir, name);
+            if (File.Exists(candidate)) return candidate;
+        }
+        return fileName;
+    }
+
     public static async Task<ProcessResult> RunAsync(
         string fileName,
         string arguments,
@@ -22,8 +41,9 @@ public static class ProcessRunner
         CancellationToken ct = default,
         Encoding? encoding = null)
     {
-        var psi = new ProcessStartInfo(fileName, arguments)
+        var psi = new ProcessStartInfo(Resolve(fileName), arguments)
         {
+            WorkingDirectory = Environment.SystemDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
@@ -99,7 +119,7 @@ public static class ProcessRunner
     {
         try
         {
-            Process.Start(new ProcessStartInfo(target) { UseShellExecute = true, Arguments = arguments ?? "" });
+            Process.Start(new ProcessStartInfo(Resolve(target)) { UseShellExecute = true, Arguments = arguments ?? "" });
         }
         catch (Exception ex)
         {

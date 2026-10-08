@@ -299,7 +299,7 @@ public sealed class HardwarePage : Page
             {
                 batCard.Add(Theme.Row(Theme.Button("Generate battery report", async (_, _) =>
                 {
-                    var file = Path.Combine(Path.GetTempPath(), "battery-report.html");
+                    var file = Path.Combine(SafePath.CreateAdminOnlyFolder("Reports"), "battery-report.html");
                     await ProcessRunner.RunAsync("powercfg.exe", $"/batteryreport /output \"{file}\"");
                     ProcessRunner.ShellOpen(file);
                 })));

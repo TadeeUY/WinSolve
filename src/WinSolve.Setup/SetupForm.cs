@@ -55,8 +55,8 @@ namespace WinSolve.Setup
             _options.Paint += (s, e) => PaintCard(e.Graphics, _options.ClientRectangle);
 
             var scopeLabel = new Label { Text = "Install for", Font = new Font("Segoe UI", 9.5f, FontStyle.Bold), AutoSize = true, Location = new Point(16, 12), BackColor = Card };
-            _me = Radio("Only me", "No administrator rights needed  ·  " + Shorten(Installer.PerUserDir), 36);
-            _all = Radio("All users of this PC", "Requires administrator  ·  " + Installer.AllUsersDir, 84);
+            _me = Radio("Only me", "Installs in your user folder  ·  " + Shorten(Installer.PerUserDir), 36);
+            _all = Radio("All users of this PC (recommended)", "Protected from tampering, requires administrator  ·  " + Installer.AllUsersDir, 84);
             _me.Checked = !preset.AllUsers;
             _all.Checked = preset.AllUsers;
 

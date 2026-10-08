@@ -1,13 +1,26 @@
+using System.Runtime.InteropServices;
 using WinSolve.Core;
 using WinSolve.UI;
+
+// Native DLLs are only loaded from System32, never from the application folder.
+[assembly: DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
 
 namespace WinSolve;
 
 internal static class Program
 {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern bool SetDefaultDllDirectories(uint flags);
+
     [STAThread]
     private static void Main(string[] args)
     {
+        // Protect implicit LoadLibrary calls (WinForms, COM) against DLL planting.
+        SetDefaultDllDirectories(0x00000800 /* LOAD_LIBRARY_SEARCH_SYSTEM32 */);
+        // Child processes and relative paths never resolve against a user-controlled folder.
+        Environment.CurrentDirectory = Environment.SystemDirectory;
+
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);

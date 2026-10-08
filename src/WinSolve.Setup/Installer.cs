@@ -85,7 +85,8 @@ namespace WinSolve.Setup
         public static void InstallRuntime(Action<string> status, Action<int> progress, CancellationToken ct)
         {
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | (SecurityProtocolType)12288 /* TLS 1.3 */;
-            var file = Path.Combine(Path.GetTempPath(), "windowsdesktop-runtime-8-win-x64.exe");
+            // Unpredictable name, created fresh, so nothing can be planted in its place.
+            var file = Path.Combine(Path.GetTempPath(), "WinSolve-dotnet-" + Guid.NewGuid().ToString("N") + ".exe");
             status("Downloading the .NET 8 Desktop Runtime from Microsoft...");
             using (var wc = new WebClient())
             {
@@ -94,21 +95,23 @@ namespace WinSolve.Setup
                     wc.DownloadFileTaskAsync(new Uri(RuntimeUrl), file).GetAwaiter().GetResult();
             }
 
-            if (!Signature.IsSignedBy(file, "Microsoft Corporation"))
+            // Keep the file open (read sharing only) from verification until it has run,
+            // so it cannot be replaced in between.
+            using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                TryDelete(file);
-                throw new InvalidOperationException("The downloaded .NET runtime is not signed by Microsoft. Installation stopped.");
-            }
+                if (!Signature.IsSignedBy(file, "Microsoft Corporation"))
+                    throw new InvalidOperationException("The downloaded .NET runtime is not signed by Microsoft. Installation stopped.");
 
-            status("Installing the .NET 8 Desktop Runtime...");
-            var psi = new ProcessStartInfo(file, "/install /quiet /norestart") { UseShellExecute = true };
-            if (!IsElevated) psi.Verb = "runas";
-            using (var p = Process.Start(psi))
-            {
-                p.WaitForExit();
-                // 0 = OK, 3010 = OK but restart required, 1638 = newer version already installed
-                if (p.ExitCode != 0 && p.ExitCode != 3010 && p.ExitCode != 1638)
-                    throw new InvalidOperationException($".NET runtime setup failed with exit code {p.ExitCode}.");
+                status("Installing the .NET 8 Desktop Runtime...");
+                var psi = new ProcessStartInfo(file, "/install /quiet /norestart") { UseShellExecute = true };
+                if (!IsElevated) psi.Verb = "runas";
+                using (var p = Process.Start(psi))
+                {
+                    p.WaitForExit();
+                    // 0 = OK, 3010 = OK but restart required, 1638 = newer version already installed
+                    if (p.ExitCode != 0 && p.ExitCode != 3010 && p.ExitCode != 1638)
+                        throw new InvalidOperationException($".NET runtime setup failed with exit code {p.ExitCode}.");
+                }
             }
             TryDelete(file);
         }
@@ -204,6 +207,7 @@ namespace WinSolve.Setup
             {
                 TryDeleteDir(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName));
                 TryDeleteDir(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppName));
+                if (IsElevated) TryDeleteDir(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), AppName));
             }
 
             if (!Directory.Exists(dir)) return;
@@ -213,7 +217,7 @@ namespace WinSolve.Setup
                 // We are running from the folder being removed: delete it after this process exits.
                 status("Files will be removed when the uninstaller closes.");
                 var cmd = $"/d /c ping 127.0.0.1 -n 3 > nul & rmdir /s /q \"{dir}\"";
-                Process.Start(new ProcessStartInfo("cmd.exe", cmd) { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden });
+                Process.Start(new ProcessStartInfo(Sys("cmd.exe"), cmd) { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = Environment.SystemDirectory });
             }
             else
             {
@@ -234,11 +238,14 @@ namespace WinSolve.Setup
             }
         }
 
+        /// <summary>Full System32 path for a Windows tool (never the folder setup was started from).</summary>
+        internal static string Sys(string exe) => Path.Combine(Environment.SystemDirectory, exe);
+
         private static void RunHidden(string file, string args)
         {
             try
             {
-                using (var p = Process.Start(new ProcessStartInfo(file, args) { CreateNoWindow = true, UseShellExecute = false }))
+                using (var p = Process.Start(new ProcessStartInfo(Sys(file), args) { CreateNoWindow = true, UseShellExecute = false, WorkingDirectory = Environment.SystemDirectory }))
                     p?.WaitForExit(10000);
             }
             catch { }
@@ -289,9 +296,14 @@ namespace WinSolve.Setup
             if (!Verify(file)) return false;
             try
             {
-                var cert = System.Security.Cryptography.X509Certificates.X509Certificate.CreateFromSignedFile(file);
-                return cert.Subject.IndexOf("O=" + subject, StringComparison.OrdinalIgnoreCase) >= 0
-                       || cert.Subject.IndexOf("CN=" + subject, StringComparison.OrdinalIgnoreCase) >= 0;
+                var cert = new System.Security.Cryptography.X509Certificates.X509Certificate2(
+                    System.Security.Cryptography.X509Certificates.X509Certificate.CreateFromSignedFile(file));
+                // Exact match of the organization or common name (not a substring).
+                var cn = cert.GetNameInfo(System.Security.Cryptography.X509Certificates.X509NameType.SimpleName, false);
+                var org = cert.Subject.Split(',').Select(p => p.Trim())
+                    .Where(p => p.StartsWith("O=", StringComparison.OrdinalIgnoreCase))
+                    .Select(p => p.Substring(2).Trim('"')).FirstOrDefault();
+                return string.Equals(cn, subject, StringComparison.OrdinalIgnoreCase) || string.Equals(org, subject, StringComparison.OrdinalIgnoreCase);
             }
             catch
             {
@@ -342,11 +354,11 @@ namespace WinSolve.Setup
                 {
                     cbStruct = (uint)Marshal.SizeOf(typeof(WINTRUST_DATA)),
                     dwUIChoice = 2,          // WTD_UI_NONE
-                    fdwRevocationChecks = 0, // WTD_REVOKE_NONE
+                    fdwRevocationChecks = 1, // WTD_REVOKE_WHOLECHAIN
                     dwUnionChoice = 1,       // WTD_CHOICE_FILE
                     pFile = pFile,
                     dwStateAction = 0,
-                    dwProvFlags = 0x1000,    // WTD_CACHE_ONLY_URL_RETRIEVAL
+                    dwProvFlags = 0x80,      // WTD_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT
                 };
                 return WinVerifyTrust(IntPtr.Zero, GenericVerifyV2, ref data) == 0;
             }

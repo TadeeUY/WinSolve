@@ -77,8 +77,8 @@ public static class StartupService
 
         void FromFolder(string folder, RegistryHive hive, string location)
         {
-            if (!Directory.Exists(folder)) return;
-            foreach (var file in Directory.EnumerateFiles(folder))
+            if (!Directory.Exists(folder) || SafePath.HasReparsePoint(folder)) return;
+            foreach (var file in Directory.EnumerateFiles(folder, "*", SafePath.NoLinks(recursive: false)))
             {
                 if (Path.GetFileName(file).Equals("desktop.ini", StringComparison.OrdinalIgnoreCase)) continue;
                 var item = new StartupItem
@@ -186,6 +186,8 @@ public static class StartupService
                 break;
 
             case StartupSource.Folder:
+                if (SafePath.HasReparsePoint(Path.GetDirectoryName(item.FilePath)!))
+                    throw new InvalidOperationException("The Startup folder is a link; refusing to delete through it.");
                 if (File.Exists(item.FilePath)) File.Delete(item.FilePath);
                 Reg.Delete(item.Hive, item.ApprovedKey, item.Name);
                 break;

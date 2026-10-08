@@ -141,11 +141,20 @@ public sealed class AppsPage : Page
         }
 
         var names = selected.Select(o => o switch { StoreApp a => a.FriendlyName, InstalledProgram p => p.DisplayName, _ => "" }).ToList();
+
+        // Show exactly which folders will be deleted before anything happens.
+        var folders = selected.OfType<InstalledProgram>().ToDictionary(p => p, AppsService.GetForceRemovalFolders);
+        var folderText = force && !_showStore
+            ? "\n\nFolders that will be permanently deleted:\n" +
+              (folders.Values.Any(f => f.Count > 0) ? string.Join("\n", folders.Values.SelectMany(f => f).Select(f => "  " + f)) : "  (none found)")
+            : "";
+
         var message = force
             ? $"Force-remove {selected.Count} app(s)?\n\n- {string.Join("\n- ", names)}\n\n" +
               (_showStore
                   ? "They are removed for all users and deprovisioned so Windows won't reinstall them."
                   : "The uninstaller runs silently, then the app's processes are closed and its folders, shortcuts and registry entry are deleted. This cannot be undone.")
+              + folderText
             : $"Uninstall {selected.Count} app(s)?\n\n- {string.Join("\n- ", names)}";
         if (!ConfirmDanger(message)) return;
 
@@ -164,7 +173,7 @@ public sealed class AppsPage : Page
                         await AppsService.ForceRemoveStoreAppAsync(a, log, ct);
                         break;
                     case InstalledProgram p when force:
-                        await AppsService.ForceUninstallAsync(p, log, ct);
+                        await AppsService.ForceUninstallAsync(p, folders[p], log, ct);
                         break;
                     case InstalledProgram p:
                         await AppsService.UninstallAsync(p, log, ct);

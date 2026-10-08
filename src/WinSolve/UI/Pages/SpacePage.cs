@@ -272,7 +272,7 @@ public sealed class SpacePage : Page
         var path = n.FullPath;
         _menu.Items.Add("Show in File Explorer", null, (_, _) =>
         {
-            System.Diagnostics.Process.Start("explorer.exe", n.IsFile && !n.IsGroup ? $"/select,\"{path}\"" : $"\"{path}\"");
+            ProcessRunner.ShellOpen("explorer.exe", n.IsFile && !n.IsGroup ? $"/select,\"{path}\"" : $"\"{path}\"");
         });
         if (!n.IsFile) _menu.Items.Add("Zoom into this folder", null, (_, _) => ZoomTo(n));
         _menu.Items.Add("Copy path", null, (_, _) => Clipboard.SetText(path));

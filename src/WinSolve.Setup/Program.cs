@@ -1,15 +1,26 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
+
+// The installer is usually started from the Downloads folder: never load native DLLs from there.
+[assembly: DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
 
 namespace WinSolve.Setup
 {
     internal static class Program
     {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern bool SetDefaultDllDirectories(uint flags);
+
         [STAThread]
         private static void Main(string[] args)
         {
+            SetDefaultDllDirectories(0x00000800 /* LOAD_LIBRARY_SEARCH_SYSTEM32 */);
+            Environment.CurrentDirectory = Environment.SystemDirectory;
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
@@ -21,7 +32,7 @@ namespace WinSolve.Setup
 
             var preset = args.Contains("--install")
                 ? InstallOptions.FromArgs(args)
-                : new InstallOptions { AllUsers = Installer.IsInstalled(true) && !Installer.IsInstalled(false) };
+                : new InstallOptions { AllUsers = !Installer.IsInstalled(false) || Installer.IsInstalled(true) };
             Application.Run(new SetupForm(preset, autoStart: args.Contains("--auto")));
         }
 

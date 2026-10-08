@@ -73,12 +73,16 @@ public static class HardwareService
 
     /// <summary>Restarts a device (disable + enable) with pnputil.</summary>
     public static Task<ProcessResult> RestartDeviceAsync(string instanceId, Action<string> log, CancellationToken ct = default)
-        => ProcessRunner.RunAsync("pnputil.exe", $"/restart-device \"{instanceId}\"", log, ct);
+        => ProcessRunner.RunAsync("pnputil.exe", $"/restart-device \"{CheckId(instanceId)}\"", log, ct);
+
+    /// <summary>Device instance IDs come from drivers; refuse anything that could break out of quotes.</summary>
+    private static string CheckId(string instanceId)
+        => instanceId.IndexOfAny(['"', '\r', '\n', '\0']) >= 0 ? throw new ArgumentException("Invalid device instance ID.") : instanceId;
 
     /// <summary>Removes the device so Windows reinstalls it on the next hardware scan.</summary>
     public static async Task ReinstallDeviceAsync(string instanceId, Action<string> log, CancellationToken ct = default)
     {
-        await ProcessRunner.RunAsync("pnputil.exe", $"/remove-device \"{instanceId}\"", log, ct);
+        await ProcessRunner.RunAsync("pnputil.exe", $"/remove-device \"{CheckId(instanceId)}\"", log, ct);
         await ProcessRunner.RunAsync("pnputil.exe", "/scan-devices", log, ct);
     }
 
