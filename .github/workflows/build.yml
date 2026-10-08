@@ -35,7 +35,21 @@ jobs:
             out/setup/WinSolveSetup.exe
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name != 'pull_request'
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" out/setup/WinSolveSetup.exe out/app/WinSolve.exe --title "WinSolve ${{ github.ref_name }}" --generate-notes
+        run: |
+          # Version comes from the app's project file; one release per version.
+          [xml]$proj = Get-Content src/WinSolve/WinSolve.csproj
+          $version = ($proj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          $tag = if ("${{ github.ref }}".StartsWith('refs/tags/v')) { "${{ github.ref_name }}" } else { "v$version" }
+          gh release view $tag --repo ${{ github.repository }} *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag exists; updating its files."
+            gh release upload $tag out/setup/WinSolveSetup.exe out/app/WinSolve.exe --clobber --repo ${{ github.repository }}
+          } else {
+            gh release create $tag out/setup/WinSolveSetup.exe out/app/WinSolve.exe `
+              --repo ${{ github.repository }} --target ${{ github.sha }} --title "WinSolve $tag" `
+              --notes "Download **WinSolveSetup.exe** and run it. Choose *Only me* or *All users (recommended)*. It installs the .NET 8 Desktop Runtime automatically if needed.`n`nWinSolve.exe is the app alone (requires the .NET 8 Desktop Runtime)."
+          }
