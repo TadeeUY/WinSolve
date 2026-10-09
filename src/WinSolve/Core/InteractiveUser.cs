@@ -198,8 +198,11 @@ public static class InteractiveUser
         var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
         if (IsDifferent)
         {
+            // Never fall back to starting it ourselves: with no shell running it would become the
+            // desktop shell, elevated, as the administrator. Windows restarts the shell itself.
             using var p = StartAsUser(explorer, "");
-            if (p is not null) return;
+            if (p is null) Logger.Write("Explorer could not be started as the signed-in user; Windows will restart it.");
+            return;
         }
         ProcessRunner.ShellOpen("explorer.exe");
     }

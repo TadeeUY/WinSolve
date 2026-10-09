@@ -325,7 +325,7 @@ public static class TaskCatalog
             Description = "Fixes blank or wrong icons. Restarts Explorer.",
             Run = async ctx =>
             {
-                await Cmd(ctx, "taskkill /f /im explorer.exe");
+                await Cmd(ctx, $"taskkill /f /fi \"SESSION eq {System.Diagnostics.Process.GetCurrentProcess().SessionId}\" /im explorer.exe"); // this session only
                 FileCleaner.DeleteContents(Path.Combine(LocalAppData, "Microsoft", "Windows", "Explorer"), ctx, "iconcache_*.db", recursive: false);
                 var legacy = Path.Combine(LocalAppData, "IconCache.db");
                 try { if (File.Exists(legacy)) File.Delete(legacy); } catch { }
@@ -464,7 +464,7 @@ public static class TaskCatalog
 
     public static async Task ExplorerRestart(TaskContext ctx)
     {
-        await Cmd(ctx, "taskkill /f /im explorer.exe");
+        await Cmd(ctx, $"taskkill /f /fi \"SESSION eq {System.Diagnostics.Process.GetCurrentProcess().SessionId}\" /im explorer.exe"); // this session only
         await Task.Delay(800, ctx.Token);
         await Task.Run(InteractiveUser.StartExplorer);
         ctx.Log("  Explorer restarted.");

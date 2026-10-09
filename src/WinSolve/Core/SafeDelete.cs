@@ -64,7 +64,11 @@ public static class SafeDelete
             if (isDir && !recursive) continue;
             if (!isDir && !FileSystemName.MatchesSimpleExpression(pattern, entry.Name)) continue;
 
-            using var child = OpenRelative(dir, entry.Name, isDir);
+            // Only the access that is needed: DELETE on a folder fails while it is another
+            // process's working directory, which must not hide its whole contents.
+            using var child = isDir
+                ? (removeDirs ? OpenRelative(dir, entry.Name, true, DELETE) : null) ?? OpenRelative(dir, entry.Name, true, 0)
+                : OpenRelative(dir, entry.Name, false, DELETE);
             if (child is null)
             {
                 if (!isDir) stats.Skipped++; // in use or access denied
@@ -83,7 +87,7 @@ public static class SafeDelete
                 Walk(child, pattern, recursive, removeDirs, stats, depth + 1, ct);
                 if (removeDirs) MarkForDeletion(child, a); // fails harmlessly if not empty
             }
-            else if (MarkForDeletion(child, a))
+            else if (MarkForDeletion(child, a) || DeleteReadOnly(dir, entry.Name, a))
             {
                 stats.Freed += entry.Size;
             }
@@ -149,7 +153,7 @@ public static class SafeDelete
         // The handle must be the folder at the expected place, not one reached through a link
         // somewhere along the path.
         var actual = FinalPath(h);
-        var expected = LongPath(full);
+        var expected = ResolveDrive(LongPath(full));
         if (actual is null || !string.Equals(actual.TrimEnd('\\'), expected.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
         {
             h.Dispose();
@@ -158,7 +162,17 @@ public static class SafeDelete
         return h;
     }
 
-    private static SafeFileHandle? OpenRelative(SafeFileHandle parent, string name, bool directory)
+    /// <summary>Older Windows / FAT: clearing read-only needs write-attributes access, asked only then.</summary>
+    private static bool DeleteReadOnly(SafeFileHandle dir, string name, FileAttributes attributes)
+    {
+        if ((attributes & FileAttributes.ReadOnly) == 0) return false;
+        using var h = OpenRelative(dir, name, false, DELETE | FILE_WRITE_ATTRIBUTES);
+        if (h is null) return false;
+        var a = GetAttributes(h);
+        return a is { } attrs && (attrs & FileAttributes.ReparsePoint) == 0 && MarkForDeletion(h, attrs);
+    }
+
+    private static SafeFileHandle? OpenRelative(SafeFileHandle parent, string name, bool directory, uint extraAccess)
     {
         var nameBuffer = Marshal.StringToHGlobalUni(name);
         var unicode = Marshal.AllocHGlobal(Marshal.SizeOf<UNICODE_STRING>());
@@ -182,7 +196,7 @@ public static class SafeDelete
                     ObjectName = unicode,
                     Attributes = OBJ_CASE_INSENSITIVE,
                 };
-                var access = DELETE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | SYNCHRONIZE | (directory ? FILE_LIST_DIRECTORY : 0);
+                var access = FILE_READ_ATTRIBUTES | SYNCHRONIZE | extraAccess | (directory ? FILE_LIST_DIRECTORY : 0);
                 var options = FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT | (directory ? FILE_DIRECTORY_FILE : FILE_NON_DIRECTORY_FILE);
                 var status = NtCreateFile(out var handle, access, ref oa, out _, IntPtr.Zero, 0, FILE_SHARE_ALL, FILE_OPEN, options, IntPtr.Zero, 0);
                 if (status != 0)
@@ -238,6 +252,19 @@ public static class SafeDelete
         if (path.StartsWith(@"\\?\UNC\", StringComparison.Ordinal)) return @"\\" + path[8..];
         if (path.StartsWith(@"\\?\", StringComparison.Ordinal)) return path[4..];
         return path;
+    }
+
+    /// <summary>
+    /// Replaces the drive root with what it really points to (subst'd and mapped drives resolve to
+    /// another volume or a UNC path), so only links *after* the root are treated as redirection.
+    /// </summary>
+    private static string ResolveDrive(string path)
+    {
+        var root = Path.GetPathRoot(path);
+        if (string.IsNullOrEmpty(root)) return path;
+        using var h = CreateFileW(root, FILE_READ_ATTRIBUTES | SYNCHRONIZE, FILE_SHARE_ALL, IntPtr.Zero, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, IntPtr.Zero);
+        if (h.IsInvalid || FinalPath(h) is not { } real) return path;
+        return Path.Combine(real.TrimEnd('\\') + "\\", path[root.Length..]);
     }
 
     /// <summary>Expands 8.3 short names (Path.GetTempPath can return C:\Users\ADMINI~1\...).</summary>
@@ -309,8 +336,9 @@ public static class SafeDelete
     [StructLayout(LayoutKind.Sequential)]
     private struct BY_HANDLE_FILE_INFORMATION
     {
+        // FILETIMEs are two DWORDs (4-byte aligned), not 8-byte longs.
         public uint dwFileAttributes;
-        public long ftCreationTime, ftLastAccessTime, ftLastWriteTime;
+        public uint ftCreationLow, ftCreationHigh, ftLastAccessLow, ftLastAccessHigh, ftLastWriteLow, ftLastWriteHigh;
         public uint dwVolumeSerialNumber, nFileSizeHigh, nFileSizeLow, nNumberOfLinks, nFileIndexHigh, nFileIndexLow;
     }
 

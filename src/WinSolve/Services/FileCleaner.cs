@@ -52,7 +52,8 @@ public static class FileCleaner
 
     // ---- Recycle Bin ----
 
-    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    // Natural alignment on x64 (shellapi.h packs it to 1 only for 32-bit): size at offset 8.
+    [StructLayout(LayoutKind.Sequential)]
     private struct SHQUERYRBINFO
     {
         public int cbSize;

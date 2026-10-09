@@ -262,8 +262,14 @@ public static class DriverService
 
     private static void ClearCache(string dir, Action<string> log)
     {
+        // A user-writable folder: handle-based delete, never follows a junction swapped in.
         if (!Directory.Exists(dir) || SafePath.HasReparsePoint(dir)) return;
-        try { Directory.Delete(dir, true); log($"Cleared {dir}"); } catch { /* in use */ }
+        try
+        {
+            SafeDelete.DeleteContents(dir, "*", recursive: true, CancellationToken.None);
+            log($"Cleared {dir}");
+        }
+        catch { /* in use */ }
     }
 
     /// <summary>What a clean install ended with, checked against what Windows reports afterwards.</summary>
@@ -282,6 +288,7 @@ public static class DriverService
     {
         var protectedRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSolve", "Drivers");
         string safeCopy;
+        string? copyFolder = null;
         if (SafePath.IsSameOrInside(installer, protectedRoot))
         {
             safeCopy = installer;
@@ -289,11 +296,26 @@ public static class DriverService
         else
         {
             log("Copying the installer to a protected folder...");
-            safeCopy = Path.Combine(SafePath.CreateAdminOnlyFolder("Drivers"), Path.GetFileName(installer));
+            copyFolder = SafePath.CreateAdminOnlyFolder("Drivers");
+            safeCopy = Path.Combine(copyFolder, Path.GetFileName(installer));
             await using var src = new FileStream(installer, FileMode.Open, FileAccess.Read, FileShare.Read);
             await using var dst = new FileStream(safeCopy, FileMode.CreateNew, FileAccess.Write, FileShare.None);
             await src.CopyToAsync(dst, ct);
         }
+        try
+        {
+            return await InstallCopyAsync(vendor, safeCopy, requireVendorSignature, expectedVersion, log, ct);
+        }
+        finally
+        {
+            // The copy can be over 1 GB; never leave it in ProgramData.
+            if (copyFolder is not null) try { Directory.Delete(copyFolder, recursive: true); } catch { }
+        }
+    }
+
+    private static async Task<InstallOutcome> InstallCopyAsync(GpuVendor vendor, string safeCopy, bool requireVendorSignature,
+        string? expectedVersion, Action<string> log, CancellationToken ct)
+    {
 
         // Hold the file open (read sharing only) until the installer has finished.
         await using var lockHandle = new FileStream(safeCopy, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -411,8 +433,13 @@ public static class DriverService
     {
         try
         {
-            var previous = Reg.Get(RegistryHive.LocalMachine, SearchingKey, "SearchOrderConfig");
-            Reg.Set(RegistryHive.LocalMachine, PendingKey, "SearchOrderConfig", previous is int i ? i : -1, RegistryValueKind.DWord);
+            // Save the user's setting only once: if an earlier restore hasn't happened yet, the
+            // current value is our own 0 and must not overwrite the real one.
+            if (Reg.Get(RegistryHive.LocalMachine, PendingKey, "SearchOrderConfig") is not int)
+            {
+                var previous = Reg.Get(RegistryHive.LocalMachine, SearchingKey, "SearchOrderConfig");
+                Reg.Set(RegistryHive.LocalMachine, PendingKey, "SearchOrderConfig", previous is int i ? i : -1, RegistryValueKind.DWord);
+            }
             Reg.Set(RegistryHive.LocalMachine, SearchingKey, "SearchOrderConfig", 0, RegistryValueKind.DWord);
             log("Automatic driver downloads from Windows Update paused during the installation.");
         }

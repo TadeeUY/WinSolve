@@ -244,6 +244,7 @@ namespace WinSolve.Setup
 
             // Scheduled task created by WinSolve's "Start with Windows" option.
             RunHidden("schtasks.exe", "/delete /f /tn \"WinSolve\"");
+            if (IsElevated) RestorePendingSettings();
 
             if (removeData)
             {
@@ -273,6 +274,32 @@ namespace WinSolve.Setup
             {
                 TryDeleteDir(dir);
             }
+        }
+
+        /// <summary>
+        /// Puts back a Windows setting WinSolve changes only temporarily (automatic driver
+        /// downloads, paused during a graphics driver clean install) if WinSolve was closed before
+        /// restoring it, then removes WinSolve's own machine key.
+        /// </summary>
+        private static void RestorePendingSettings()
+        {
+            try
+            {
+                using (var hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
+                {
+                    using (var pending = hklm.OpenSubKey(@"SOFTWARE\WinSolve\Pending"))
+                    using (var searching = hklm.CreateSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\DriverSearching"))
+                    {
+                        if (pending?.GetValue("SearchOrderConfig") is int previous)
+                        {
+                            if (previous == -1) searching.DeleteValue("SearchOrderConfig", throwOnMissingValue: false);
+                            else searching.SetValue("SearchOrderConfig", previous, RegistryValueKind.DWord);
+                        }
+                    }
+                    hklm.DeleteSubKeyTree(@"SOFTWARE\WinSolve", throwOnMissingSubKey: false);
+                }
+            }
+            catch { }
         }
 
         public static bool IsInstalled(bool allUsers) => File.Exists(Path.Combine(InstallDir(allUsers), ExeName));

@@ -256,6 +256,44 @@ public static class AppsService
         return (c.Exe, (c.Args + " " + extra).Trim());
     }
 
+    private static HashSet<int> ProcessIds(string exe)
+    {
+        var all = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(exe));
+        try { return all.Select(p => p.Id).ToHashSet(); }
+        finally { foreach (var p in all) p.Dispose(); }
+    }
+
+    /// <summary>
+    /// Waits for the uninstaller processes started for this run: same name, started after it, in
+    /// this desktop session. Never waits on a name alone (the Windows Installer service keeps an
+    /// msiexec.exe alive for minutes after any MSI operation).
+    /// </summary>
+    private static async Task WaitForNewProcessesAsync(string exe, HashSet<int> before, DateTime started, CancellationToken ct)
+    {
+        var name = Path.GetFileNameWithoutExtension(exe);
+        var session = Process.GetCurrentProcess().SessionId;
+        await Task.Delay(500, ct);
+        while (true)
+        {
+            var all = Process.GetProcessesByName(name);
+            bool running;
+            try
+            {
+                running = all.Any(p =>
+                {
+                    try { return !before.Contains(p.Id) && p.SessionId == session && p.StartTime >= started.AddSeconds(-2) && !p.HasExited; }
+                    catch { return false; }
+                });
+            }
+            finally
+            {
+                foreach (var p in all) p.Dispose();
+            }
+            if (!running) return;
+            await Task.Delay(1000, ct);
+        }
+    }
+
     /// <summary>
     /// Starts an uninstaller. Per-user (HKCU) entries can be written by any program the user
     /// runs, so they are started with a non-administrator token (runas /trustlevel) instead
@@ -272,11 +310,12 @@ public static class AppsService
                 // Per-user app of the person signed in (WinSolve was elevated with another
                 // account): run its uninstaller as that person, so it removes their copy.
                 log($"Running as {InteractiveUser.Other!.Name}: {cmd.Exe} {cmd.Args}");
+                var before = ProcessIds(cmd.Exe);
+                var started = DateTime.Now;
                 using var proc = InteractiveUser.StartAsUser(cmd.Exe, cmd.Args);
                 if (proc is null) log("Could not start the uninstaller as the signed-in user.");
                 else await proc.WaitForExitAsync(linked.Token);
-                var name = Path.GetFileNameWithoutExtension(cmd.Exe);
-                while (Process.GetProcessesByName(name).Length > 0) await Task.Delay(1000, linked.Token);
+                await WaitForNewProcessesAsync(cmd.Exe, before, started, linked.Token);
             }
             else if (p.Hive == RegistryHive.CurrentUser)
             {
@@ -284,10 +323,11 @@ public static class AppsService
                 var psi = new ProcessStartInfo(ProcessRunner.Resolve("runas.exe")) { UseShellExecute = false, CreateNoWindow = true };
                 psi.ArgumentList.Add("/trustlevel:0x20000");
                 psi.ArgumentList.Add($"\"{cmd.Exe}\" {cmd.Args}".Trim());
+                var before = ProcessIds(cmd.Exe);
+                var started = DateTime.Now;
                 using (var runas = Process.Start(psi)) await runas!.WaitForExitAsync(linked.Token);
                 // runas returns immediately; wait for the uninstaller itself.
-                var name = Path.GetFileNameWithoutExtension(cmd.Exe);
-                while (Process.GetProcessesByName(name).Length > 0) await Task.Delay(1000, linked.Token);
+                await WaitForNewProcessesAsync(cmd.Exe, before, started, linked.Token);
             }
             else
             {

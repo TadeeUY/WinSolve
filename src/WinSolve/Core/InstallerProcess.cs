@@ -34,6 +34,9 @@ public static class InstallerProcess
     {
         using var job = CreateJobObject(IntPtr.Zero, null);
         if (job.IsInvalid) throw new InvalidOperationException("Could not create a job object to track the installer.");
+        // Installers that start helpers with CREATE_BREAKAWAY_FROM_JOB must not fail because of us.
+        var limits = new JOBOBJECT_BASIC_LIMIT_INFORMATION { LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK };
+        SetInformationJobObject(job, JobObjectBasicLimitInformation, ref limits, (uint)Marshal.SizeOf<JOBOBJECT_BASIC_LIMIT_INFORMATION>());
 
         // Started suspended and put in the job before it runs a single instruction: a fast
         // self-extractor could otherwise launch its setup before being tracked.
@@ -58,11 +61,18 @@ public static class InstallerProcess
         int? exitCode = GetExitCodeProcess(pi.hProcess, out var code) ? (int)code : null;
         if (!inJob) return exitCode;
 
-        // The started exe is done; its setup may still be running.
+        // The started exe is done; its setup may still be running. Capped, in case something
+        // the installer opened (a browser, a tray app) never closes.
         var announced = false;
+        var deadline = DateTime.Now.AddMinutes(90);
         while (true)
         {
             ct.ThrowIfCancellationRequested();
+            if (DateTime.Now > deadline)
+            {
+                log("  Stopped waiting after 90 minutes; check that the installer has finished.");
+                break;
+            }
             var running = RunningInJob(job).Where(n => !StaysRunning.Contains(n)).ToList();
             if (running.Count == 0) break;
             if (!announced)
@@ -79,13 +89,14 @@ public static class InstallerProcess
     {
         var names = new List<string>();
         // JOBOBJECT_BASIC_PROCESS_ID_LIST: two DWORDs (assigned, in list), then ULONG_PTR ids.
-        const int max = 256;
+        const int max = 2048;
         var size = 8 + IntPtr.Size * max;
         var buffer = Marshal.AllocHGlobal(size);
         try
         {
             Marshal.WriteInt32(buffer, 0, max);
-            if (!QueryInformationJobObject(job, JobObjectBasicProcessIdList, buffer, size, IntPtr.Zero)) return names;
+            // A failed query means "unknown", not "finished".
+            if (!QueryInformationJobObject(job, JobObjectBasicProcessIdList, buffer, size, IntPtr.Zero)) return ["(installer)"];
             var count = Marshal.ReadInt32(buffer, 4);
             for (int i = 0; i < count; i++)
             {
@@ -105,7 +116,22 @@ public static class InstallerProcess
         return names;
     }
 
-    private const int JobObjectBasicProcessIdList = 3;
+    private const int JobObjectBasicProcessIdList = 3, JobObjectBasicLimitInformation = 2;
+    private const uint JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x800;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+    {
+        public long PerProcessUserTimeLimit, PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass, SchedulingClass;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetInformationJobObject(SafeJobHandle job, int infoClass, ref JOBOBJECT_BASIC_LIMIT_INFORMATION info, uint length);
     private const uint CREATE_SUSPENDED = 0x4;
     private const uint WAIT_TIMEOUT = 0x102;
 
