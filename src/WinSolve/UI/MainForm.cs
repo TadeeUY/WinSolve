@@ -25,7 +25,9 @@ public sealed class MainForm : Form
     private bool _updating;
     private Label? _brandSubtitle, _versionLabel;
 
-    private static string BrandSubtitle => Admin.IsElevated ? "PC health & maintenance" : "Not running as administrator";
+    public const string Slogan = "The multitool for Windows";
+
+    private static string BrandSubtitle => Admin.IsElevated ? Slogan : "Not running as administrator";
 
     public MainForm(bool startHidden = false)
     {
@@ -55,6 +57,7 @@ public sealed class MainForm : Form
             ["drivers"] = () => new DriversPage(),
             ["activation"] = () => new ActivationPage(),
             ["settings"] = () => new SettingsPage(),
+            ["toolbox"] = () => new ToolboxPage(),
         };
 
         // Content area: optional info bar (updates) above the current page.
@@ -416,6 +419,7 @@ public sealed class MainForm : Form
             ("monitor", "", "Monitor"),
             ("hardware", "", "Hardware"),
             (null, "", "System"),
+            ("toolbox", "\uEC7A", "Toolbox"),
             ("tweaks", "", "Tweaks"),
             ("activation", "", "Activation"),
         ];
@@ -481,6 +485,60 @@ public sealed class MainForm : Form
         b.Click += (_, _) => Navigate(key);
         _nav.Add(b);
         return b;
+    }
+
+    // ───────────── Command palette (Ctrl+K) ─────────────
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData is (Keys.Control | Keys.K) or (Keys.Control | Keys.F))
+        {
+            OpenPalette();
+            return true;
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    public void OpenPalette() => CommandPalette.ShowFor(this, PaletteItems());
+
+    /// <summary>Everything the palette can find: pages, tasks, tweaks and tools.</summary>
+    private List<PaletteItem> PaletteItems()
+    {
+        var items = new List<PaletteItem>();
+        foreach (var b in _nav)
+        {
+            var key = b.Key;
+            items.Add(new PaletteItem(b.Text, "Open this page", Page.PageGlyphs.GetValueOrDefault(key, b.Glyph), "Page", () => Navigate(key)));
+        }
+        foreach (var t in TaskCatalog.All)
+        {
+            var task = t;
+            items.Add(new PaletteItem(t.Title, t.Description, t.Category switch
+            {
+                TaskCategory.Cleanup => "\uE74D", TaskCategory.Repair => "\uE90F", TaskCategory.Network => "\uE968",
+                TaskCategory.Security => "\uE83D", _ => "\uE945",
+            }, "Task", () =>
+            {
+                if (!AppSettings.Current.ConfirmActions || Localization.Loc.Show(this, $"Run '{Localization.Loc.T(task.Title)}'?", "WinSolve",
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                    RunDialog.RunTasks(this, task.Title, [task]);
+            }, t.Category.ToString()));
+        }
+        foreach (var t in TweakCatalog.All)
+        {
+            var id = t.Id;
+            items.Add(new PaletteItem(t.Title, t.Description, "\uE9E9", "Tweak", () =>
+            {
+                Navigate("tweaks");
+                (CurrentPage as Pages.TweaksPage)?.Reveal(id);
+            }, t.Category));
+        }
+        foreach (var tool in Toolbox.All)
+        {
+            var open = tool.Open;
+            items.Add(new PaletteItem(tool.Title, tool.Description, tool.Glyph, "Tool", () => open(this), tool.Keywords));
+        }
+        return items;
     }
 
     /// <summary>Navigates to a page, or opens an external URI (ms-settings:, https:...).</summary>

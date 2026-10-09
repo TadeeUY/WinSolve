@@ -22,7 +22,7 @@ public static class SplashScreen
         if (_form is not null) return;
         var accent = Theme.Accent;
         var version = Localization.Loc.T($"Version {Application.ProductVersion.Split('+')[0]}");
-        var subtitle = Localization.Loc.T("PC health & maintenance");
+        var subtitle = Localization.Loc.T(MainForm.Slogan);
         status = Localization.Loc.T(status);
         Icon? icon = null;
         try

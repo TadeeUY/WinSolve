@@ -98,6 +98,23 @@ public sealed class TweaksPage : Page
         UpdateSelectionLabel();
     }
 
+    /// <summary>Scrolls to a tweak and selects it (from the command palette).</summary>
+    public void Reveal(string id)
+    {
+        Control? target = _rows.TryGetValue(id, out var row) ? row.Box : _toggles.GetValueOrDefault(id);
+        if (target is null) return;
+        if (_rows.ContainsKey(id)) row.Box.Checked = true;
+        for (var p = target.Parent; p is not null; p = p.Parent)
+        {
+            if (p is ScrollableControl { AutoScroll: true } scroll)
+            {
+                scroll.ScrollControlIntoView(target);
+                break;
+            }
+        }
+        target.Focus();
+    }
+
     private List<Tweak> Selected() => _rows.Where(r => r.Value.Box.Checked).Select(r => TweakCatalog.Find(r.Key)!).ToList();
 
     private void UpdateSelectionLabel()

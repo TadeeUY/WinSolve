@@ -435,3 +435,43 @@ public sealed class ColorSwatch : Control
         }
     }
 }
+
+/// <summary>"Search  Ctrl+K" button shown in every page header; opens the command palette.</summary>
+public sealed class SearchPill : Control
+{
+    private double _hoverT;
+
+    public SearchPill()
+    {
+        Size = new Size(220, 34);
+        Cursor = Cursors.Hand;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { Animator.Animate(this, () => _hoverT, 1, v => { _hoverT = v; Invalidate(); }, 120); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { Animator.Animate(this, () => _hoverT, 0, v => { _hoverT = v; Invalidate(); }, 120); base.OnMouseLeave(e); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Theme.SurfaceColor(this));
+        var r = new Rectangle(0, 0, Width - 1, Height - 1);
+        using (var path = Theme.RoundedRect(r, Height / 2))
+        {
+            using (var b = new SolidBrush(Animator.Blend(Theme.Control, Theme.ControlHover, _hoverT))) g.FillPath(b, path);
+            using var pen = new Pen(Theme.Border);
+            g.DrawPath(pen, path);
+        }
+        TextRenderer.DrawText(g, "\uE721", Theme.IconsSmall, new Rectangle(12, 0, 18, Height), Theme.Muted,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
+        TextRenderer.DrawText(g, Loc.T("Search"), Theme.Body, new Rectangle(36, 0, Width - 100, Height), Theme.Muted,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        var keys = new Rectangle(Width - 62, 7, 50, Height - 14);
+        using (var kp = Theme.RoundedRect(keys, 4))
+        using (var kb = new SolidBrush(Color.FromArgb(30, 30, 30)))
+            g.FillPath(kb, kp);
+        TextRenderer.DrawText(g, "Ctrl+K", Theme.Small, keys, Theme.Muted,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
+    }
+}

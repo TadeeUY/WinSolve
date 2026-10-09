@@ -219,7 +219,7 @@ public sealed class NavButton : Control
         Key = key;
         Glyph = glyph;
         Text = text;
-        Height = 36;
+        Height = 34;
         Margin = new Padding(0, 1, 0, 1);
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
     }
@@ -411,6 +411,7 @@ public abstract class Page : UserControl
         ["home"] = "\uE80F", ["optimize"] = "\uE945", ["tools"] = "\uE90F", ["space"] = "\uEDA2",
         ["monitor"] = "\uE9D9", ["hardware"] = "\uE950", ["drivers"] = "\uE772", ["tweaks"] = "\uE9E9",
         ["startup"] = "\uE7E8", ["apps"] = "\uE71D", ["activation"] = "\uE8D7", ["settings"] = "\uE713",
+        ["toolbox"] = "\uEC7A", ["winupdate"] = "\uE895",
     };
 
     // Not FindForm(): a page that isn't on screen (e.g. after navigating away mid-await) has no form.
@@ -450,7 +451,7 @@ public abstract class Page : UserControl
         // Header: icon tile + title and subtitle.
         var header = new TableLayoutPanel
         {
-            ColumnCount = 2,
+            ColumnCount = 3,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             BackColor = Color.Transparent,
@@ -458,6 +459,7 @@ public abstract class Page : UserControl
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0) };
         var sub = Theme.Label(subtitle, Theme.Body, Theme.Muted);
         sub.MaximumSize = new Size(1000, 0);
@@ -465,6 +467,9 @@ public abstract class Page : UserControl
         text.Controls.Add(sub);
         header.Controls.Add(new IconTile(PageGlyphs.GetValueOrDefault(Key, "\uE80F")) { Margin = new Padding(0, 2, 14, 0) }, 0, 0);
         header.Controls.Add(text, 1, 0);
+        var search = new SearchPill { Anchor = AnchorStyles.Top | AnchorStyles.Right, Margin = new Padding(12, 6, 0, 0) };
+        search.Click += (_, _) => Main.OpenPalette();
+        header.Controls.Add(search, 2, 0);
         AddRow(header);
         HandleCreated += (_, _) => Loc.Apply(this);
     }
