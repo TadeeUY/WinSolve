@@ -172,8 +172,12 @@ public sealed class ActionTile : Control
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
     }
 
-    protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
-    protected override void OnMouseLeave(EventArgs e) { _hover = false; _pressed = false; Invalidate(); base.OnMouseLeave(e); }
+    private double _hoverT;
+
+    private void FadeHover(bool on) => Animator.Animate(this, () => _hoverT, on ? 1 : 0, v => { _hoverT = v; Invalidate(); }, 140);
+
+    protected override void OnMouseEnter(EventArgs e) { _hover = true; FadeHover(true); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _hover = false; _pressed = false; FadeHover(false); base.OnMouseLeave(e); }
     protected override void OnMouseDown(MouseEventArgs e) { _pressed = true; Invalidate(); base.OnMouseDown(e); }
     protected override void OnMouseUp(MouseEventArgs e) { _pressed = false; Invalidate(); base.OnMouseUp(e); }
 
@@ -183,11 +187,11 @@ public sealed class ActionTile : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Theme.SurfaceColor(this));
 
-        var fill = _pressed ? Color.FromArgb(40, 40, 40) : _hover ? Theme.CardHover : Theme.Card;
+        var fill = _pressed ? Color.FromArgb(40, 40, 40) : Animator.Blend(Theme.Card, Theme.CardHover, _hoverT);
         using (var path = Theme.RoundedRect(new Rectangle(0, 0, Width - 1, Height - 1), 6))
         {
             using (var b = new SolidBrush(fill)) g.FillPath(b, path);
-            using var pen = new Pen(_hover ? Color.FromArgb(72, 72, 72) : Theme.Border);
+            using var pen = new Pen(Animator.Blend(Theme.Border, Color.FromArgb(72, 72, 72), _hoverT));
             g.DrawPath(pen, path);
         }
 
@@ -295,7 +299,6 @@ public sealed class Segmented : FlowLayoutPanel
 /// <summary>Large selectable card (icon, title, description), used like a radio button.</summary>
 public sealed class OptionCard : Control
 {
-    private bool _hover;
     private bool _selected;
 
     public string Glyph { get; }
@@ -317,8 +320,12 @@ public sealed class OptionCard : Control
         set { _selected = value; Invalidate(); }
     }
 
-    protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
-    protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
+    private double _hoverT;
+
+    private void FadeHover(bool on) => Animator.Animate(this, () => _hoverT, on ? 1 : 0, v => { _hoverT = v; Invalidate(); }, 140);
+
+    protected override void OnMouseEnter(EventArgs e) { FadeHover(true); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { FadeHover(false); base.OnMouseLeave(e); }
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -328,8 +335,8 @@ public sealed class OptionCard : Control
         var r = new Rectangle(0, 0, Width - 1, Height - 1);
         using (var path = Theme.RoundedRect(r, 8))
         {
-            using (var b = new SolidBrush(_selected ? Color.FromArgb(36, 52, 72) : _hover ? Theme.CardHover : Color.FromArgb(38, 38, 38))) g.FillPath(b, path);
-            using var pen = new Pen(_selected ? Theme.Accent : _hover ? Color.FromArgb(80, 80, 80) : Theme.Border, _selected ? 2f : 1f);
+            using (var b = new SolidBrush(_selected ? Color.FromArgb(36, 52, 72) : Animator.Blend(Color.FromArgb(38, 38, 38), Theme.CardHover, _hoverT))) g.FillPath(b, path);
+            using var pen = new Pen(_selected ? Theme.Accent : Animator.Blend(Theme.Border, Color.FromArgb(80, 80, 80), _hoverT), _selected ? 2f : 1f);
             g.DrawPath(pen, path);
         }
 
@@ -375,5 +382,54 @@ public sealed class Pill : Control
             g.FillPath(b, path);
         TextRenderer.DrawText(g, Text, Font, ClientRectangle, _color,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+    }
+}
+
+/// <summary>Round color swatch; shows a ring and a check mark when selected and grows on hover.</summary>
+public sealed class ColorSwatch : Control
+{
+    private double _hoverT;
+    private bool _selected;
+
+    public Color Color { get; }
+    public string Hex { get; }
+
+    public ColorSwatch(string hex)
+    {
+        Hex = hex;
+        Color = ColorTranslator.FromHtml(hex);
+        Size = new Size(36, 36);
+        Margin = new Padding(0, 4, 6, 4);
+        Cursor = Cursors.Hand;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+    }
+
+    public bool Selected
+    {
+        get => _selected;
+        set { _selected = value; Invalidate(); }
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { Animator.Animate(this, () => _hoverT, 1, v => { _hoverT = v; Invalidate(); }, 120); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { Animator.Animate(this, () => _hoverT, 0, v => { _hoverT = v; Invalidate(); }, 120); base.OnMouseLeave(e); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Theme.SurfaceColor(this));
+        var c = Width / 2f;
+        if (_selected)
+        {
+            using var ring = new Pen(Theme.Text, 2f);
+            g.DrawEllipse(ring, 2, 2, Width - 5, Height - 5);
+        }
+        var r = (float)(11 + 2 * _hoverT);
+        using (var b = new SolidBrush(Color)) g.FillEllipse(b, c - r, c - r, 2 * r, 2 * r);
+        if (_selected)
+        {
+            using var pen = new Pen(Color.White, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+            g.DrawLines(pen, [new PointF(c - 5, c), new PointF(c - 1.5f, c + 3.5f), new PointF(c + 5, c - 3.5f)]);
+        }
     }
 }

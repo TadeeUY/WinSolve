@@ -1031,5 +1031,17 @@ public static class Spanish
         ["No critical events in the last 30 days."] = "No hubo eventos críticos en los últimos 30 días.",
         ["No S.M.A.R.T. attributes for this drive. NVMe and USB drives often report only the summary above."] = "Esta unidad no tiene atributos S.M.A.R.T. Las unidades NVMe y USB suelen informar solo el resumen de arriba.",
         ["Scan a drive to see which file types use the most space."] = "Analiza una unidad para ver qué tipos de archivo ocupan más espacio.",
+        // ── Splash screen ──
+        ["Starting..."] = "Iniciando...",
+        ["Preparing the interface..."] = "Preparando la interfaz...",
+        ["Loading pages..."] = "Cargando páginas...",
+        // ── Settings redesign ──
+        ["Language, safety and behavior."] = "Idioma, seguridad y comportamiento.",
+        ["What WinSolve does while you're not looking at it."] = "Lo que hace WinSolve mientras no lo estás mirando.",
+        ["Keep WinSolve up to date."] = "Mantén WinSolve actualizado.",
+        ["Used for buttons, selections and charts."] = "Se usa en botones, selecciones y gráficos.",
+        ["Used when you pick 'Custom list' on the One-click page."] = "Se usa cuando eliges 'Lista personalizada' en Optimización en 1 clic.",
+        ["Tasks"] = "Tareas",
+        ["{0} task(s) and {1} tweak(s) selected."] = "{0} tarea(s) y {1} ajuste(s) seleccionados.",
     };
 }

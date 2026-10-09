@@ -138,7 +138,7 @@ public sealed class SpacePage : Page
         {
             try
             {
-                if (!d.IsReady || d.DriveType is not (DriveType.Fixed or DriveType.Removable)) continue;
+                if (d.DriveType is not (DriveType.Fixed or DriveType.Removable) || !d.IsReady) continue;
                 var label = string.IsNullOrEmpty(d.VolumeLabel) ? "Local Disk" : d.VolumeLabel;
                 _drives.Items.Add(new DriveChoice(d.RootDirectory.FullName,
                     $"{d.Name.TrimEnd('\\')} {label} ({Format.Bytes(d.TotalSize - d.AvailableFreeSpace)} used of {Format.Bytes(d.TotalSize)})"));

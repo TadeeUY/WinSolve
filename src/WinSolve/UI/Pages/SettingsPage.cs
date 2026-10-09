@@ -5,27 +5,19 @@ namespace WinSolve.UI.Pages;
 
 public sealed class SettingsPage : Page
 {
-    private readonly CheckedListBox _tasks = NewList();
-    private readonly CheckedListBox _tweaks = NewList();
+    private readonly Dictionary<SystemTask, CheckBox> _tasks = [];
+    private readonly Dictionary<Tweak, CheckBox> _tweaks = [];
+    private readonly Label _listSummary = Theme.Label("", Theme.Small, Theme.Muted);
+    private readonly List<ColorSwatch> _swatches = [];
+    private readonly FlowLayoutPanel _swatchRow = Theme.Row();
+    private ColorSwatch? _customSwatch;
     private readonly CheckBox _restorePoint, _confirm, _scanOnStartup, _alerts, _tray, _animations, _autoStart, _updates, _autoUpdate;
     private readonly ComboBox _schedule = Theme.Combo(Maintenance.Schedules);
     private readonly ComboBox _language = Theme.Combo("English", "Español");
     private readonly Label _autoStartDescription = Theme.Label("Starts hidden in the notification area.", Theme.Small, Theme.Muted);
-    private readonly Panel _accentPreview = new() { Size = new Size(36, 36), Margin = new Padding(0, 4, 8, 4) };
     private string _accent = AppSettings.Current.AccentColor;
 
     public override string Key => "settings";
-
-    private static CheckedListBox NewList() => new()
-    {
-        BackColor = Theme.Card,
-        ForeColor = Theme.Text,
-        BorderStyle = BorderStyle.None,
-        CheckOnClick = true,
-        Font = Theme.Body,
-        Height = 300,
-        IntegralHeight = false,
-    };
 
     public SettingsPage() : base("Settings", "Customize how WinSolve works.")
     {
@@ -44,7 +36,7 @@ public sealed class SettingsPage : Page
         _schedule.Width = _language.Width = 170;
 
         var general = new StackCard().Add(
-            Theme.Label("General", Theme.H2),
+            Theme.SectionHeader("\uE713", "General", "Language, safety and behavior."),
             Theme.SettingRow("Language", "English or Spanish.", _language),
             new Divider(),
             Theme.SettingRow("Create a restore point before making changes", "Lets you undo optimizations and tweaks with System Restore.", _restorePoint),
@@ -56,7 +48,7 @@ public sealed class SettingsPage : Page
             Theme.SettingRow("Minimize and restore animations", null, _animations));
 
         var background = new StackCard().Add(
-            Theme.Label("Background", Theme.H2),
+            Theme.SectionHeader("\uE9F5", "Background", "What WinSolve does while you're not looking at it."),
             Theme.SettingRow("Alert me when Windows reports an error", "Blue screens, crashes, disk and driver problems.", _alerts),
             Theme.Row(Theme.Button("Show a test alert", (_, _) => ErrorMonitor.Instance.RaiseTest())),
             new Divider(),
@@ -69,43 +61,66 @@ public sealed class SettingsPage : Page
                 _schedule));
 
         var updates = new StackCard().Add(
-            Theme.Label("Updates", Theme.H2),
+            Theme.SectionHeader("\uE895", "Updates", "Keep WinSolve up to date."),
             Theme.SettingRow("Check for updates automatically", "At startup and every 4 hours.", _updates),
             new Divider(),
             Theme.SettingRow("Install updates automatically (no need to click)", "Updates are verified (SHA-256) and installed without asking.", _autoUpdate),
             Theme.Row(Theme.Button("Check for updates now", async (_, _) => await CheckUpdatesNow(), glyph: "\uE895")));
 
+        var swatches = _swatchRow;
+        foreach (var hex in new[] { "#0067C0", "#4F6BED", "#8764B8", "#0099BC", "#107C10", "#CA5010", "#C42B1C", "#E3008C", "#5C5C5C" })
+        {
+            var sw = new ColorSwatch(hex);
+            sw.Click += (_, _) => { _accent = hex; UpdatePreview(); };
+            _swatches.Add(sw);
+            swatches.Controls.Add(sw);
+        }
+        swatches.Controls.Add(Theme.Button("Custom color", (_, _) => PickColor(), glyph: "\uE790"));
         var appearance = new StackCard().Add(
-            Theme.Label("Accent color", Theme.H2),
-            Theme.Row(_accentPreview,
-                Theme.Button("Custom color", (_, _) => PickColor()),
-                Swatch("#0067C0"), Swatch("#4F6BED"), Swatch("#107C10"), Swatch("#C42B1C"), Swatch("#CA5010"), Swatch("#5C5C5C")));
+            Theme.SectionHeader("\uE771", "Accent color", "Used for buttons, selections and charts."),
+            swatches);
 
-        foreach (var t in TaskCatalog.All) _tasks.Items.Add(t);
-        foreach (var t in TweakCatalog.All) _tweaks.Items.Add(new TweakItem(t));
+        var tasksPanel = CheckList();
+        foreach (var group in TaskCatalog.All.GroupBy(t => t.Category))
+        {
+            tasksPanel.Controls.Add(GroupLabel(group.Key == TaskCategory.Repair ? "Repair" : group.Key.ToString()));
+            foreach (var t in group) tasksPanel.Controls.Add(_tasks[t] = ListCheck(t.Title));
+        }
+        var tweaksPanel = CheckList();
+        foreach (var group in TweakCatalog.All.GroupBy(t => t.Category))
+        {
+            tweaksPanel.Controls.Add(GroupLabel(group.Key));
+            foreach (var t in group) tweaksPanel.Controls.Add(_tweaks[t] = ListCheck(t.Title));
+        }
 
-        var lists = new Panel { Height = 320, BackColor = Color.Transparent };
-        _tweaks.Dock = DockStyle.Fill;
-        _tasks.Dock = DockStyle.Left;
-        lists.Controls.Add(_tweaks);
-        lists.Controls.Add(_tasks);
-        lists.Resize += (_, _) => _tasks.Width = lists.Width / 2 - 6;
+        var lists = new TableLayoutPanel { ColumnCount = 2, RowCount = 2, Height = 380, BackColor = Color.Transparent, Margin = new Padding(0, 6, 0, 0) };
+        lists.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        lists.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        lists.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        lists.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        lists.Controls.Add(Theme.Label("Tasks", Theme.BodyBold), 0, 0);
+        lists.Controls.Add(Theme.Label("Tweaks", Theme.BodyBold), 1, 0);
+        var left = Theme.InCard(tasksPanel, 10);
+        var right = Theme.InCard(tweaksPanel, 10);
+        left.Margin = new Padding(0, 4, 6, 0);
+        right.Margin = new Padding(6, 4, 0, 0);
+        lists.Controls.Add(left, 0, 1);
+        lists.Controls.Add(right, 1, 1);
 
         var oneClick = new StackCard().Add(
-            Theme.Label("Custom one-click list", Theme.H2),
-            Theme.Paragraph("Used when you pick 'Custom list' on the One-click page. Left: tasks. Right: tweaks."),
+            Theme.SectionHeader("\uE945", "Custom one-click list", "Used when you pick 'Custom list' on the One-click page."),
             Theme.Row(
-                Theme.Button("Copy current profile", (_, _) => LoadFromPlan()),
-                Theme.Button("Recommended", (_, _) => CheckWhere(t => t.Recommended, t => t.Recommended)),
+                Theme.Button("Copy current profile", (_, _) => LoadFromPlan(), glyph: "\uE8C8"),
+                Theme.Button("Recommended", (_, _) => CheckWhere(t => t.Recommended, t => t.Recommended), glyph: "\uE73A"),
                 Theme.Button("Cleanup only", (_, _) => CheckWhere(t => t.Category == TaskCategory.Cleanup && !t.Slow, _ => false)),
                 Theme.Button("None", (_, _) => CheckWhere(_ => false, _ => false))),
+            _listSummary,
             lists);
 
         var about = new StackCard().Add(
-            Theme.Label("About", Theme.H2),
-            Theme.Paragraph($"WinSolve {Application.ProductVersion.Split('+')[0]}  ·  Logs: {Logger.LogDirectory}"),
+            Theme.SectionHeader("\uE946", "About", $"WinSolve {Application.ProductVersion.Split('+')[0]}  ·  Logs: {Logger.LogDirectory}"),
             Theme.Row(
-                Theme.Button("Create bug report", async (_, _) => await CreateBugReport()),
+                Theme.Button("Create bug report", async (_, _) => await CreateBugReport(), glyph: "\uEBE8"),
                 Theme.Button("Open log folder", (_, _) => { Directory.CreateDirectory(Logger.LogDirectory); ProcessRunner.ShellOpen(Logger.LogDirectory); }),
                 Theme.Button("Reset settings", (_, _) =>
                 {
@@ -114,7 +129,7 @@ public sealed class SettingsPage : Page
                     Main.Reload("settings");
                 })));
 
-        var save = Theme.Button("Save", async (_, _) => await SaveAsync(), primary: true);
+        var save = Theme.Button("Save", async (_, _) => await SaveAsync(), primary: true, glyph: "\uE74E");
         var body = new Stack(scroll: true).Add(general, background, updates, appearance, oneClick, about);
         AddRow(body, fill: true);
         AddRow(Theme.Row(save));
@@ -142,32 +157,57 @@ public sealed class SettingsPage : Page
         }
     }
 
-    private sealed record TweakItem(Tweak Tweak)
+    private static FlowLayoutPanel CheckList() => new()
     {
-        public override string ToString() => $"{Localization.Loc.T(Tweak.Category)}: {Localization.Loc.T(Tweak.Title)}";
+        FlowDirection = FlowDirection.TopDown,
+        WrapContents = false,
+        AutoScroll = true,
+        BackColor = Theme.Card,
+    };
+
+    private static Control GroupLabel(string text)
+    {
+        var l = Theme.Label(text.ToUpperInvariant(), Theme.Small, Theme.Muted);
+        l.Text = Localization.Loc.T(text).ToUpperInvariant();
+        l.Margin = new Padding(2, 10, 0, 2);
+        return l;
     }
 
-    private Control Swatch(string hex)
+    private CheckBox ListCheck(string title)
     {
-        var b = new Panel
-        {
-            Size = new Size(26, 26),
-            BackColor = ColorTranslator.FromHtml(hex),
-            Cursor = Cursors.Hand,
-            Margin = new Padding(4, 9, 4, 4),
-        };
-        b.Click += (_, _) => { _accent = hex; UpdatePreview(); };
-        return b;
+        var c = Theme.Check(title, false);
+        c.Margin = new Padding(2, 2, 0, 2);
+        c.CheckedChanged += (_, _) => UpdateSummary();
+        return c;
+    }
+
+    private void UpdateSummary()
+    {
+        _listSummary.Text = $"{_tasks.Values.Count(c => c.Checked)} task(s) and {_tweaks.Values.Count(c => c.Checked)} tweak(s) selected.";
     }
 
     private void UpdatePreview()
     {
-        try { _accentPreview.BackColor = ColorTranslator.FromHtml(_accent); } catch { }
+        foreach (var sw in _swatches) sw.Selected = string.Equals(sw.Hex, _accent, StringComparison.OrdinalIgnoreCase);
+        if (_swatches.Any(sw => sw.Selected)) return;
+
+        // A custom color gets its own swatch, placed before the "Custom color" button.
+        if (_customSwatch is not null)
+        {
+            _swatchRow.Controls.Remove(_customSwatch);
+            _customSwatch.Dispose();
+        }
+        try { _customSwatch = new ColorSwatch(_accent) { Selected = true }; }
+        catch { _customSwatch = null; return; }
+        _swatchRow.Controls.Add(_customSwatch);
+        _swatchRow.Controls.SetChildIndex(_customSwatch, _swatches.Count);
     }
 
     private void PickColor()
     {
-        using var dlg = new ColorDialog { Color = _accentPreview.BackColor, FullOpen = true };
+        Color current;
+        try { current = ColorTranslator.FromHtml(_accent); } catch { current = Theme.Accent; }
+        using var dlg = new ColorDialog { Color = current, FullOpen = true };
         if (dlg.ShowDialog(this) == DialogResult.OK)
         {
             _accent = $"#{dlg.Color.R:X2}{dlg.Color.G:X2}{dlg.Color.B:X2}";
@@ -179,22 +219,14 @@ public sealed class SettingsPage : Page
     {
         var tasks = AppSettings.Current.OneClickTasks?.ToHashSet();
         var tweaks = AppSettings.Current.OneClickTweaks?.ToHashSet();
-        for (int i = 0; i < _tasks.Items.Count; i++)
-        {
-            var t = (SystemTask)_tasks.Items[i];
-            _tasks.SetItemChecked(i, tasks?.Contains(t.Id) ?? t.Recommended);
-        }
-        for (int i = 0; i < _tweaks.Items.Count; i++)
-        {
-            var t = ((TweakItem)_tweaks.Items[i]).Tweak;
-            _tweaks.SetItemChecked(i, tweaks?.Contains(t.Id) ?? t.Recommended);
-        }
+        CheckWhere(t => tasks?.Contains(t.Id) ?? t.Recommended, t => tweaks?.Contains(t.Id) ?? t.Recommended);
     }
 
     private void CheckWhere(Func<SystemTask, bool> task, Func<Tweak, bool> tweak)
     {
-        for (int i = 0; i < _tasks.Items.Count; i++) _tasks.SetItemChecked(i, task((SystemTask)_tasks.Items[i]));
-        for (int i = 0; i < _tweaks.Items.Count; i++) _tweaks.SetItemChecked(i, tweak(((TweakItem)_tweaks.Items[i]).Tweak));
+        foreach (var (t, c) in _tasks) c.Checked = task(t);
+        foreach (var (t, c) in _tweaks) c.Checked = tweak(t);
+        UpdateSummary();
     }
 
     private void LoadFromPlan()
@@ -228,8 +260,8 @@ public sealed class SettingsPage : Page
                 Info("Automatic maintenance is only available when WinSolve is installed for all users (in Program Files).");
             }
         }
-        s.OneClickTasks = _tasks.CheckedItems.Cast<SystemTask>().Select(t => t.Id).ToList();
-        s.OneClickTweaks = _tweaks.CheckedItems.Cast<TweakItem>().Select(t => t.Tweak.Id).ToList();
+        s.OneClickTasks = _tasks.Where(p => p.Value.Checked).Select(p => p.Key.Id).ToList();
+        s.OneClickTweaks = _tweaks.Where(p => p.Value.Checked).Select(p => p.Key.Id).ToList();
         var accentChanged = !string.Equals(s.AccentColor, _accent, StringComparison.OrdinalIgnoreCase);
         s.AccentColor = _accent;
         s.Save();

@@ -146,4 +146,5 @@ public static class Ease
 {
     public static double OutCubic(double t) => 1 - Math.Pow(1 - t, 3);
     public static double InCubic(double t) => t * t * t;
+    public static double InOut(double t) => t < 0.5 ? 4 * t * t * t : 1 - Math.Pow(-2 * t + 2, 3) / 2;
 }

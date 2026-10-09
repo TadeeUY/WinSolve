@@ -67,6 +67,8 @@ public sealed class MainForm : Form
         Controls.Add(BuildSidebar());
 
         _tray = BuildTray();
+        // Stay invisible until the first page is fully drawn (no gray flash); the splash covers the wait.
+        if (!startHidden) Opacity = 0;
 
         Load += (_, _) =>
         {
@@ -77,9 +79,22 @@ public sealed class MainForm : Form
             var updateTimer = new System.Windows.Forms.Timer { Interval = (int)TimeSpan.FromHours(4).TotalMilliseconds };
             updateTimer.Tick += async (_, _) => await CheckForUpdateAsync();
             updateTimer.Start();
-            if (!_startHidden) Navigate("home");
+            if (!_startHidden)
+            {
+                SplashScreen.SetStatus("Preparing the interface...");
+                Navigate("home");
+            }
         };
-        Shown += async (_, _) => await AnimateInAsync();
+        Shown += async (_, _) =>
+        {
+            SplashScreen.SetStatus("Loading pages...");
+            PreloadPages();
+            Refresh();
+            SplashScreen.SetStatus("Ready");
+            await SplashScreen.CloseAsync();
+            Activate();
+            await AnimateInAsync();
+        };
         HandleCreated += (_, _) => Theme.StyleWindow(this);
         FormClosing += OnFormClosing;
     }
@@ -452,22 +467,74 @@ public sealed class MainForm : Form
             _pages[key] = page;
         }
 
-        if (CurrentPage is { } previous && previous != page) previous.OnHidden();
+        var previous = CurrentPage;
+        if (previous == page)
+        {
+            page.OnShown();
+            return;
+        }
+        previous?.OnHidden();
+        foreach (var b in _nav) b.Selected = b.Key == key;
+
+        var animate = AppSettings.Current.Animations && Visible && Opacity > 0 && previous is not null && WindowState != FormWindowState.Minimized;
 
         _content.SuspendLayout();
-        _content.Controls.Clear();
+        foreach (var old in _content.Controls.OfType<Page>().ToList()) _content.Controls.Remove(old);
+        if (animate)
+        {
+            // The new page slides up into place (Windows 11 Settings style); moving an already
+            // drawn window is cheap, so this stays smooth even on heavy pages.
+            page.Dock = DockStyle.None;
+            page.Bounds = new Rectangle(0, SlideDistance, _content.ClientSize.Width, _content.ClientSize.Height);
+            page.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+        }
+        else page.Dock = DockStyle.Fill;
         _content.Controls.Add(page);
-        _content.ResumeLayout();
+        _content.ResumeLayout(true);
 
-        foreach (var b in _nav) b.Selected = b.Key == key;
+        _currentPage = page;
         page.OnShown();
+        if (animate) SlideIn(page);
     }
 
-    private Page? CurrentPage => _content.Controls.Count > 0 ? _content.Controls[0] as Page : null;
+    private const int SlideDistance = 28;
+    private Page? _currentPage;
+
+    private void SlideIn(Page page)
+    {
+        page.Update();
+        double offset = SlideDistance;
+        Animator.Animate((this, "page"), () => offset, 0, v =>
+        {
+            offset = v;
+            if (page.IsDisposed || page.Parent != _content) return;
+            if (v <= 0.5)
+            {
+                page.Dock = DockStyle.Fill;
+                return;
+            }
+            page.Top = (int)Math.Round(v);
+            page.Update();
+        }, 240);
+    }
+
+    /// <summary>Builds the other pages up front (while the splash is visible) so switching is instant.</summary>
+    private void PreloadPages()
+    {
+        foreach (var (key, factory) in _factories)
+        {
+            if (_pages.ContainsKey(key)) continue;
+            try { _pages[key] = factory(); }
+            catch (Exception ex) { Logger.Write($"Preloading page '{key}' failed: {ex.Message}"); }
+        }
+    }
+
+    private Page? CurrentPage => _currentPage is not null && _content.Controls.Contains(_currentPage) ? _currentPage : null;
 
     /// <summary>Recreates every page (e.g. after the accent color changes).</summary>
     public void Reload(string current)
     {
+        _currentPage = null;
         _content.Controls.Clear();
         foreach (var p in _pages.Values) p.Dispose();
         _pages.Clear();

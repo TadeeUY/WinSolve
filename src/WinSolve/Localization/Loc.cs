@@ -164,6 +164,15 @@ public sealed class LocCheckBox : CheckBox
         if (AutoSize) Size = GetPreferredSize(Size.Empty);
     }
 
+    private double _knob = double.NaN;
+
+    protected override void OnCheckedChanged(EventArgs e)
+    {
+        base.OnCheckedChanged(e);
+        if (!_switch || double.IsNaN(_knob) || !IsHandleCreated || !Visible) { _knob = Checked ? 1 : 0; return; }
+        WinSolve.UI.Animator.Animate(this, () => _knob, Checked ? 1 : 0, v => { _knob = v; Invalidate(); }, 170);
+    }
+
     protected override void OnFontChanged(EventArgs e) { base.OnFontChanged(e); AdjustSize(); }
     protected override void OnMouseEnter(EventArgs eventargs) { _hover = true; Invalidate(); base.OnMouseEnter(eventargs); }
     protected override void OnMouseLeave(EventArgs eventargs) { _hover = false; Invalidate(); base.OnMouseLeave(eventargs); }
@@ -174,7 +183,10 @@ public sealed class LocCheckBox : CheckBox
         g.Clear(WinSolve.UI.Theme.SurfaceColor(this));
         var mid = Height / 2;
         if (_switch)
-            WinSolve.UI.Theme.DrawSwitch(g, new Rectangle(0, mid - 10, 40, 20), Checked, _hover, Enabled);
+        {
+            if (double.IsNaN(_knob)) _knob = Checked ? 1 : 0;
+            WinSolve.UI.Theme.DrawSwitch(g, new Rectangle(0, mid - 10, 40, 20), _knob, _hover, Enabled);
+        }
         else
             WinSolve.UI.Theme.DrawCheckBox(g, new Rectangle(0, mid - 9, 18, 18), Checked, _hover, Enabled);
         TextRenderer.DrawText(g, Text, Font, new Rectangle(MarkWidth + 8, 0, Width - MarkWidth - 8, Height),

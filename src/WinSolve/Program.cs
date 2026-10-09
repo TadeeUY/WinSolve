@@ -48,12 +48,14 @@ internal static class Program
         }
 
         var startHidden = args.Any(a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
+        if (!startHidden) SplashScreen.Show("Starting...");
         Application.Run(new MainForm(startHidden));
     }
 
     private static void Report(Exception? ex)
     {
         Logger.Write($"Unhandled exception: {ex}");
+        _ = SplashScreen.CloseAsync();
         Localization.Loc.Show(null, 
             $"An unexpected error occurred:\n\n{ex?.Message}\n\nDetails were saved to {Logger.LogDirectory}",
             "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Error);

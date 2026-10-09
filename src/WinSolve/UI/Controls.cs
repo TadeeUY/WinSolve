@@ -209,7 +209,6 @@ public sealed class ProgressLine : Control
 /// <summary>Sidebar navigation item (icon + text), Windows 11 Settings style.</summary>
 public sealed class NavButton : Control
 {
-    private bool _hover;
     private bool _selected;
 
     public string Glyph { get; }
@@ -225,14 +224,24 @@ public sealed class NavButton : Control
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
     }
 
+    private double _hoverT, _selectT;
+
     public bool Selected
     {
         get => _selected;
-        set { _selected = value; Invalidate(); }
+        set
+        {
+            if (_selected == value) return;
+            _selected = value;
+            // The accent bar grows from the middle, like Windows 11.
+            Animator.Animate((this, "sel"), () => _selectT, value ? 1 : 0, v => { _selectT = v; Invalidate(); }, value ? 260 : 120);
+        }
     }
 
-    protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
-    protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseEnter(EventArgs e) { FadeHover(true); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { FadeHover(false); base.OnMouseLeave(e); }
+
+    private void FadeHover(bool on) => Animator.Animate((this, "hover"), () => _hoverT, on ? 1 : 0, v => { _hoverT = v; Invalidate(); }, 120);
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -241,16 +250,19 @@ public sealed class NavButton : Control
         g.Clear(Theme.Sidebar);
 
         var rect = new Rectangle(6, 1, Width - 12, Height - 2);
-        if (_selected || _hover)
+        var bg = Math.Max(_hoverT * 0.75, _selectT);
+        if (bg > 0.01)
         {
             using var path = Theme.RoundedRect(rect, 4);
-            using var b = new SolidBrush(_selected ? Color.FromArgb(45, 45, 45) : Color.FromArgb(38, 38, 38));
+            using var b = new SolidBrush(Animator.Blend(Theme.Sidebar, Color.FromArgb(45, 45, 45), bg));
             g.FillPath(b, path);
         }
-        if (_selected)
+        if (_selectT > 0.01)
         {
-            using var accent = new SolidBrush(Theme.Accent);
-            using var bar = Theme.RoundedRect(new Rectangle(6, 11, 3, Height - 22), 1);
+            var full = Height - 22;
+            var h = Math.Max(2, (int)(full * _selectT));
+            using var accent = new SolidBrush(Color.FromArgb((int)(255 * Math.Min(1, _selectT * 2)), Theme.Accent));
+            using var bar = Theme.RoundedRect(new Rectangle(6, Height / 2 - h / 2, 3, h), 1);
             g.FillPath(accent, bar);
         }
 

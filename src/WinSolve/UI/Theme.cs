@@ -304,23 +304,27 @@ public static class Theme
 
     /// <summary>Draws a Windows 11 toggle switch.</summary>
     public static void DrawSwitch(Graphics g, Rectangle r, bool on, bool hover, bool enabled = true)
+        => DrawSwitch(g, r, on ? 1 : 0, hover, enabled);
+
+    /// <summary>Draws a switch; <paramref name="position"/> goes from 0 (off) to 1 (on) so the knob can slide.</summary>
+    public static void DrawSwitch(Graphics g, Rectangle r, double position, bool hover, bool enabled = true)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;
         using var path = RoundedRect(r, r.Height / 2);
-        var knob = r.Height - 8;
-        if (on)
+        var t = Math.Clamp(position, 0, 1);
+        var onFill = enabled ? (hover ? ControlPaint.Light(Accent, 0.1f) : Accent) : Color.FromArgb(80, 80, 80);
+        var offFill = hover ? Color.FromArgb(52, 52, 52) : Color.FromArgb(40, 40, 40);
+        using (var b = new SolidBrush(Animator.Blend(offFill, onFill, t))) g.FillPath(b, path);
+        if (t < 1)
         {
-            using (var b = new SolidBrush(enabled ? (hover ? ControlPaint.Light(Accent, 0.1f) : Accent) : Color.FromArgb(80, 80, 80))) g.FillPath(b, path);
-            using var k = new SolidBrush(Color.White);
-            g.FillEllipse(k, r.Right - knob - 4, r.Y + 4, knob, knob);
+            using var pen = new Pen(Color.FromArgb((int)(255 * (1 - t)), 160, 160, 160));
+            g.DrawPath(pen, path);
         }
-        else
-        {
-            using (var b = new SolidBrush(hover ? Color.FromArgb(52, 52, 52) : Color.FromArgb(40, 40, 40))) g.FillPath(b, path);
-            using (var pen = new Pen(Color.FromArgb(160, 160, 160))) g.DrawPath(pen, path);
-            using var k = new SolidBrush(Color.FromArgb(200, 200, 200));
-            g.FillEllipse(k, r.X + 5, r.Y + 5, knob - 2, knob - 2);
-        }
+        // The knob grows a little and slides from left to right.
+        var size = r.Height - 10 + 2 * t + (hover ? 1 : 0);
+        var left = r.X + 5 + (r.Width - 10 - size) * t;
+        using var k = new SolidBrush(Animator.Blend(Color.FromArgb(200, 200, 200), Color.White, t));
+        g.FillEllipse(k, (float)left, (float)(r.Y + (r.Height - size) / 2), (float)size, (float)size);
     }
 
     /// <summary>
@@ -345,6 +349,20 @@ public static class Theme
         row.Controls.Add(text, 0, 0);
         row.Controls.Add(control, 1, 0);
         return row;
+    }
+
+    /// <summary>Card section header: small icon tile, title and a one-line description.</summary>
+    public static Control SectionHeader(string glyph, string title, string? subtitle = null)
+    {
+        var head = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 6) };
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var titles = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0) };
+        titles.Controls.Add(Label(title, H2));
+        if (subtitle is not null) titles.Controls.Add(Label(subtitle, Small, Muted));
+        head.Controls.Add(new IconTile(glyph) { Size = new Size(36, 36), Margin = new Padding(0, 2, 10, 0) }, 0, 0);
+        head.Controls.Add(titles, 1, 0);
+        return head;
     }
 
     /// <summary>Puts a control (usually a grid) inside a card with a thin border.</summary>
@@ -387,7 +405,6 @@ public sealed class FlatBtn : Button
     }
 
     private bool _primary;
-    private bool _hover;
     private bool _pressed;
 
     public bool Primary
@@ -421,8 +438,12 @@ public sealed class FlatBtn : Button
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
     }
 
-    protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
-    protected override void OnMouseLeave(EventArgs e) { _hover = false; _pressed = false; Invalidate(); base.OnMouseLeave(e); }
+    private double _hoverT;
+
+    private void FadeHover(bool on) => Animator.Animate(this, () => _hoverT, on ? 1 : 0, v => { _hoverT = v; Invalidate(); }, 120);
+
+    protected override void OnMouseEnter(EventArgs e) { FadeHover(true); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _pressed = false; FadeHover(false); base.OnMouseLeave(e); }
     protected override void OnMouseDown(MouseEventArgs e) { _pressed = true; Invalidate(); base.OnMouseDown(e); }
     protected override void OnMouseUp(MouseEventArgs e) { _pressed = false; Invalidate(); base.OnMouseUp(e); }
 
@@ -432,8 +453,9 @@ public sealed class FlatBtn : Button
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Theme.SurfaceColor(this));
 
-        Color fill = _primary ? Theme.Accent : (_hover ? Theme.ControlHover : Theme.Control);
-        if (_primary && _hover) fill = ControlPaint.Light(fill, 0.12f);
+        Color fill = _primary
+            ? Animator.Blend(Theme.Accent, ControlPaint.Light(Theme.Accent, 0.12f), _hoverT)
+            : Animator.Blend(Theme.Control, Theme.ControlHover, _hoverT);
         if (_pressed) fill = ControlPaint.Dark(fill, 0.08f);
         if (!Enabled) fill = Color.FromArgb(48, 48, 48);
 

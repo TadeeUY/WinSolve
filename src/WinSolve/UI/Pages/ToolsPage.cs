@@ -56,15 +56,7 @@ public sealed class ToolsPage : Page
     private Control Section(TaskCategory category, string glyph, string subtitle)
     {
         var card = new StackCard();
-        var head = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 6) };
-        head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        var titles = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0) };
-        titles.Controls.Add(Theme.Label(category == TaskCategory.Repair ? "Repair" : category.ToString(), Theme.H2));
-        titles.Controls.Add(Theme.Label(subtitle, Theme.Small, Theme.Muted));
-        head.Controls.Add(new IconTile(glyph) { Size = new Size(36, 36), Margin = new Padding(0, 2, 10, 0) }, 0, 0);
-        head.Controls.Add(titles, 1, 0);
-        card.Add(head);
+        card.Add(Theme.SectionHeader(glyph, category == TaskCategory.Repair ? "Repair" : category.ToString(), subtitle));
 
         foreach (var t in TaskCatalog.All.Where(t => t.Category == category))
         {
