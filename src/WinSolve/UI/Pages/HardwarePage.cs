@@ -6,7 +6,7 @@ namespace WinSolve.UI.Pages;
 public sealed class HardwarePage : Page
 {
     private readonly Panel _host = new() { BackColor = Color.Transparent };
-    private readonly List<FlatBtn> _tabs = [];
+    private readonly Segmented _tabs = new();
     private readonly Dictionary<string, Func<Control>> _sections;
     private readonly Dictionary<string, Control> _built = [];
     private string _current = "disks";
@@ -24,21 +24,14 @@ public sealed class HardwarePage : Page
             ["events"] = () => new EventsSection(),
         };
 
-        AddRow(Theme.Row(
-            Tab("disks", "Drives"),
-            Tab("devices", "Devices"),
-            Tab("memory", "Memory & battery"),
-            Tab("events", "Critical events")));
+        _tabs.Add("disks", "Drives", "\uEDA2")
+             .Add("devices", "Devices", "\uE772")
+             .Add("memory", "Memory & battery", "\uE964")
+             .Add("events", "Critical events", "\uE7BA");
+        _tabs.SelectedChanged += Show;
+        AddRow(_tabs);
         AddRow(_host, fill: true);
-        Show("disks");
-    }
-
-    private FlatBtn Tab(string key, string text)
-    {
-        var b = Theme.Button(text, (_, _) => Show(key));
-        b.Tag = key;
-        _tabs.Add(b);
-        return b;
+        _tabs.Select("disks");
     }
 
     private void Show(string key)
@@ -52,7 +45,6 @@ public sealed class HardwarePage : Page
         }
         _host.Controls.Clear();
         _host.Controls.Add(section);
-        foreach (var t in _tabs) t.Primary = Equals(t.Tag, key);
         if (section is ISection s) s.Refresh(false);
     }
 
@@ -101,11 +93,11 @@ public sealed class HardwarePage : Page
             Controls.Add(_diskButtons, 0, 0);
             Controls.Add(_detail, 0, 1);
             Controls.Add(_repair, 0, 2);
-            Controls.Add(_attrs, 0, 3);
+            Theme.EmptyState(_attrs, "No S.M.A.R.T. attributes for this drive. NVMe and USB drives often report only the summary above.");
+            Controls.Add(Theme.InCard(_attrs), 0, 3);
             _diskButtons.Dock = DockStyle.Fill;
             _detail.Dock = DockStyle.Fill;
             _repair.Dock = DockStyle.Fill;
-            _attrs.Dock = DockStyle.Fill;
         }
 
         public async void Refresh(bool force)
@@ -293,9 +285,9 @@ public sealed class HardwarePage : Page
 
             Controls.Add(toolbar, 0, 0);
             Controls.Add(_summaryHost, 0, 1);
-            Controls.Add(_grid, 0, 2);
+            Theme.EmptyState(_grid, "No devices with problems.");
+            Controls.Add(Theme.InCard(_grid), 0, 2);
             Controls.Add(_runner, 0, 3);
-            _grid.Dock = DockStyle.Fill;
         }
 
         public void Refresh(bool force)
@@ -410,8 +402,8 @@ public sealed class HardwarePage : Page
                 Theme.Button("Event Viewer", (_, _) => ProcessRunner.ShellOpen("eventvwr.msc")),
                 Theme.Button("Reliability Monitor", (_, _) => ProcessRunner.ShellOpen("perfmon.exe", "/rel"))), 0, 0);
             Controls.Add(_summaryHost, 0, 1);
-            Controls.Add(_grid, 0, 2);
-            _grid.Dock = DockStyle.Fill;
+            Theme.EmptyState(_grid, "No critical events in the last 30 days.");
+            Controls.Add(Theme.InCard(_grid), 0, 2);
         }
 
         public async void Refresh(bool force)

@@ -64,10 +64,7 @@ public sealed class DriversPage : Page
             if (!first) _gpuCard.Add(new Divider());
             first = false;
 
-            _gpuCard.Add(Theme.Label(gpu.Name, Theme.BodyBold));
-            _gpuCard.Add(Theme.Label($"Installed driver: {gpu.FriendlyVersion}" +
-                                     (gpu.DriverDate is { } d ? $"  ·  {d:d}" : "") +
-                                     $"  ·  Windows version {gpu.WindowsDriverVersion}", Theme.Body, Theme.Muted));
+            _gpuCard.Add(GpuHeader(gpu));
 
             if (_latest.TryGetValue(gpu.PnpId, out var latest))
             {
@@ -107,6 +104,30 @@ public sealed class DriversPage : Page
             if (gpu.Vendor == GpuVendor.Amd)
                 _gpuCard.Add(Theme.Paragraph("AMD does not publish a public download API. Download the Adrenalin installer from AMD's website, then use 'Clean install from file'. WinSolve removes the old driver first and then opens the installer, where you can pick 'Factory Reset'."));
         }
+    }
+
+    private static Control GpuHeader(GpuInfo gpu)
+    {
+        var tint = gpu.Vendor switch
+        {
+            GpuVendor.Nvidia => Color.FromArgb(118, 185, 0),
+            GpuVendor.Amd => Color.FromArgb(237, 28, 36),
+            GpuVendor.Intel => Color.FromArgb(0, 113, 197),
+            _ => Theme.Accent,
+        };
+        var head = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 6) };
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 0) };
+        var title = Theme.Row(Theme.Label(gpu.Name, Theme.BodyBold), new Pill(gpu.VendorName, tint));
+        title.Margin = new Padding(0);
+        text.Controls.Add(title);
+        text.Controls.Add(Theme.Label($"Installed driver: {gpu.FriendlyVersion}" +
+                                      (gpu.DriverDate is { } d ? $"  ·  {d:d}" : "") +
+                                      $"  ·  Windows version {gpu.WindowsDriverVersion}", Theme.Body, Theme.Muted));
+        head.Controls.Add(new IconTile("\uE7F4", tint) { Margin = new Padding(0, 0, 14, 0) }, 0, 0);
+        head.Controls.Add(text, 1, 0);
+        return head;
     }
 
     private async Task CheckNvidia(GpuInfo gpu)

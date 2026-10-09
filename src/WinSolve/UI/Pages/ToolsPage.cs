@@ -1,24 +1,23 @@
 using WinSolve.Core;
+using WinSolve.Localization;
 using WinSolve.Services;
 
 namespace WinSolve.UI.Pages;
 
 public sealed class ToolsPage : Page
 {
-    private readonly DataGridView _grid = new();
-    private readonly ComboBox _filter;
     private readonly TaskRunnerView _runner = new();
     private readonly FlatBtn _run;
-    private readonly HashSet<string> _checked = [.. TaskCatalog.All.Where(t => t.Recommended).Select(t => t.Id)];
+    private readonly Label _selection = Theme.Label("", Theme.Small, Theme.Muted);
+    private readonly Dictionary<string, CheckBox> _boxes = [];
 
-    private static readonly (string Label, TaskCategory? Cat)[] Filters =
+    private static readonly (TaskCategory Category, string Glyph, string Subtitle)[] Sections =
     [
-        ("All categories", null),
-        ("Cleanup", TaskCategory.Cleanup),
-        ("Performance", TaskCategory.Performance),
-        ("Repair", TaskCategory.Repair),
-        ("Network", TaskCategory.Network),
-        ("Security", TaskCategory.Security),
+        (TaskCategory.Cleanup, "", "Free up space by removing files Windows doesn't need."),
+        (TaskCategory.Repair, "", "Fix Windows components, the system drive and common problems."),
+        (TaskCategory.Performance, "", "Drive optimization and power plans."),
+        (TaskCategory.Network, "", "Fix connection and DNS problems."),
+        (TaskCategory.Security, "", "Microsoft Defender updates and scans."),
     ];
 
     public override string Key => "tools";
@@ -26,27 +25,76 @@ public sealed class ToolsPage : Page
     public ToolsPage() : base("Cleanup & repair",
         "Select the tasks to run. Tasks marked Slow can take several minutes.")
     {
-        _filter = Theme.Combo(Filters.Select(f => f.Label).ToArray());
-        _filter.SelectedIndexChanged += (_, _) => Fill();
-
-        _run = Theme.Button("Run selected", async (_, _) => await RunSelected(), primary: true, glyph: "\uE768");
+        _run = Theme.Button("Run selected", async (_, _) => await RunSelected(), primary: true, glyph: "");
         _runner.BusyChanged += busy => _run.Enabled = !busy;
 
-        var toolbar = Theme.Row(_filter, _run,
-            Theme.Button("Select recommended", (_, _) => SetChecks(t => t.Recommended)),
+        AddRow(Theme.Row(_run,
+            Theme.Button("Select recommended", (_, _) => SetChecks(t => t.Recommended), glyph: ""),
             Theme.Button("Clear selection", (_, _) => SetChecks(_ => false)),
-            Theme.Button("Windows tools", (s, _) => ShowToolsMenu((Control)s!)));
+            Theme.Button("Windows tools", (s, _) => ShowToolsMenu((Control)s!), glyph: "")));
+        AddRow(_selection);
 
-        BuildGrid();
-        var split = new SplitContainer { Orientation = Orientation.Horizontal, BackColor = Theme.Background, SplitterWidth = 10 };
-        split.Panel1.Controls.Add(_grid);
-        split.Panel2.Controls.Add(_runner);
-        split.HandleCreated += (_, _) => { try { split.SplitterDistance = (int)(split.Height * 0.58); } catch { } };
+        var columns = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0) };
+        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        var left = new Stack { Margin = new Padding(0, 0, 8, 0) };
+        var right = new Stack();
+        foreach (var (category, glyph, subtitle) in Sections)
+        {
+            var card = Section(category, glyph, subtitle);
+            (category is TaskCategory.Cleanup or TaskCategory.Network ? left : right).Add(card);
+        }
+        left.Dock = right.Dock = DockStyle.Fill;
+        columns.Controls.Add(left, 0, 0);
+        columns.Controls.Add(right, 1, 0);
 
-        AddRow(toolbar);
-        AddRow(split, fill: true);
-        Fill();
+        AddRow(new Stack(scroll: true).Add(columns), fill: true);
+        AddRow(_runner, height: 220);
+        SetChecks(t => t.Recommended);
     }
+
+    private Control Section(TaskCategory category, string glyph, string subtitle)
+    {
+        var card = new StackCard();
+        var head = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 6) };
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var titles = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0) };
+        titles.Controls.Add(Theme.Label(category == TaskCategory.Repair ? "Repair" : category.ToString(), Theme.H2));
+        titles.Controls.Add(Theme.Label(subtitle, Theme.Small, Theme.Muted));
+        head.Controls.Add(new IconTile(glyph) { Size = new Size(36, 36), Margin = new Padding(0, 2, 10, 0) }, 0, 0);
+        head.Controls.Add(titles, 1, 0);
+        card.Add(head);
+
+        foreach (var t in TaskCatalog.All.Where(t => t.Category == category))
+        {
+            card.Add(new Divider { Margin = new Padding(0, 2, 0, 2) });
+            var row = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 2) };
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+            var text = new Stack();
+            var box = Theme.Check(t.Title, false);
+            box.CheckedChanged += (_, _) => UpdateSelection();
+            var desc = Theme.Paragraph(t.Description, font: Theme.Small);
+            desc.Margin = new Padding(28, 0, 0, 2);
+            text.Add(box, desc);
+            text.Dock = DockStyle.Fill;
+
+            var badges = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(6, 4, 0, 0), Anchor = AnchorStyles.Top | AnchorStyles.Right };
+            if (t.Slow) badges.Controls.Add(Badge("Slow", Theme.Warn));
+            if (t.NeedsReboot) badges.Controls.Add(Badge("Restart", Theme.Info));
+            if (t.Recommended) badges.Controls.Add(Badge("Recommended", Theme.Good));
+
+            row.Controls.Add(text, 0, 0);
+            row.Controls.Add(badges, 1, 0);
+            card.Add(row);
+            _boxes[t.Id] = box;
+        }
+        return card;
+    }
+
+    private static Control Badge(string text, Color color) => new Pill(text, color) { Margin = new Padding(4, 0, 0, 0) };
 
     private static void ShowToolsMenu(Control anchor)
     {
@@ -66,59 +114,25 @@ public sealed class ToolsPage : Page
         menu.Show(anchor, new Point(0, anchor.Height));
     }
 
-    private void BuildGrid()
-    {
-        Theme.StyleGrid(_grid);
-        _grid.Dock = DockStyle.Fill;
-        _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "sel", HeaderText = "", Width = 40, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "title", HeaderText = "Task", ReadOnly = true, Width = 290, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cat", HeaderText = "Category", ReadOnly = true, Width = 110, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "desc", HeaderText = "Description", ReadOnly = true, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "notes", HeaderText = "Notes", ReadOnly = true, Width = 120, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
-        _grid.Columns["cat"]!.DefaultCellStyle.ForeColor = Theme.Muted;
-        _grid.Columns["desc"]!.DefaultCellStyle.ForeColor = Theme.Muted;
-        _grid.Columns["notes"]!.DefaultCellStyle.ForeColor = Theme.Muted;
-        _grid.CellContentClick += (_, e) => { if (e.ColumnIndex == 0) _grid.CommitEdit(DataGridViewDataErrorContexts.Commit); };
-        _grid.CellToolTipTextNeeded += (_, e) =>
-        {
-            if (e.RowIndex >= 0 && _grid.Rows[e.RowIndex].Tag is SystemTask t) e.ToolTipText = t.Description;
-        };
-    }
-
-    private void SaveChecks()
-    {
-        foreach (DataGridViewRow row in _grid.Rows)
-        {
-            var t = (SystemTask)row.Tag!;
-            if (row.Cells["sel"].Value is true) _checked.Add(t.Id); else _checked.Remove(t.Id);
-        }
-    }
-
-    private void Fill()
-    {
-        SaveChecks();
-        var cat = Filters[Math.Max(0, _filter.SelectedIndex)].Cat;
-        _grid.Rows.Clear();
-        foreach (var t in TaskCatalog.All.Where(t => cat is null || t.Category == cat))
-        {
-            var notes = string.Join(", ", new[] { t.Slow ? "Slow" : null, t.NeedsReboot ? "Restart" : null }.OfType<string>());
-            var i = _grid.Rows.Add(_checked.Contains(t.Id), t.Title, t.Category.ToString(), t.Description, notes);
-            _grid.Rows[i].Tag = t;
-        }
-    }
-
     private void SetChecks(Func<SystemTask, bool> predicate)
     {
-        foreach (DataGridViewRow row in _grid.Rows)
-            row.Cells["sel"].Value = predicate((SystemTask)row.Tag!);
-        SaveChecks();
+        foreach (var (id, box) in _boxes) box.Checked = predicate(TaskCatalog.Find(id)!);
+        UpdateSelection();
+    }
+
+    private List<SystemTask> Selected() => TaskCatalog.All.Where(t => _boxes.TryGetValue(t.Id, out var b) && b.Checked).ToList();
+
+    private void UpdateSelection()
+    {
+        var sel = Selected();
+        _selection.Text = sel.Any(t => t.Slow)
+            ? $"{sel.Count} task(s) selected  ·  {sel.Count(t => t.Slow)} slow"
+            : $"{sel.Count} task(s) selected";
     }
 
     private async Task RunSelected()
     {
-        _grid.EndEdit();
-        SaveChecks();
-        var tasks = TaskCatalog.All.Where(t => _checked.Contains(t.Id)).ToList();
+        var tasks = Selected();
         if (tasks.Count == 0)
         {
             Info("No tasks selected.");

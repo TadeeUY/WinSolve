@@ -11,7 +11,7 @@ public sealed class AppsPage : Page
     private readonly Panel _host = new() { BackColor = Color.Transparent };
     private readonly TextBox _search = Theme.TextBox("Search apps");
     private readonly CheckBox _onlyBloat = Theme.Check("Only show preinstalled bloatware", false);
-    private readonly FlatBtn _tabPrograms, _tabStore;
+    private readonly Segmented _tabs = new();
     private List<InstalledProgram> _programList = [];
     private List<StoreApp> _storeList = [];
     private bool _storeLoaded;
@@ -22,12 +22,12 @@ public sealed class AppsPage : Page
     public AppsPage() : base("Apps",
         "Uninstall programs normally, or force-remove them: silent uninstall, then leftover files, shortcuts and registry entries are deleted.")
     {
-        _tabPrograms = Theme.Button("Installed programs", (_, _) => ShowTab(false));
-        _tabStore = Theme.Button("Microsoft Store apps", (_, _) => ShowTab(true));
+        _tabs.Add("programs", "Installed programs", "\uE71D").Add("store", "Microsoft Store apps", "\uE719");
+        _tabs.SelectedChanged += k => ShowTab(k == "store");
         _search.TextChanged += (_, _) => Fill();
         _onlyBloat.CheckedChanged += (_, _) => Fill();
 
-        AddRow(Theme.Row(_tabPrograms, _tabStore));
+        AddRow(_tabs);
         AddRow(Theme.Row(_search,
             Theme.Button("Uninstall", async (_, _) => await UninstallSelected(force: false)),
             Theme.Button("Force uninstall", async (_, _) => await UninstallSelected(force: true), primary: true, glyph: "\uE74D"),
@@ -61,20 +61,19 @@ public sealed class AppsPage : Page
         _store.Columns["bloat"]!.FillWeight = 50;
 
         _programs.Dock = _store.Dock = DockStyle.Fill;
+        Theme.EmptyState(_programs, "No programs match your search.");
+        Theme.EmptyState(_store, "No apps to show. Clear the search or the bloatware filter.");
         var split = new SplitContainer { Orientation = Orientation.Horizontal, SplitterWidth = 10, BackColor = Theme.Background };
-        split.Panel1.Controls.Add(_host);
-        _host.Dock = DockStyle.Fill;
+        split.Panel1.Controls.Add(Theme.InCard(_host));
         split.Panel2.Controls.Add(_runner);
         split.HandleCreated += (_, _) => { try { split.SplitterDistance = (int)(split.Height * 0.62); } catch { } };
         AddRow(split, fill: true);
-        ShowTab(false);
+        _tabs.Select("programs");
     }
 
     private async void ShowTab(bool store)
     {
         _showStore = store;
-        _tabPrograms.Primary = !store;
-        _tabStore.Primary = store;
         _onlyBloat.Visible = store;
         _host.Controls.Clear();
         _host.Controls.Add(store ? _store : _programs);

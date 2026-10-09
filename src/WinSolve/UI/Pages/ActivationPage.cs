@@ -28,8 +28,8 @@ public sealed class ActivationPage : Page
     {
         _status.Body.Controls.Clear();
         _status.Add(
-            Theme.Label("License status", Theme.H2),
-            Theme.Status(s.IsActivated ? "Windows is activated" : "Windows is not activated", s.IsActivated ? Theme.Good : Theme.Warn),
+            StatusHeader(s),
+            new Divider(),
             KeyValue("Status", s.StatusText),
             KeyValue("Edition", s.Product.Length > 0 ? s.Product : "—"),
             KeyValue("License channel", s.Channel.Length > 0 ? s.Channel : "—"),
@@ -59,6 +59,21 @@ public sealed class ActivationPage : Page
                 Theme.Button("Retry online activation", async (_, _) => await RunActivation(log => ActivationService.ActivateOnlineAsync(log))),
                 Theme.Button("Open Settings > Activation", (_, _) => ActivationService.OpenActivationSettings()),
                 Theme.Button("Refresh", (_, _) => OnShown())));
+    }
+
+    private static Control StatusHeader(ActivationStatus s)
+    {
+        var color = s.IsActivated ? Theme.Good : Theme.Warn;
+        var head = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 4) };
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var icon = new IconTile(s.IsActivated ? "\uE930" : "\uE7BA", color) { Margin = new Padding(0, 0, 14, 0) };
+        var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 0) };
+        text.Controls.Add(Theme.Label(s.IsActivated ? "Windows is activated" : "Windows is not activated", Theme.H2));
+        text.Controls.Add(Theme.Label(s.Product.Length > 0 ? s.Product : "License status", Theme.Body, Theme.Muted));
+        head.Controls.Add(icon, 0, 0);
+        head.Controls.Add(text, 1, 0);
+        return head;
     }
 
     private static Control KeyValue(string key, string value)

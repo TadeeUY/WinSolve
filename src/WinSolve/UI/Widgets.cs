@@ -229,3 +229,151 @@ public sealed class NavHeader : Control
             Color.FromArgb(130, 130, 130), TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.NoPrefix);
     }
 }
+
+/// <summary>Accent-tinted rounded square with a large icon, used in page headers.</summary>
+public sealed class IconTile : Control
+{
+    public string Glyph { get; }
+    public Color Tint { get; }
+
+    public IconTile(string glyph, Color? tint = null)
+    {
+        Glyph = glyph;
+        Tint = tint ?? Theme.Accent;
+        Size = new Size(48, 48);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Theme.SurfaceColor(this));
+        var r = new Rectangle(0, 0, Width - 1, Height - 1);
+        using (var path = Theme.RoundedRect(r, 10))
+        using (var brush = new LinearGradientBrush(r, Color.FromArgb(70, Tint), Color.FromArgb(30, Tint), LinearGradientMode.ForwardDiagonal))
+            g.FillPath(brush, path);
+        TextRenderer.DrawText(g, Glyph, Theme.IconsLarge, r, ControlPaint.Light(Tint, 0.7f),
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+    }
+}
+
+/// <summary>Windows 11 segmented control (pill with mutually exclusive options).</summary>
+public sealed class Segmented : FlowLayoutPanel
+{
+    private readonly List<(string Key, FlatBtn Button)> _items = [];
+
+    public event Action<string>? SelectedChanged;
+
+    public string? Selected { get; private set; }
+
+    public Segmented()
+    {
+        AutoSize = true;
+        WrapContents = false;
+        BackColor = Color.Transparent;
+        Margin = new Padding(0, 2, 0, 8);
+    }
+
+    public Segmented Add(string key, string text, string? glyph = null)
+    {
+        var b = Theme.Button(text, (_, _) => Select(key), glyph: glyph);
+        b.Margin = new Padding(0, 0, 4, 0);
+        _items.Add((key, b));
+        Controls.Add(b);
+        return this;
+    }
+
+    public void Select(string key, bool notify = true)
+    {
+        Selected = key;
+        foreach (var (k, b) in _items) b.Primary = k == key;
+        if (notify) SelectedChanged?.Invoke(key);
+    }
+}
+
+/// <summary>Large selectable card (icon, title, description), used like a radio button.</summary>
+public sealed class OptionCard : Control
+{
+    private bool _hover;
+    private bool _selected;
+
+    public string Glyph { get; }
+    public string Description { get; set; }
+
+    public OptionCard(string glyph, string title, string description)
+    {
+        Glyph = glyph;
+        Text = title;
+        Description = description;
+        Height = 96;
+        Cursor = Cursors.Hand;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+    }
+
+    public bool Selected
+    {
+        get => _selected;
+        set { _selected = value; Invalidate(); }
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Theme.SurfaceColor(this));
+        var r = new Rectangle(0, 0, Width - 1, Height - 1);
+        using (var path = Theme.RoundedRect(r, 8))
+        {
+            using (var b = new SolidBrush(_selected ? Color.FromArgb(36, 52, 72) : _hover ? Theme.CardHover : Color.FromArgb(38, 38, 38))) g.FillPath(b, path);
+            using var pen = new Pen(_selected ? Theme.Accent : _hover ? Color.FromArgb(80, 80, 80) : Theme.Border, _selected ? 2f : 1f);
+            g.DrawPath(pen, path);
+        }
+
+        TextRenderer.DrawText(g, Glyph, Theme.IconsLarge, new Rectangle(14, 14, 32, 32), _selected ? ControlPaint.Light(Theme.Accent, 0.6f) : Theme.Text,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        TextRenderer.DrawText(g, Loc.T(Text), Theme.BodyBold, new Rectangle(56, 14, Width - 70, 22), Theme.Text,
+            TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        TextRenderer.DrawText(g, Loc.T(Description), Theme.Small, new Rectangle(56, 38, Width - 70, Height - 46), Theme.Muted,
+            TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+
+        if (_selected)
+        {
+            var c = new Rectangle(Width - 26, 10, 16, 16);
+            using (var b = new SolidBrush(Theme.Accent)) g.FillEllipse(b, c);
+            using var pen = new Pen(Color.White, 1.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+            g.DrawLines(pen, [new PointF(c.X + 4.5f, c.Y + 8.5f), new PointF(c.X + 7f, c.Y + 11f), new PointF(c.X + 11.5f, c.Y + 5.5f)]);
+        }
+    }
+}
+
+/// <summary>Small rounded tag ("Slow", "Restart", "Recommended").</summary>
+public sealed class Pill : Control
+{
+    private readonly Color _color;
+
+    public Pill(string text, Color color)
+    {
+        _color = color;
+        Text = Loc.T(text);
+        Font = Theme.Small;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        var size = TextRenderer.MeasureText(Text, Font);
+        Size = new Size(size.Width + 14, size.Height + 4);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Theme.SurfaceColor(this));
+        using (var path = Theme.RoundedRect(new Rectangle(0, 0, Width - 1, Height - 1), (Height - 1) / 2))
+        using (var b = new SolidBrush(Color.FromArgb(38, _color)))
+            g.FillPath(b, path);
+        TextRenderer.DrawText(g, Text, Font, ClientRectangle, _color,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+    }
+}

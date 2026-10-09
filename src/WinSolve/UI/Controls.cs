@@ -391,6 +391,14 @@ public abstract class Page : UserControl
 
     public abstract string Key { get; }
 
+    /// <summary>Icon of each page (Segoe Fluent Icons / MDL2), also used in the sidebar.</summary>
+    public static readonly Dictionary<string, string> PageGlyphs = new()
+    {
+        ["home"] = "\uE80F", ["optimize"] = "\uE945", ["tools"] = "\uE90F", ["space"] = "\uEDA2",
+        ["monitor"] = "\uE9D9", ["hardware"] = "\uE950", ["drivers"] = "\uE772", ["tweaks"] = "\uE9E9",
+        ["startup"] = "\uE7E8", ["apps"] = "\uE71D", ["activation"] = "\uE8D7", ["settings"] = "\uE713",
+    };
+
     protected MainForm Main => (MainForm)FindForm()!;
 
     protected Page(string title, string subtitle)
@@ -412,19 +420,24 @@ public abstract class Page : UserControl
         Root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         Controls.Add(Root);
 
-        var header = new FlowLayoutPanel
+        // Header: icon tile + title and subtitle.
+        var header = new TableLayoutPanel
         {
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
+            ColumnCount = 2,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             BackColor = Color.Transparent,
-            Margin = new Padding(0, 0, 0, 12),
+            Margin = new Padding(0, 0, 0, 14),
         };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0) };
         var sub = Theme.Label(subtitle, Theme.Body, Theme.Muted);
         sub.MaximumSize = new Size(1000, 0);
-        header.Controls.Add(Theme.Label(title, Theme.H1));
-        header.Controls.Add(sub);
+        text.Controls.Add(Theme.Label(title, Theme.H1));
+        text.Controls.Add(sub);
+        header.Controls.Add(new IconTile(PageGlyphs.GetValueOrDefault(Key, "\uE80F")) { Margin = new Padding(0, 2, 14, 0) }, 0, 0);
+        header.Controls.Add(text, 1, 0);
         AddRow(header);
         HandleCreated += (_, _) => Loc.Apply(this);
     }

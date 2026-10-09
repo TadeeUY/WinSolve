@@ -47,7 +47,8 @@ public sealed class StartupPage : Page
             }
             UpdateStatus();
         };
-        AddRow(_grid, fill: true);
+        Theme.EmptyState(_grid, "No startup apps found.");
+        AddRow(Theme.InCard(_grid), fill: true);
     }
 
     public override async void OnShown() => await FillAsync();

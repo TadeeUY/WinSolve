@@ -347,6 +347,31 @@ public static class Theme
         return row;
     }
 
+    /// <summary>Puts a control (usually a grid) inside a card with a thin border.</summary>
+    public static Card InCard(Control content, int padding = 6)
+    {
+        var card = new Card { Padding = new Padding(padding), Margin = new Padding(0), Dock = DockStyle.Fill };
+        content.Dock = DockStyle.Fill;
+        card.Controls.Add(content);
+        return card;
+    }
+
+    /// <summary>Shows a centered message while a grid has no rows.</summary>
+    public static void EmptyState(DataGridView grid, string message)
+    {
+        grid.Paint += (_, e) =>
+        {
+            if (grid.Rows.Count > 0) return;
+            var area = new Rectangle(0, grid.ColumnHeadersHeight, grid.Width, Math.Max(60, grid.Height - grid.ColumnHeadersHeight));
+            TextRenderer.DrawText(e.Graphics, "\uE946", IconsLarge, new Rectangle(area.X, area.Y + area.Height / 2 - 40, area.Width, 30), Muted,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            TextRenderer.DrawText(e.Graphics, Loc.T(message), Body, new Rectangle(area.X + 20, area.Y + area.Height / 2 - 6, area.Width - 40, 40), Muted,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.WordBreak);
+        };
+        grid.RowsAdded += (_, _) => grid.Invalidate();
+        grid.RowsRemoved += (_, _) => grid.Invalidate();
+    }
+
     /// <summary>Small colored dot followed by text, used for status values.</summary>
     public static Control Status(string text, Color color) => new StatusLabel(text, color);
 }

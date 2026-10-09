@@ -88,9 +88,15 @@ public sealed class SpacePage : Page
         };
 
         var leftSplit = new SplitContainer { Orientation = Orientation.Horizontal, SplitterWidth = 6, BackColor = Theme.Background, Dock = DockStyle.Fill };
-        leftSplit.Panel1.Controls.Add(_tree);
-        leftSplit.Panel2.Controls.Add(_types);
-        leftSplit.HandleCreated += (_, _) => { try { leftSplit.SplitterDistance = (int)(leftSplit.Height * 0.6); } catch { } };
+        leftSplit.Panel1.Controls.Add(Theme.InCard(_tree, 8));
+        leftSplit.Panel2.Controls.Add(Theme.InCard(_types));
+        var leftSized = false;
+        leftSplit.SizeChanged += (_, _) =>
+        {
+            if (leftSized || leftSplit.Height < 200) return;
+            leftSized = true;
+            try { leftSplit.SplitterDistance = (int)(leftSplit.Height * 0.6); } catch { }
+        };
 
         var mapPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Color.Transparent };
         mapPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -100,8 +106,15 @@ public sealed class SpacePage : Page
 
         var split = new SplitContainer { Dock = DockStyle.Fill, SplitterWidth = 8, BackColor = Theme.Background, FixedPanel = FixedPanel.Panel1 };
         split.Panel1.Controls.Add(leftSplit);
-        split.Panel2.Controls.Add(mapPanel);
-        split.HandleCreated += (_, _) => { try { split.SplitterDistance = Math.Min(360, split.Width / 3); } catch { } };
+        split.Panel2.Controls.Add(Theme.InCard(mapPanel));
+        var sized = false;
+        split.SizeChanged += (_, _) =>
+        {
+            if (sized || split.Width < 600) return;
+            sized = true;
+            try { split.SplitterDistance = Math.Min(380, split.Width / 3); } catch { }
+        };
+        Theme.EmptyState(_types, "Scan a drive to see which file types use the most space.");
         AddRow(split, fill: true);
 
         _map.HoverChanged += n => _hoverInfo.Text = n is null ? "" : $"{n.FullPath}   ·   {Format.Bytes(n.Size)}" +

@@ -8,10 +8,9 @@ public sealed class OptimizePage : Page
     private readonly TaskRunnerView _runner = new();
     private readonly Label _hardware = Theme.Label("", Theme.Body, Theme.Muted);
     private readonly Label _plan = Theme.Paragraph("", Theme.Text);
-    private readonly Label _levelHelp = Theme.Paragraph("");
     private readonly FlatBtn _start;
-    private readonly FlatBtn _desktop, _laptop, _custom;
-    private readonly FlatBtn[] _levels;
+    private readonly OptionCard _desktop, _laptop, _custom;
+    private readonly OptionCard[] _levels;
     private readonly StackCard _results = new() { Visible = false };
 
     public override string Key => "optimize";
@@ -22,36 +21,58 @@ public sealed class OptimizePage : Page
         _start = Theme.Button("Start optimization", async (_, _) => await StartAsync(), primary: true, glyph: "\uE945");
         _runner.BusyChanged += busy => _start.Enabled = !busy;
 
-        _desktop = Theme.Button("Desktop PC", (_, _) => SetDevice(DeviceKind.PC));
-        _laptop = Theme.Button("Laptop", (_, _) => SetDevice(DeviceKind.Laptop));
-        _custom = Theme.Button("Custom list", (_, _) =>
+        _desktop = new OptionCard("\uE7F4", "Desktop PC", "Highest power plan when you choose Maximum performance.");
+        _desktop.Click += (_, _) => SetDevice(DeviceKind.PC);
+        _laptop = new OptionCard("\uE7F8", "Laptop", "Protects battery life; keeps hibernation on.");
+        _laptop.Click += (_, _) => SetDevice(DeviceKind.Laptop);
+
+        _levels =
+        [
+            new OptionCard("\uE706", "Light", "Basic cleanup and privacy settings. Power settings are not touched."),
+            new OptionCard("\uE9E9", "Balanced", "Full cleanup, TRIM or defragmentation, and the recommended tweaks."),
+            new OptionCard("\uE945", "Maximum performance", "Everything in Balanced plus the highest power plan, GPU and network tuning."),
+        ];
+        for (int i = 0; i < _levels.Length; i++)
+        {
+            var level = (OptimizationLevel)i;
+            _levels[i].Click += (_, _) => SetLevel(level);
+        }
+        _custom = new OptionCard("\uE70F", "Custom list", "Runs the tasks and tweaks you picked in Settings.");
+        _custom.Click += (_, _) =>
         {
             AppSettings.Current.UseCustomOneClick = true;
             AppSettings.Current.Save();
             OnShown();
-        });
-        _levels =
-        [
-            Theme.Button("Light", (_, _) => SetLevel(OptimizationLevel.Light)),
-            Theme.Button("Balanced", (_, _) => SetLevel(OptimizationLevel.Balanced)),
-            Theme.Button("Maximum performance", (_, _) => SetLevel(OptimizationLevel.Maximum)),
-        ];
+        };
 
         var card = new StackCard().Add(
             _hardware,
             new Divider(),
             Theme.Label("Device type", Theme.BodyBold),
-            Theme.Row(_desktop, _laptop),
+            Grid(_desktop, _laptop),
             Theme.Label("Optimization level", Theme.BodyBold),
-            Theme.Row([.. _levels, _custom]),
-            _levelHelp,
+            Grid([.. _levels, _custom]),
             new Divider(),
             Theme.Label("Planned changes", Theme.BodyBold),
             _plan,
             Theme.Row(_start, Theme.Button("Edit custom list", (_, _) => Main.Navigate("settings"))));
 
         AddRow(new Stack(scroll: true).Add(_results, card), fill: true);
-        AddRow(_runner, height: 240);
+        AddRow(_runner, height: 220);
+    }
+
+    /// <summary>Equal-width row of option cards.</summary>
+    private static Control Grid(params OptionCard[] cards)
+    {
+        var grid = new TableLayoutPanel { ColumnCount = cards.Length, Height = 104, BackColor = Color.Transparent, Margin = new Padding(0, 4, 0, 8) };
+        for (int i = 0; i < cards.Length; i++)
+        {
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / cards.Length));
+            cards[i].Dock = DockStyle.Fill;
+            cards[i].Margin = new Padding(0, 0, i == cards.Length - 1 ? 0 : 8, 0);
+            grid.Controls.Add(cards[i], i, 0);
+        }
+        return grid;
     }
 
     private void SetDevice(DeviceKind kind)
@@ -79,21 +100,12 @@ public sealed class OptimizePage : Page
         var level = AppSettings.Current.Level;
 
         _hardware.Text = "Detected: " + hw.Describe();
-        _desktop.Primary = !custom && device == DeviceKind.PC;
-        _laptop.Primary = !custom && device == DeviceKind.Laptop;
+        _desktop.Selected = !custom && device == DeviceKind.PC;
+        _laptop.Selected = !custom && device == DeviceKind.Laptop;
         _desktop.Text = hw.IsLaptop ? "Desktop PC" : "Desktop PC (detected)";
         _laptop.Text = hw.IsLaptop ? "Laptop (detected)" : "Laptop";
-        for (int i = 0; i < _levels.Length; i++) _levels[i].Primary = !custom && (int)level == i;
-        _custom.Primary = custom;
-
-        _levelHelp.Text = custom
-            ? "Runs the tasks and tweaks you picked in Settings."
-            : level switch
-            {
-                OptimizationLevel.Light => "Light: basic cleanup and privacy settings. Power settings are not touched.",
-                OptimizationLevel.Balanced => "Balanced: full cleanup, TRIM or defragmentation, and the recommended tweaks.",
-                _ => "Maximum performance: everything in Balanced plus the highest power plan, no background recording, and GPU and network tuning.",
-            };
+        for (int i = 0; i < _levels.Length; i++) _levels[i].Selected = !custom && (int)level == i;
+        _custom.Selected = custom;
 
         var tasks = await Task.Run(() => OneClickOptimizer.SelectedTasks().ToList());
         var tweaks = await Task.Run(() => OneClickOptimizer.SelectedTweaks().ToList());
