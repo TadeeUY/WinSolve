@@ -150,12 +150,14 @@ public static partial class TweakCatalog
             RegTweak("adv-fso-off", "Performance", "Disable fullscreen optimizations",
                 "Uses true exclusive fullscreen in games. Can lower input latency on some games; may break Alt+Tab overlays.",
                 [D(HKCU, @"System\GameConfigStore", "GameDVR_DXGIHonorFSEWindowsCompatible", 1, 0)]),
-            RegTweak("adv-ipv6-off", "Network", "Disable IPv6",
+            // Both use bits of the same DisabledComponents value: change only their own bits so one
+            // doesn't silently undo the other.
+            Ipv6BitsTweak("adv-ipv6-off", "Disable IPv6",
                 "Turns IPv6 off on every adapter. Only useful for specific network problems; some features (HomeGroup, DirectAccess) need IPv6. Requires a restart.",
-                [D(HKLM, @"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters", "DisabledComponents", 255, 0)], reboot: true),
-            RegTweak("adv-prefer-ipv4", "Network", "Prefer IPv4 over IPv6",
+                0xDF),
+            Ipv6BitsTweak("adv-prefer-ipv4", "Prefer IPv4 over IPv6",
                 "Keeps IPv6 enabled but makes Windows try IPv4 first. Requires a restart.",
-                [D(HKLM, @"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters", "DisabledComponents", 32, 0)], reboot: true),
+                0x20),
             RegTweak("adv-teredo-off", "Network", "Disable Teredo",
                 "Disables the Teredo IPv6 tunnel. Can reduce latency in some games; Xbox party chat may report a 'Teredo' NAT warning.",
                 [S(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\TCPIP\v6Transition", "Teredo_State", "Disabled", null)], reboot: true),
@@ -253,12 +255,32 @@ public static partial class TweakCatalog
         p?.WaitForExit(10000);
     }
 
+    private const string Tcpip6Parameters = @"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters";
+
+    private static Tweak Ipv6BitsTweak(string id, string title, string description, int bits) => new()
+    {
+        Id = id, Category = "Network", Title = title, Description = description, NeedsReboot = true,
+        IsApplied = () => (Ipv6Components() & bits) == bits,
+        Apply = () => SetIpv6Components(Ipv6Components() | bits),
+        Revert = () => SetIpv6Components(Ipv6Components() & ~bits),
+    };
+
+    private static int Ipv6Components() => Reg.Get(HKLM, Tcpip6Parameters, "DisabledComponents") is int v ? v : 0;
+
+    private static void SetIpv6Components(int value)
+    {
+        if (value == 0) Reg.Delete(HKLM, Tcpip6Parameters, "DisabledComponents"); // 0 / absent = Windows default
+        else Reg.Set(HKLM, Tcpip6Parameters, "DisabledComponents", value, RegistryValueKind.DWord);
+    }
+
     private static Tweak ServicesManualTweak() => new()
     {
         Id = "ess-services-manual", Category = "Performance",
         Title = "Set unneeded services to Manual",
         Description = "Sets ~25 background services (Xbox, Maps, Fax, telemetry, updaters...) to start only when needed. The original startup types are saved and restored by Undo.",
         IsApplied = () => ManualServices.All(s => ServiceStart(s.Name) is not { } v || v >= s.Start),
+        // Undo stays possible even if an update has since set one service back to Automatic.
+        CanUndo = () => File.Exists(ServicesBackupPath),
         Apply = () =>
         {
             // Save the original startup types once, so Undo can restore them exactly.

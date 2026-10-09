@@ -123,7 +123,7 @@ public sealed class TweaksPage : Page
     {
         var selected = Selected();
         var work = undo
-            ? selected.Where(t => !t.IsAction && t.SafeIsApplied()).ToList()
+            ? selected.Where(t => !t.IsAction && t.SafeCanUndo()).ToList()
             : selected.Where(t => t.IsAction || !t.SafeIsApplied()).ToList();
         if (work.Count == 0)
         {

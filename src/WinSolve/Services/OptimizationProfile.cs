@@ -42,6 +42,7 @@ public sealed class HardwareProfile
 
         // SMBIOS chassis types that mean portable.
         int[] laptopChassis = [8, 9, 10, 11, 12, 14, 18, 21, 30, 31, 32];
+        int[] desktopChassis = [3, 4, 5, 6, 7, 13, 15, 16, 17, 23, 24, 35, 36];
         var chassis = Wmi.Query("SELECT ChassisTypes FROM Win32_SystemEnclosure")
             .SelectMany(c => c.Get<ushort[]>("ChassisTypes") ?? []).Select(x => (int)x);
         var hasBattery = Wmi.Query("SELECT Name FROM Win32_Battery").Count > 0;
@@ -73,7 +74,8 @@ public sealed class HardwareProfile
 
         _cached = new HardwareProfile
         {
-            IsLaptop = hasBattery || chassis.Any(c => laptopChassis.Contains(c)),
+            // Chassis first: a desktop on a USB UPS also reports a battery.
+            IsLaptop = chassis.Any(c => laptopChassis.Contains(c)) || (hasBattery && !chassis.Any(c => desktopChassis.Contains(c))),
             SystemOnSsd = systemSsd,
             HasHdd = disks.Any(d => d.Get<ushort>("MediaType") == 3),
             RamGb = ram / 1024d / 1024 / 1024,

@@ -25,13 +25,19 @@ public static class DnsService
     public static async Task<string> CurrentAsync()
     {
         var r = await ProcessRunner.PowerShellAsync("""
-            $a = Get-NetAdapter -Physical | Where-Object Status -eq 'Up' | Select-Object -First 1
+            $a = Get-NetAdapter | Where-Object Status -eq 'Up' | Sort-Object -Property @{ Expression = { -not $_.HardwareInterface } } | Select-Object -First 1
             if ($a) { (Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4).ServerAddresses -join ',' }
             """);
         var servers = r.Output.Trim().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (servers.Length == 0) return "Default (DHCP)";
         var match = Providers.FirstOrDefault(p => p.IPv4.Length > 0 && p.IPv4[0] == servers[0]);
-        return match?.Name ?? "Default (DHCP)";
+        if (match is not null) return match.Name;
+        // Servers set by hand vs. the ones DHCP handed out.
+        var dhcp = await ProcessRunner.PowerShellAsync("""
+            $a = Get-NetAdapter | Where-Object Status -eq 'Up' | Sort-Object -Property @{ Expression = { -not $_.HardwareInterface } } | Select-Object -First 1
+            if ($a) { (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($a.InterfaceGuid)" -ErrorAction SilentlyContinue).NameServer }
+            """);
+        return dhcp.Output.Trim().Length > 0 ? "Custom" : "Default (DHCP)";
     }
 
     public static Task ApplyAsync(DnsProvider provider, Action<string> log, CancellationToken ct = default)
@@ -39,14 +45,16 @@ public static class DnsService
         string Quote(IEnumerable<string> s) => string.Join(",", s.Select(x => "'" + x + "'"));
         var script = provider.IPv4.Length == 0
             ? """
-              Get-NetAdapter -Physical | Where-Object Status -eq 'Up' | ForEach-Object {
-                  Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses; "Reset DNS on $($_.Name)"
+              # Every adapter with an IP interface, connected or not (Wi-Fi and Ethernet on a laptop,
+              # Hyper-V vEthernet), so switching networks later doesn't keep the old DNS.
+              Get-NetAdapter | Where-Object { $_.HardwareInterface -or $_.Name -like 'vEthernet*' } | ForEach-Object {
+                  Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses -ErrorAction SilentlyContinue; "Reset DNS on $($_.Name)"
               }
               Clear-DnsClientCache
               """
             : $$"""
-              Get-NetAdapter -Physical | Where-Object Status -eq 'Up' | ForEach-Object {
-                  Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @({{Quote(provider.IPv4.Concat(provider.IPv6))}}); "DNS set on $($_.Name)"
+              Get-NetAdapter | Where-Object { $_.HardwareInterface -or $_.Name -like 'vEthernet*' } | ForEach-Object {
+                  Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @({{Quote(provider.IPv4.Concat(provider.IPv6))}}) -ErrorAction SilentlyContinue; "DNS set on $($_.Name)"
               }
               Clear-DnsClientCache
               """;
@@ -127,7 +135,8 @@ public static class WindowsFeatures
         foreach (var f in features)
         {
             var mine = states.Where(s => f.FeatureNames.Contains(s.FeatureName, StringComparer.OrdinalIgnoreCase)).ToList();
-            f.Enabled = mine.Count == 0 ? null : mine.All(s => s.State == "Enabled");
+            // "EnablePending" = turned on, waiting for the restart (don't flip the switch back off).
+            f.Enabled = mine.Count == 0 ? null : mine.All(s => s.State is "Enabled" or "EnablePending");
         }
     }
 
@@ -154,8 +163,10 @@ public static class PowerPlans
             $ids = @()
             if ((powercfg /list | Out-String) -match '{{UltimateGuid}}') { $ids += '{{UltimateGuid}}' }
             # Copies made by older versions (found by their translated name).
-            foreach ($l in (powercfg /list | Select-String 'Ultimate Performance|Máximo rendimiento|Rendement optimal|Höchstleistung')) {
-                if ("$l" -match '([0-9a-f-]{36})' -and $Matches[1] -ne 'e9a42b02-d5df-448d-aa00-03f14749eb61') { $ids += $Matches[1] }
+            # (Never a built-in plan: "Höchstleistung" is German for High performance, not Ultimate.)
+            $builtin = @('381b4222-f694-41f0-9685-ff5bb260df2e','8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c','a1841308-3541-4fab-bc81-f71556f20b4a','e9a42b02-d5df-448d-aa00-03f14749eb61')
+            foreach ($l in (powercfg /list | Select-String 'Ultimate Performance|Máximo rendimiento|Performances optimales|Ultimative Leistung')) {
+                if ("$l" -match '([0-9a-f-]{36})' -and $builtin -notcontains $Matches[1]) { $ids += $Matches[1] }
             }
             foreach ($id in ($ids | Select-Object -Unique)) { powercfg /delete $id; "Removed $id" }
             'Balanced plan active.'

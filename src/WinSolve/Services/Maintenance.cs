@@ -83,7 +83,7 @@ public static class Maintenance
     {
         Logger.Write("Scheduled maintenance started.");
         var ctx = new TaskContext(line => Logger.Write("[maintenance] " + line), CancellationToken.None);
-        var run = new OptimizationRun { Profile = "Scheduled maintenance", Before = await OptimizationHistory.TakeAsync() };
+        var run = new OptimizationRun { Profile = "Scheduled maintenance", IsMaintenance = true, Before = await OptimizationHistory.TakeAsync() };
         foreach (var id in TaskIds)
         {
             if (TaskCatalog.Find(id) is not { } task) continue;

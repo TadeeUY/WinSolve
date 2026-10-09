@@ -209,7 +209,10 @@ public static class TaskCatalog
                 if ($list -match $mine) { $id = $mine }
                 elseif ($list -match $template) { $id = $template }
                 else {
-                    $legacy = powercfg /list | Select-String 'Ultimate Performance|Máximo rendimiento|Rendement optimal|Höchstleistung' | Select-Object -First 1
+                    # Copies from older versions, by name (never a built-in plan such as High performance).
+                    $builtin = @('381b4222-f694-41f0-9685-ff5bb260df2e','8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c','a1841308-3541-4fab-bc81-f71556f20b4a','e9a42b02-d5df-448d-aa00-03f14749eb61')
+                    $legacy = powercfg /list | Select-String 'Ultimate Performance|Máximo rendimiento|Performances optimales|Ultimative Leistung' |
+                        Where-Object { "$_" -match '([0-9a-f-]{36})' -and $builtin -notcontains $Matches[1] } | Select-Object -First 1
                     if ($legacy -and "$legacy" -match '([0-9a-f-]{36})') { $id = $Matches[1] }
                     else {
                         powercfg -duplicatescheme $template $mine | Out-Null

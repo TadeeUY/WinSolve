@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using WinSolve.Core;
 
@@ -36,10 +37,18 @@ public sealed class Tweak
 
     public bool NeedsReboot { get; init; }
 
+    /// <summary>Whether Undo has something to restore (default: the tweak is applied).</summary>
+    public Func<bool>? CanUndo { get; init; }
+
     /// <summary>Current state, never throws.</summary>
     public bool SafeIsApplied()
     {
         try { return IsApplied(); } catch { return false; }
+    }
+
+    public bool SafeCanUndo()
+    {
+        try { return CanUndo?.Invoke() ?? IsApplied(); } catch { return false; }
     }
 }
 
@@ -97,6 +106,61 @@ public static partial class TweakCatalog
     private static RegValue S(RegistryHive hive, string path, string name, string on, string? off)
         => new(hive, path, name, on, off, RegistryValueKind.String);
 
+    // ───────────── Visual effects ─────────────
+    // VisualFXSetting alone is only the radio button in the Performance Options dialog; the
+    // effects themselves live in these values (same set WinUtil uses), and running apps only
+    // notice them through SystemParametersInfo.
+
+    private static readonly byte[] PerformanceMask = [0x90, 0x12, 0x03, 0x80, 0x10, 0x00, 0x00, 0x00];
+    private static readonly byte[] DefaultMask = [0x9E, 0x1E, 0x07, 0x80, 0x12, 0x00, 0x00, 0x00];
+
+    private static Tweak VisualEffectsTweak() => new()
+    {
+        Id = "perf-visual-effects", Category = "Performance", Title = "Visual effects: best performance",
+        Description = "Turns off animations, fades and shadows (keeps smooth fonts and thumbnails). Only recommended on slow PCs.",
+        NeedsExplorerRestart = true,
+        IsApplied = () => Reg.Get(HKCU, @"Control Panel\Desktop\WindowMetrics", "MinAnimate") is "0"
+                          && Reg.Get(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarAnimations") is 0,
+        Apply = () => SetVisualEffects(performance: true),
+        Revert = () => SetVisualEffects(performance: false),
+    };
+
+    private static void SetVisualEffects(bool performance)
+    {
+        var on = performance ? 0 : 1;
+        Reg.Set(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects", "VisualFXSetting", performance ? 3 : 0, RegistryValueKind.DWord);
+        Reg.Set(HKCU, @"Control Panel\Desktop", "UserPreferencesMask", performance ? PerformanceMask : DefaultMask, RegistryValueKind.Binary);
+        Reg.Set(HKCU, @"Control Panel\Desktop\WindowMetrics", "MinAnimate", on.ToString(), RegistryValueKind.String);
+        Reg.Set(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarAnimations", on, RegistryValueKind.DWord);
+        Reg.Set(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "ListviewAlphaSelect", on, RegistryValueKind.DWord);
+        Reg.Set(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "ListviewShadow", on, RegistryValueKind.DWord);
+        Reg.Set(HKCU, @"Software\Microsoft\Windows\DWM", "EnableAeroPeek", on, RegistryValueKind.DWord);
+
+        // Apply now for the signed-in session (only possible when WinSolve runs as that user;
+        // otherwise it takes effect at the next sign-in).
+        if (InteractiveUser.IsDifferent) return;
+        var anim = new ANIMATIONINFO { cbSize = (uint)Marshal.SizeOf<ANIMATIONINFO>(), iMinAnimate = on };
+        SystemParametersInfo(SPI_SETANIMATION, anim.cbSize, ref anim, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+        SystemParametersInfo(SPI_SETUIEFFECTS, 0, (IntPtr)on, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+        SystemParametersInfo(SPI_SETCLIENTAREAANIMATION, 0, (IntPtr)on, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ANIMATIONINFO
+    {
+        public uint cbSize;
+        public int iMinAnimate;
+    }
+
+    private const uint SPI_SETANIMATION = 0x0049, SPI_SETUIEFFECTS = 0x103F, SPI_SETCLIENTAREAANIMATION = 0x1043;
+    private const uint SPIF_UPDATEINIFILE = 0x01, SPIF_SENDCHANGE = 0x02;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SystemParametersInfo(uint action, uint param, ref ANIMATIONINFO info, uint winIni);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SystemParametersInfo(uint action, uint param, IntPtr value, uint winIni);
+
     private static bool IsWindows11 => Environment.OSVersion.Version.Build >= 22000;
 
     private static List<Tweak> Build()
@@ -152,7 +216,7 @@ public static partial class TweakCatalog
             // ───────────── Performance ─────────────
             RegTweak("perf-game-mode", "Performance", "Enable Game Mode",
                 "Prioritizes the game in the foreground and holds back driver installs and notifications while playing.",
-                [D(HKCU, @"Software\Microsoft\GameBar", "AutoGameModeEnabled", 1, 0)],
+                [D(HKCU, @"Software\Microsoft\GameBar", "AutoGameModeEnabled", 1, null)], // absent = on (Windows default)
                 recommended: true),
             RegTweak("perf-game-dvr", "Performance", "Disable background recording (Game DVR)",
                 "Turns off continuous Xbox Game Bar capture, which costs GPU time and disk writes.",
@@ -162,7 +226,7 @@ public static partial class TweakCatalog
                 ], recommended: true),
             RegTweak("perf-hags", "Performance", "Hardware-accelerated GPU scheduling",
                 "Lowers latency on supported GPUs (NVIDIA GTX 10 series+, AMD RX 5000+). Requires a restart.",
-                [D(HKLM, @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", 2, 1)],
+                [D(HKLM, @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", 2, null)], // absent = driver default
                 reboot: true),
             RegTweak("perf-background-apps", "Performance", "Block background apps",
                 "Store apps won't run in the background unless you open them.",
@@ -175,10 +239,7 @@ public static partial class TweakCatalog
                 "Startup apps launch without the artificial delay Windows adds.",
                 [D(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize", "StartupDelayInMSec", 0, null)],
                 recommended: true),
-            RegTweak("perf-visual-effects", "Performance", "Visual effects: best performance",
-                "Turns off animations and shadows. Only recommended on slow PCs.",
-                [D(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects", "VisualFXSetting", 2, 0)],
-                explorer: true),
+            VisualEffectsTweak(),
             RegTweak("perf-network-throttling", "Performance", "Disable multimedia network throttling",
                 "Removes the packet limit Windows applies while media is playing (helps online games).",
                 [new(HKLM, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "NetworkThrottlingIndex", unchecked((int)0xFFFFFFFF), 10)]),

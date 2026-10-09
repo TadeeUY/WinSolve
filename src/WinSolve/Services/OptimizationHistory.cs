@@ -30,6 +30,9 @@ public sealed class OptimizationRun
 
     /// <summary>First boot measured after this run (filled in on a later start).</summary>
     public double? BootSecondsAfter { get; set; }
+
+    /// <summary>Scheduled background cleanup (not shown as "last optimization").</summary>
+    public bool IsMaintenance { get; set; }
 }
 
 /// <summary>Before/after measurements of each optimization, kept in %ProgramData%\WinSolve\history.json.</summary>
@@ -75,7 +78,9 @@ public static class OptimizationHistory
     public static OptimizationRun? Latest()
     {
         var runs = Load();
-        var last = runs.LastOrDefault();
+        var last = runs.LastOrDefault(r => !r.IsMaintenance);
+        // boot.Time is when that boot started (not when Windows logged it, minutes later), so a
+        // boot that began before the optimization is never credited to it.
         if (last is { BootSecondsAfter: null } && LastBoot() is { } boot && boot.Time > last.Time)
         {
             last.BootSecondsAfter = boot.Seconds;
@@ -113,8 +118,14 @@ public static class OptimizationHistory
             using var reader = new EventLogReader(query);
             using var rec = reader.ReadEvent();
             if (rec is null) return null;
-            var m = Regex.Match(rec.ToXml(), @"<Data Name='BootTime'>(\d+)</Data>");
-            return m.Success ? (rec.TimeCreated ?? DateTime.MinValue, double.Parse(m.Groups[1].Value) / 1000.0) : null;
+            var xml = rec.ToXml();
+            var m = Regex.Match(xml, @"<Data Name='BootTime'>(\d+)</Data>");
+            if (!m.Success) return null;
+            var started = Regex.Match(xml, @"<Data Name='BootStartTime'>([^<]+)</Data>");
+            var time = started.Success && DateTime.TryParse(started.Groups[1].Value, null, System.Globalization.DateTimeStyles.AdjustToUniversal, out var t)
+                ? t.ToLocalTime()
+                : rec.TimeCreated ?? DateTime.MinValue;
+            return (time, double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) / 1000.0);
         }
         catch
         {
