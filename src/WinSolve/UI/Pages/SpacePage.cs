@@ -7,54 +7,68 @@ namespace WinSolve.UI.Pages;
 /// <summary>WizTree-style disk space analyzer: folder tree, treemap and file types.</summary>
 public sealed class SpacePage : Page
 {
-    private readonly ComboBox _drives;
+    private readonly FlowLayoutPanel _driveRow = new() { AutoSize = true, WrapContents = true, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 4) };
+    private readonly DriveCard _folderCard;
     private readonly FlatBtn _scan, _cancel, _up, _dupes;
+    private readonly Label _crumb = Theme.Label("", Theme.BodyBold, Theme.Text);
     private readonly Label _status = Theme.Label("", Theme.Small, Theme.Muted);
-    private readonly Label _hoverInfo = Theme.Label("", Theme.Small, Theme.Text);
-    private readonly TreeView _tree = new();
+    private readonly Label _hoverInfo = Theme.Label("Hover over the map to see what each block is. Double-click a folder to zoom in.", Theme.Small, Theme.Muted);
+    private readonly SpaceTree _tree = new();
     private readonly TreemapView _map = new() { Dock = DockStyle.Fill };
     private readonly DataGridView _types = new();
     private readonly ContextMenuStrip _menu = Menus.Create();
+    private readonly Panel _content = new() { Dock = DockStyle.Fill, BackColor = Color.Transparent };
+    private readonly ScanPlaceholder _placeholder;
+    private readonly Control _resultView;
     private CancellationTokenSource? _cts;
     private SpaceScanResult? _result;
+    private string? _selectedPath;
 
     public override string Key => "space";
 
     public SpacePage() : base("Disk space",
         "Find out what takes up space. Double-click the map to zoom into a folder; right-click to open or delete.")
     {
-        _drives = Theme.Combo();
-        _drives.Width = 240;
         _scan = Theme.Button("Scan", async (_, _) => await ScanAsync(), primary: true, glyph: "\uE721");
-        _cancel = Theme.Button("Cancel", (_, _) => _cts?.Cancel());
-        _cancel.Enabled = false;
-        _up = Theme.Button("Up one level", (_, _) => ZoomUp());
+        _cancel = Theme.Button("Cancel", (_, _) => _cts?.Cancel(), glyph: "\uE711");
+        _cancel.Visible = false;
+        _up = Theme.Button("Up", (_, _) => ZoomUp(), glyph: "\uE74A");
         _up.Enabled = false;
         _dupes = Theme.Button("Find duplicates", (_, _) =>
         {
             if (_result is null) return;
             using var dlg = new DuplicatesDialog(_result.Root);
             dlg.ShowDialog(this);
-        });
+        }, glyph: "\uE8C8");
         _dupes.Enabled = false;
 
-        AddRow(Theme.Row(_drives,
-            Theme.Button("Choose folder", (_, _) => PickFolder()),
-            _scan, _cancel, _up, _dupes,
-            Theme.Button("Clean junk files", (_, _) => Main.Navigate("tools"))));
+        // ── Drives ──
+        _folderCard = new DriveCard("", "Scan a folder", "Pick any folder", -1, "\uE8B7");
+        _folderCard.Click += (_, _) => PickFolder();
+        AddRow(_driveRow);
+
+        // ── Toolbar: actions left, where you are in the middle, extras right ──
+        var bar = new TableLayoutPanel { ColumnCount = 3, AutoSize = true, Dock = DockStyle.Top, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 2) };
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var left = Theme.Row(_scan, _cancel, _up);
+        left.WrapContents = false;
+        var right = Theme.Row(_dupes, Theme.Button("Clean junk files", (_, _) => Main.Navigate("tools"), glyph: "\uE74D"));
+        right.WrapContents = false;
+        _crumb.AutoSize = false;
+        _crumb.Dock = DockStyle.Fill;
+        _crumb.TextAlign = ContentAlignment.MiddleLeft;
+        _crumb.AutoEllipsis = true;
+        _crumb.Margin = new Padding(8, 0, 8, 0);
+        bar.Controls.Add(left, 0, 0);
+        bar.Controls.Add(_crumb, 1, 0);
+        bar.Controls.Add(right, 2, 0);
+        AddRow(bar);
         AddRow(_status);
 
         // ── Folder tree ──
-        _tree.BackColor = Theme.Card;
-        _tree.LineColor = Theme.Border;
-        _tree.ForeColor = Theme.Text;
-        _tree.BorderStyle = BorderStyle.None;
-        _tree.Font = Theme.Body;
         _tree.Dock = DockStyle.Fill;
-        _tree.HideSelection = false;
-        _tree.FullRowSelect = true;
-        _tree.ShowLines = false;
-        _tree.ItemHeight = 24;
         _tree.BeforeExpand += (_, e) => Expand(e.Node!);
         _tree.AfterSelect += (_, e) => { if (e.Node?.Tag is SpaceNode n) _map.Selected = n; };
         _tree.NodeMouseDoubleClick += (_, e) => { if (e.Node.Tag is SpaceNode { IsFile: false } n) ZoomTo(n); };
@@ -69,56 +83,78 @@ public sealed class SpacePage : Page
         Theme.StyleGrid(_types);
         _types.Dock = DockStyle.Fill;
         _types.ReadOnly = true;
-        _types.Columns.Add(new DataGridViewTextBoxColumn { Name = "color", HeaderText = "", Width = 18, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
+        _types.Columns.Add(new DataGridViewTextBoxColumn { Name = "color", HeaderText = "", Width = 22, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
         _types.Columns.Add("ext", "Type");
         _types.Columns.Add("size", "Size");
         _types.Columns.Add("count", "Files");
         _types.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
         _types.Columns["color"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
-        _types.Columns["color"]!.Width = 18;
+        _types.Columns["color"]!.Width = 22;
+        foreach (var col in new[] { "size", "count" })
+            _types.Columns[col]!.HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleRight;
+        // Set per cell: the grid's alternating-row style would otherwise override column alignment.
+        _types.CellFormatting += (_, e) =>
+        {
+            if (e.CellStyle is null) return;
+            if (e.ColumnIndex is 2 or 3) e.CellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+            if (e.ColumnIndex == 3) e.CellStyle.ForeColor = Theme.Muted;
+        };
         _types.CellPainting += (_, e) =>
         {
             if (e.RowIndex < 0 || e.ColumnIndex != 0 || e.Graphics is null) return;
             e.PaintBackground(e.CellBounds, true);
             var ext = _types.Rows[e.RowIndex].Cells["ext"].Value as string ?? "";
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             using var b = new SolidBrush(FileColors.For(ext));
-            var r = e.CellBounds;
-            e.Graphics.FillRectangle(b, r.X + 4, r.Y + r.Height / 2 - 5, 10, 10);
+            using var dot = Theme.RoundedRect(new Rectangle(e.CellBounds.X + 6, e.CellBounds.Y + e.CellBounds.Height / 2 - 5, 10, 10), 3);
+            e.Graphics.FillPath(b, dot);
             e.Handled = true;
         };
 
-        var leftSplit = new SplitContainer { Orientation = Orientation.Horizontal, SplitterWidth = 6, BackColor = Theme.Background, Dock = DockStyle.Fill };
-        leftSplit.Panel1.Controls.Add(Theme.InCard(_tree, 8));
-        leftSplit.Panel2.Controls.Add(Theme.InCard(_types));
+        var leftSplit = new SplitContainer { Orientation = Orientation.Horizontal, SplitterWidth = 10, BackColor = Theme.Background, Dock = DockStyle.Fill };
+        leftSplit.Panel1.Controls.Add(Titled("Folders", _tree));
+        leftSplit.Panel2.Controls.Add(Titled("File types", _types));
         var leftSized = false;
         leftSplit.SizeChanged += (_, _) =>
         {
             if (leftSized || leftSplit.Height < 200) return;
             leftSized = true;
-            try { leftSplit.SplitterDistance = (int)(leftSplit.Height * 0.6); } catch { }
+            try { leftSplit.SplitterDistance = (int)(leftSplit.Height * 0.62); } catch { }
         };
 
-        var mapPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Color.Transparent };
+        _hoverInfo.AutoSize = false;
+        _hoverInfo.Dock = DockStyle.Fill;
+        _hoverInfo.AutoEllipsis = true;
+        _hoverInfo.TextAlign = ContentAlignment.MiddleLeft;
+        _hoverInfo.Height = 26;
+        var mapPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Color.Transparent, Margin = new Padding(0) };
         mapPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        mapPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        mapPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         mapPanel.Controls.Add(_map, 0, 0);
         mapPanel.Controls.Add(_hoverInfo, 0, 1);
+        _map.Margin = new Padding(0);
 
-        var split = new SplitContainer { Dock = DockStyle.Fill, SplitterWidth = 8, BackColor = Theme.Background, FixedPanel = FixedPanel.Panel1 };
+        var split = new SplitContainer { Dock = DockStyle.Fill, SplitterWidth = 10, BackColor = Theme.Background, FixedPanel = FixedPanel.Panel1 };
         split.Panel1.Controls.Add(leftSplit);
-        split.Panel2.Controls.Add(Theme.InCard(mapPanel));
+        split.Panel2.Controls.Add(Titled("Map", mapPanel));
         var sized = false;
         split.SizeChanged += (_, _) =>
         {
             if (sized || split.Width < 600) return;
             sized = true;
-            try { split.SplitterDistance = Math.Min(380, split.Width / 3); } catch { }
+            try { split.SplitterDistance = Math.Min(420, split.Width * 2 / 5); } catch { }
         };
-        Theme.EmptyState(_types, "Scan a drive to see which file types use the most space.");
-        AddRow(split, fill: true);
+        _resultView = split;
 
-        _map.HoverChanged += n => _hoverInfo.Text = n is null ? "" : $"{n.FullPath}   ·   {Format.Bytes(n.Size)}" +
-            (n.FileCount > 1 ? $"   ·   {n.FileCount:N0} files" : "") + (_result is null ? "" : $"   ·   {Percent(n):0.0}% of total");
+        // Before (and while) scanning: a friendly empty state instead of empty panels.
+        _placeholder = new ScanPlaceholder(Theme.Button("Scan", async (_, _) => await ScanAsync(), primary: true, glyph: "\uE721")) { Dock = DockStyle.Fill };
+        _content.Controls.Add(Theme.InCard(_placeholder, 8));
+        AddRow(_content, fill: true);
+
+        _map.HoverChanged += n => _hoverInfo.Text = n is null
+            ? Localization.Loc.T("Hover over the map to see what each block is. Double-click a folder to zoom in.")
+            : $"{n.FullPath}   ·   {Format.Bytes(n.Size)}" + (n.FileCount > 1 ? $"   ·   {n.FileCount:N0} files" : "") +
+              (_result is null ? "" : $"   ·   {Percent(n):0.0}% of total");
         _map.NodeSelected += SelectInTree;
         _map.NodeActivated += ZoomTo;
         _map.MouseUp += (_, e) =>
@@ -129,73 +165,130 @@ public sealed class SpacePage : Page
         LoadDrives();
     }
 
+    /// <summary>A card with a small title above its content.</summary>
+    private static Control Titled(string title, Control content)
+    {
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Color.Transparent, Margin = new Padding(0) };
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var label = Theme.Label(title, Theme.BodyBold, Theme.Text);
+        label.Margin = new Padding(4, 2, 0, 6);
+        panel.Controls.Add(label, 0, 0);
+        content.Dock = DockStyle.Fill;
+        content.Margin = new Padding(0);
+        panel.Controls.Add(content, 0, 1);
+        return Theme.InCard(panel, 10);
+    }
+
+    private void ShowView(bool results)
+    {
+        var view = results ? _resultView : _placeholder.Parent!;
+        if (_content.Controls.Count == 1 && _content.Controls[0] == view) return;
+        _content.SuspendLayout();
+        _content.Controls.Clear();
+        _content.Controls.Add(view);
+        view.Dock = DockStyle.Fill;
+        _content.ResumeLayout();
+    }
+
+    private void SelectDrive(DriveCard card)
+    {
+        foreach (var c in _driveRow.Controls.OfType<DriveCard>()) c.Selected = c == card;
+        _selectedPath = card.Path;
+    }
+
     private double Percent(SpaceNode n) => _result is { Root.Size: > 0 } r ? n.Size * 100.0 / r.Root.Size : 0;
 
     private void LoadDrives()
     {
-        _drives.Items.Clear();
+        Theme.ClearAndDispose(_driveRow, _folderCard);
+        DriveCard? first = null;
         foreach (var d in DriveInfo.GetDrives())
         {
             try
             {
                 if (d.DriveType is not (DriveType.Fixed or DriveType.Removable) || !d.IsReady) continue;
-                var label = string.IsNullOrEmpty(d.VolumeLabel) ? "Local Disk" : d.VolumeLabel;
-                _drives.Items.Add(new DriveChoice(d.RootDirectory.FullName,
-                    $"{d.Name.TrimEnd('\\')} {label} ({Format.Bytes(d.TotalSize - d.AvailableFreeSpace)} used of {Format.Bytes(d.TotalSize)})"));
+                var label = string.IsNullOrEmpty(d.VolumeLabel) ? (d.DriveType == DriveType.Removable ? "USB drive" : "Local Disk") : d.VolumeLabel;
+                var used = d.TotalSize - d.AvailableFreeSpace;
+                var card = new DriveCard(d.RootDirectory.FullName, $"{d.Name.TrimEnd('\\')}  {label}",
+                    $"{Format.Bytes(d.AvailableFreeSpace)} free of {Format.Bytes(d.TotalSize)}",
+                    d.TotalSize > 0 ? (double)used / d.TotalSize : 0,
+                    d.DriveType == DriveType.Removable ? "\uE88E" : "\uEDA2");
+                card.Click += (_, _) => SelectDrive(card);
+                card.DoubleClick += async (_, _) => { SelectDrive(card); await ScanAsync(); };
+                _driveRow.Controls.Add(card);
+                first ??= card;
             }
             catch { }
         }
-        if (_drives.Items.Count > 0) _drives.SelectedIndex = 0;
-    }
-
-    private sealed record DriveChoice(string Path, string Text)
-    {
-        public override string ToString() => Text;
+        _driveRow.Controls.Add(_folderCard);
+        // Keep the current choice after a refresh; otherwise pick the first drive.
+        var current = _driveRow.Controls.OfType<DriveCard>().FirstOrDefault(c => c.Path.Length > 0 && c.Path == _selectedPath);
+        if (current is not null) SelectDrive(current);
+        else if (first is not null) SelectDrive(first);
     }
 
     private void PickFolder()
     {
-        using var dlg = new FolderBrowserDialog { Description = "Folder to scan", UseDescriptionForTitle = true };
+        using var dlg = new FolderBrowserDialog { Description = Localization.Loc.T("Folder to scan"), UseDescriptionForTitle = true };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
-        var choice = new DriveChoice(dlg.SelectedPath, dlg.SelectedPath);
-        _drives.Items.Add(choice);
-        _drives.SelectedItem = choice;
+        _folderCard.Path = dlg.SelectedPath;
+        _folderCard.Text = Path.GetFileName(dlg.SelectedPath.TrimEnd('\\')) is { Length: > 0 } name ? name : dlg.SelectedPath;
+        _folderCard.Detail = dlg.SelectedPath;
+        SelectDrive(_folderCard);
     }
 
     private async Task ScanAsync()
     {
-        if (_cts is not null || _drives.SelectedItem is not DriveChoice choice) return;
+        if (_cts is not null || string.IsNullOrEmpty(_selectedPath)) return;
+        var path = _selectedPath;
         _cts = new CancellationTokenSource();
         _scan.Enabled = false;
-        _cancel.Enabled = true;
+        _cancel.Visible = true;
+        _up.Enabled = _dupes.Enabled = false;
         _tree.Nodes.Clear();
         _types.Rows.Clear();
         _map.Root = null;
         _result = null;
+        _crumb.Text = "";
+        _status.Text = "";
         GC.Collect(); // release the previous scan before starting another
 
+        _placeholder.Title = $"Scanning {path}";
+        _placeholder.Counters = "";
+        _placeholder.Current = "";
+        _placeholder.Scanning = true;
+        ShowView(results: false);
+
         var progress = new DiskScanner.Progress();
-        using var timer = new System.Windows.Forms.Timer { Interval = 200 };
-        timer.Tick += (_, _) => _status.Text =
-            $"Scanning... {progress.Files:N0} files  ·  {Format.Bytes(progress.Bytes)}  ·  {progress.Current}";
+        using var timer = new System.Windows.Forms.Timer { Interval = 150 };
+        timer.Tick += (_, _) =>
+        {
+            _placeholder.Counters = $"{progress.Files:N0} files  ·  {Format.Bytes(progress.Bytes)}";
+            _placeholder.Current = progress.Current ?? "";
+            _placeholder.Invalidate();
+        };
         timer.Start();
 
         try
         {
-            _result = await DiskScanner.ScanAsync(choice.Path, progress, _cts.Token);
-            _status.Text = $"{Format.Bytes(_result.Root.Size)} in {_result.Root.FileCount:N0} files  ·  scanned in {_result.Elapsed.TotalSeconds:0.0} s" +
+            _result = await DiskScanner.ScanAsync(path, progress, _cts.Token);
+            _status.Text = $"{Format.Bytes(_result.Root.Size)}  ·  {_result.Root.FileCount:N0} files  ·  scanned in {_result.Elapsed.TotalSeconds:0.0} s" +
                            (_result.Inaccessible > 0 ? $"  ·  {_result.Inaccessible:N0} folders not accessible" : "");
+            ShowView(results: true);
             ShowResult();
             _dupes.Enabled = true;
         }
         catch (OperationCanceledException)
         {
-            _status.Text = "Scan canceled.";
+            _placeholder.Title = "Scan canceled";
+            _placeholder.Subtitle = "Select Scan to start again.";
         }
         catch (Exception ex)
         {
-            _status.Text = "Error: " + ex.Message;
-            Logger.Write($"Error scanning {choice.Path}: {ex}");
+            _placeholder.Title = "The scan didn't finish";
+            _placeholder.Subtitle = ex.Message;
+            Logger.Write($"Error scanning {path}: {ex}");
         }
         finally
         {
@@ -203,7 +296,8 @@ public sealed class SpacePage : Page
             _cts.Dispose();
             _cts = null;
             _scan.Enabled = true;
-            _cancel.Enabled = false;
+            _cancel.Visible = false;
+            _placeholder.Scanning = false;
         }
     }
 
@@ -226,9 +320,7 @@ public sealed class SpacePage : Page
 
     private TreeNode MakeTreeNode(SpaceNode n)
     {
-        var pct = Percent(n);
-        var node = new TreeNode($"{n.DisplayName}   {Format.Bytes(n.Size)}   ({pct:0.0}%)") { Tag = n };
-        node.ForeColor = n.IsGroup ? Theme.Muted : pct >= 10 ? Theme.Warn : Theme.Text;
+        var node = new TreeNode(n.DisplayName) { Tag = n };
         if (!n.IsFile && n.Children.Count > 0) node.Nodes.Add(new TreeNode("…"));
         return node;
     }
@@ -246,6 +338,7 @@ public sealed class SpacePage : Page
     {
         _map.Root = n;
         _up.Enabled = n.Parent is not null;
+        _crumb.Text = $"{n.FullPath}   ({Format.Bytes(n.Size)})";
         SelectInTree(n);
     }
 
@@ -365,6 +458,7 @@ public sealed class SpacePage : Page
 
     public override void OnShown()
     {
-        if (_drives.Items.Count == 0) LoadDrives();
+        // Free space changes; refresh the cards unless a scan is running.
+        if (_cts is null) LoadDrives();
     }
 }

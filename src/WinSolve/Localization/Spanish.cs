@@ -1058,5 +1058,23 @@ public static class Spanish
         ["The {0} driver is active, version {1} (same as before; expected if you reinstalled the same version)."] = "El driver de {0} está activo, versión {1} (igual que antes; es normal si reinstalaste la misma versión).",
         ["The NVIDIA installer runs silently with a clean install, replacing the current driver. The screen will flicker."] = "El instalador de NVIDIA se ejecuta en silencio con instalación limpia, reemplazando el driver actual. La pantalla va a parpadear.",
         ["Every installed {0} display driver is removed first, then the installer opens. The screen will flicker and may change resolution until the new driver is installed."] = "Primero se quitan todos los drivers de video de {0} instalados y luego se abre el instalador. La pantalla va a parpadear y puede cambiar de resolución hasta que se instale el driver nuevo.",
+        // ── Disk space redesign ──
+        ["Scan a folder"] = "Analizar una carpeta",
+        ["Pick any folder"] = "Elige cualquier carpeta",
+        ["Up"] = "Subir",
+        ["Folders"] = "Carpetas",
+        ["File types"] = "Tipos de archivo",
+        ["Map"] = "Mapa",
+        ["Hover over the map to see what each block is. Double-click a folder to zoom in."] = "Pasa el mouse sobre el mapa para ver qué es cada bloque. Doble clic en una carpeta para acercarte.",
+        ["Analyze a drive"] = "Analiza un disco",
+        ["Pick a drive above and select Scan to see which folders and files take the most space."] = "Elige un disco arriba y pulsa Analizar para ver qué carpetas y archivos ocupan más espacio.",
+        ["Scanning {0}"] = "Analizando {0}",
+        ["Scan canceled"] = "Análisis cancelado",
+        ["Select Scan to start again."] = "Pulsa Analizar para empezar de nuevo.",
+        ["The scan didn't finish"] = "El análisis no terminó",
+        ["{0} free of {1}"] = "{0} libres de {1}",
+        ["USB drive"] = "Unidad USB",
+        ["{0}  ·  {1} files  ·  scanned in {2} s"] = "{0}  ·  {1} archivos  ·  analizado en {2} s",
+        ["{0}  ·  {1} files  ·  scanned in {2} s  ·  {3} folders not accessible"] = "{0}  ·  {1} archivos  ·  analizado en {2} s  ·  {3} carpetas sin acceso",
     };
 }

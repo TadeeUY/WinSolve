@@ -113,11 +113,29 @@ public sealed class TreemapView : Control
 
     public void Rebuild() => Repaint(true);
 
+    private System.Windows.Forms.Timer? _resizeTimer;
+
+    // Redrawing a whole drive on every resize step made dragging stutter: show the old picture
+    // stretched while resizing and rebuild once it stops.
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
-        Repaint(true);
+        if (_cache is null || _root is null)
+        {
+            Repaint(true);
+            return;
+        }
+        if (_resizeTimer is null)
+        {
+            _resizeTimer = new System.Windows.Forms.Timer { Interval = 150 };
+            _resizeTimer.Tick += (_, _) => { _resizeTimer.Stop(); Repaint(true); };
+        }
+        _resizeTimer.Stop();
+        _resizeTimer.Start();
+        Invalidate();
     }
+
+
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -129,8 +147,9 @@ public sealed class TreemapView : Control
             return;
         }
 
-        if (_cache is null)
+        if (_cache is null || (_resizeTimer is not { Enabled: true } && (_cache.Width != Width || _cache.Height != Height)))
         {
+            _cache?.Dispose();
             _cache = new Bitmap(Width, Height);
             _hits.Clear();
             using var g = Graphics.FromImage(_cache);
@@ -138,7 +157,8 @@ public sealed class TreemapView : Control
             g.SmoothingMode = SmoothingMode.None;
             DrawNode(g, _root, new RectangleF(0, 0, Width, Height), 0);
         }
-        e.Graphics.DrawImageUnscaled(_cache, 0, 0);
+        if (_cache.Width == Width && _cache.Height == Height) e.Graphics.DrawImageUnscaled(_cache, 0, 0);
+        else e.Graphics.DrawImage(_cache, ClientRectangle); // resizing: rebuilt when it stops
 
         if (_selected != _root) Outline(e.Graphics, _selected, Color.White, 2);
         if (_hover != _selected) Outline(e.Graphics, _hover, Color.FromArgb(200, 255, 255, 255), 1);
@@ -160,6 +180,13 @@ public sealed class TreemapView : Control
     {
         if (rect.Width < 1 || rect.Height < 1) return;
         _hits.Add((rect, node));
+        // Too small to show anything inside: one flat block instead of recursing to 1-px tiles.
+        if (!node.IsFile && node.Children.Count > 0 && (rect.Width < 4 || rect.Height < 4))
+        {
+            using var flat = new SolidBrush(Color.FromArgb(60, 64, 72));
+            g.FillRectangle(flat, rect);
+            return;
+        }
 
         if (node.IsFile || node.Children.Count == 0)
         {
@@ -314,6 +341,7 @@ public sealed class TreemapView : Control
         if (disposing)
         {
             _cache?.Dispose();
+            _resizeTimer?.Dispose();
             _headerFont.Dispose();
         }
         base.Dispose(disposing);
