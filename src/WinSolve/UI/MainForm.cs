@@ -60,6 +60,7 @@ public sealed class MainForm : Form
             ["activation"] = () => new ActivationPage(),
             ["settings"] = () => new SettingsPage(),
             ["toolbox"] = () => new ToolboxPage(),
+            ["winupdate"] = () => new WindowsUpdatePage(),
         };
 
         // Content area: optional info bar (updates) above the current page.
@@ -500,6 +501,7 @@ public sealed class MainForm : Form
             ("hardware", "", "Hardware"),
             (null, "", "System"),
             ("toolbox", "\uEC7A", "Toolbox"),
+            ("winupdate", "\uE895", "Windows Update"),
             ("tweaks", "", "Tweaks"),
             ("activation", "", "Activation"),
         ];

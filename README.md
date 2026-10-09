@@ -1,6 +1,8 @@
 # WinSolve
 
-All-in-one Windows 10/11 maintenance tool: diagnostics, repair, cleanup, drivers and one-click optimization.
+**The multitool for Windows** · *La navaja suiza para Windows*
+
+All-in-one Windows 10/11 maintenance tool: diagnostics, repair, cleanup, drivers, one-click optimization and a toolbox of everyday utilities. Press **Ctrl+K** anywhere to find any page, task, tweak or tool.
 
 ## Features
 
@@ -13,6 +15,10 @@ All-in-one Windows 10/11 maintenance tool: diagnostics, repair, cleanup, drivers
 | **Hardware** | CrystalDiskInfo-style S.M.A.R.T. health (temperature, wear, power-on hours, raw attributes) with a per-volume repair panel (CHKDSK check, file system repair, bad sector scan and isolation, with advice based on the drive's health), devices with errors (restart / reinstall), RAM modules, battery health, critical events (BSOD, WHEA, unexpected shutdowns). |
 | **Drivers** | Detects NVIDIA / AMD / Intel GPUs and the installed version, looks up the latest NVIDIA Game Ready driver, downloads it and performs a **clean install** (removes every old display driver package first). AMD Adrenalin clean install from the official installer. Windows Update driver updates, device repair and driver backup. |
 | **Tweaks** | Laid out like Chris Titus Tech's WinUtil: Essential and Advanced tweaks with Standard/Minimal presets, Run and Undo, instant preference switches, Ultimate Performance plan, DNS presets (Cloudflare, Google, Quad9, AdGuard, OpenDNS), Windows Update policy (Default / Security) and optional Windows features (WSL, Hyper-V, Sandbox, .NET 3.5). |
+| **Toolbox** | Disk speed test (sequential and 4K), locked file finder (what's using a file, close it or delete it at restart), secure delete, network test (ping, download/upload speed, public IP), saved Wi-Fi passwords, hosts file editor with site blocking, right-click menu cleanup, restore point manager and a shareable PC report (HTML spec sheet, no serial numbers or keys). |
+| **Windows Update** | Pause updates for 1, 2 or 5 weeks and resume, hide a problem update so it stops reinstalling (and show it again), full update history with failures highlighted, roll back a device's driver to the previous one. |
+| **Command palette** | **Ctrl+K** searches pages, maintenance tasks, tweaks and tools in English and Spanish, accent-insensitive. |
+| **Notification area** | Quick actions from the tray icon: clean temporary files, free up memory (standby list), flush DNS, restart Explorer. |
 | **Startup apps** | Registry, Startup folder and logon scheduled tasks. Disable (reversible) or remove. |
 | **Apps** | Uninstall or **force uninstall** desktop programs (silent uninstall + leftover folders, shortcuts and registry) and Microsoft Store apps (all users + deprovisioned). |
 | **Activation** | License status, activation with the OEM key stored in the firmware or a product key, Microsoft's activation troubleshooter. |
@@ -25,6 +31,8 @@ All-in-one Windows 10/11 maintenance tool: diagnostics, repair, cleanup, drivers
 
 Download `WinSolveSetup.exe` from the [Releases](../../releases) page (or the latest build artifact under **Actions**).
 The installer lets you choose **Only for me** or **For all users**, offers a clean install (removes previous settings) and installs the .NET 8 Desktop Runtime if it is missing.
+
+**Portable:** `WinSolve-Portable.exe` runs without installing anything, for example from a USB stick. It carries its own .NET runtime (bigger download) and leaves nothing scheduled on the PC: no Start with Windows, no scheduled maintenance and no self-installing updates.
 
 `WinSolve.exe` alone is a ~2 MB single file that needs the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0).
 
