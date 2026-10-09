@@ -26,7 +26,7 @@ public sealed class ActivationPage : Page
 
     private void Render(ActivationStatus s)
     {
-        _status.Body.Controls.Clear();
+        Theme.ClearAndDispose(_status.Body);
         _status.Add(
             StatusHeader(s),
             new Divider(),
@@ -37,7 +37,7 @@ public sealed class ActivationPage : Page
         if (s.FirmwareKey is not null)
             _status.Add(KeyValue("Firmware (OEM) key", $"{s.FirmwareKeyEdition}, ending in {s.FirmwareKey[^5..]}"));
 
-        _actions.Body.Controls.Clear();
+        Theme.ClearAndDispose(_actions.Body, _key); // the key box is reused
         _actions.Add(Theme.Label("Activate Windows", Theme.H2));
 
         if (s.FirmwareKey is not null && !s.IsActivated)

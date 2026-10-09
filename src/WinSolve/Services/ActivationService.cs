@@ -88,7 +88,8 @@ public static class ActivationService
         }
 
         log("Installing the product key...");
-        var install = await ProcessRunner.RunAsync("cscript.exe", Slmgr($"/ipk {key}"), log, ct);
+        // slmgr echoes the full key: mask it before it reaches the screen and the log file.
+        var install = await ProcessRunner.RunAsync("cscript.exe", Slmgr($"/ipk {key}"), l => log(Logger.MaskSecrets(l)), ct, ConsoleEncoding());
         if (!install.Success) return false;
 
         return await ActivateOnlineAsync(log, ct);
@@ -97,11 +98,25 @@ public static class ActivationService
     public static async Task<bool> ActivateOnlineAsync(Action<string> log, CancellationToken ct = default)
     {
         log("Activating online with Microsoft's servers...");
-        await ProcessRunner.RunAsync("cscript.exe", Slmgr("/ato"), log, ct);
+        await ProcessRunner.RunAsync("cscript.exe", Slmgr("/ato"), l => log(Logger.MaskSecrets(l)), ct, ConsoleEncoding());
         var ok = GetStatus().IsActivated;
         log(ok ? "Windows is activated." : "Activation did not complete. Try the Activation troubleshooter in Settings.");
         return ok;
     }
+
+    /// <summary>cscript writes in the OEM code page (850 on Spanish Windows), not UTF-8.</summary>
+    private static System.Text.Encoding ConsoleEncoding()
+    {
+        try
+        {
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            return System.Text.Encoding.GetEncoding((int)GetOEMCP());
+        }
+        catch { return System.Text.Encoding.UTF8; }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint GetOEMCP();
 
     public static void OpenActivationSettings() => ProcessRunner.ShellOpen("ms-settings:activation");
 }

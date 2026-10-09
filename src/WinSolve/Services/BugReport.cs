@@ -6,7 +6,8 @@ namespace WinSolve.Services;
 
 /// <summary>
 /// Collects logs, settings and a hardware/software summary into a zip on the desktop that
-/// users can attach to a GitHub issue. No product keys or drive serial numbers are included.
+/// users can attach to a GitHub issue. Product keys are masked (also in logs written before
+/// masking existed) and drive serial numbers are left out; logs do contain file paths.
 /// </summary>
 public static class BugReport
 {
@@ -41,7 +42,7 @@ public static class BugReport
             {
                 using var src = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 using var reader = new StreamReader(src);
-                AddText("logs/" + Path.GetFileName(file), reader.ReadToEnd());
+                AddText("logs/" + Path.GetFileName(file), Logger.MaskSecrets(reader.ReadToEnd()));
             }
         }
 

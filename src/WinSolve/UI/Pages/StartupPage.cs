@@ -44,6 +44,10 @@ public sealed class StartupPage : Page
             catch (Exception ex)
             {
                 Localization.Loc.Show(this, $"Could not change '{item.Name}': {ex.Message}", "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                // Show the real state again.
+                _filling = true;
+                row.Cells[0].Value = item.Enabled;
+                _filling = false;
             }
             UpdateStatus();
         };

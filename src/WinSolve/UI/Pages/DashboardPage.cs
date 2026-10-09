@@ -118,7 +118,7 @@ public sealed class DashboardPage : Page
         _scanStatus.Text = $"Last scan {DateTime.Now:t}  ·  {r.Issues.Count} item(s)  ·  {Format.Bytes(r.JunkBytes)} of junk files";
 
         var s = r.System;
-        _tiles.Controls.Clear();
+        Theme.ClearAndDispose(_tiles);
         var sysDrive = s.Drives.FirstOrDefault(d => Environment.SystemDirectory.StartsWith(d.Name, StringComparison.OrdinalIgnoreCase)) ?? s.Drives.FirstOrDefault();
         _tiles.Controls.Add(Tile("Windows", s.OsName.Replace("Windows ", "Windows "), s.OsVersion), 0, 0);
         _tiles.Controls.Add(Tile("Processor", s.Threads > 0 ? $"{s.Cores} cores / {s.Threads} threads" : "—", s.Cpu), 1, 0);
@@ -128,7 +128,7 @@ public sealed class DashboardPage : Page
             : Tile($"System drive ({sysDrive.Name})", $"{Format.Bytes(sysDrive.Free)} free", $"of {Format.Bytes(sysDrive.Total)}",
                 sysDrive.FreePercent < 10 ? Theme.Warn : null, last: true), 3, 0);
 
-        _issues.Body.Controls.Clear();
+        Theme.ClearAndDispose(_issues.Body);
         _issues.Add(Theme.Label(r.Issues.Count == 0 ? "No problems found" : $"Recommendations ({r.Issues.Count})", Theme.H2));
 
         var details = new List<(string, string, Color)>();

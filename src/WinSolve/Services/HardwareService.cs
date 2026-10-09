@@ -135,11 +135,19 @@ public static class HardwareService
 
         try
         {
+            // Capped per kind, not overall: hundreds of errors from a flaky USB disk must not
+            // push an older blue screen (1001) or power loss (41) out of the list.
             using var reader = new EventLogReader(new EventLogQuery("System", PathType.LogName, query) { ReverseDirection = true });
-            for (var rec = reader.ReadEvent(); rec is not null && events.Count < 200; rec = reader.ReadEvent())
+            var perKind = new Dictionary<string, int>();
+            var read = 0;
+            for (var rec = reader.ReadEvent(); rec is not null && read < 5000; rec = reader.ReadEvent(), read++)
             {
                 using (rec)
                 {
+                    var kind = rec.Id is 1001 or 41 ? rec.Id.ToString() : rec.ProviderName;
+                    var n = perKind.GetValueOrDefault(kind);
+                    if (n >= 60) continue;
+                    perKind[kind] = n + 1;
                     events.Add(new CriticalEvent(rec.TimeCreated ?? DateTime.MinValue, rec.ProviderName, rec.Id, Summarize(rec)));
                 }
             }

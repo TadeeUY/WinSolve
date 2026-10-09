@@ -76,7 +76,10 @@ public static class DiskScanner
 {
     private const long SmallFileThreshold = 1L << 20;
 
-    private readonly record struct Entry(string Name, long Length, bool IsDirectory);
+    private readonly record struct Entry(string Name, long Length, bool IsDirectory, FileAttributes Attributes);
+
+    // Cloud-file (OneDrive Files On-Demand) attribute bits.
+    private const int RecallOnOpen = 0x40000, Pinned = 0x80000, Unpinned = 0x100000, RecallOnDataAccess = 0x400000;
 
     public sealed class Progress
     {
@@ -105,14 +108,22 @@ public static class DiskScanner
                     {
                         IgnoreInaccessible = true,
                         RecurseSubdirectories = false,
-                        AttributesToSkip = FileAttributes.ReparsePoint, // never follow junctions/symlinks
+                        // Reparse points are filtered below: junctions/symlinks are never followed,
+                        // but OneDrive (Files On-Demand) folders and files are reparse points too.
+                        AttributesToSkip = 0,
                         ReturnSpecialDirectories = false,
                     };
                     var enumerable = new FileSystemEnumerable<Entry>(dirPath,
-                        (ref FileSystemEntry e) => new Entry(e.FileName.ToString(), e.Length, e.IsDirectory), options);
+                        (ref FileSystemEntry e) => new Entry(e.FileName.ToString(),
+                            // Online-only cloud files take no space on this disk.
+                            ((int)e.Attributes & RecallOnDataAccess) != 0 && !e.IsDirectory ? 0 : e.Length,
+                            e.IsDirectory, e.Attributes), options);
 
                     foreach (var entry in enumerable)
                     {
+                        var reparse = (entry.Attributes & FileAttributes.ReparsePoint) != 0;
+                        var cloud = ((int)entry.Attributes & (RecallOnOpen | RecallOnDataAccess | Pinned | Unpinned)) != 0;
+                        if (reparse && !cloud) continue; // junction, symlink, mount point
                         if (entry.IsDirectory)
                         {
                             var child = new SpaceNode(entry.Name, node, isFile: false);

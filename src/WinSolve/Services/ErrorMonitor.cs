@@ -31,7 +31,7 @@ public sealed class ErrorMonitor : IDisposable
 
     private readonly List<EventLogWatcher> _watchers = [];
     private readonly Dictionary<string, DateTime> _recent = [];
-    private readonly HashSet<string> _knownDevices = [];
+    private volatile HashSet<string> _knownDevices = [];
     private System.Threading.Timer? _deviceTimer;
     private SynchronizationContext? _ui;
     private bool _running;
@@ -54,13 +54,12 @@ public sealed class ErrorMonitor : IDisposable
         _running = true;
 
         Watch("System", """
-            *[System[(Level=1 or Level=2) and (
+            *[System[((Level=1 or Level=2) and (
                 Provider[@Name='Microsoft-Windows-WHEA-Logger'] or
                 Provider[@Name='disk'] or Provider[@Name='Ntfs'] or Provider[@Name='stornvme'] or Provider[@Name='storahci'] or
-                (Provider[@Name='Display'] and EventID=4101) or
                 (Provider[@Name='Microsoft-Windows-WindowsUpdateClient'] and EventID=20) or
                 (Provider[@Name='Service Control Manager'] and (EventID=7031 or EventID=7034))
-            )]]
+            )) or (Provider[@Name='Display'] and EventID=4101)]]
             """);
         Watch("Application", "*[System[(Provider[@Name='Application Error'] and EventID=1000) or (Provider[@Name='Application Hang'] and EventID=1002)]]");
 
@@ -68,7 +67,12 @@ public sealed class ErrorMonitor : IDisposable
         Task.Run(CheckSinceLastRun);
 
         // Devices that stop working (every 3 minutes).
-        foreach (var d in HardwareService.GetProblemDevices()) _knownDevices.Add(d.InstanceId);
+        // Seeded off the UI thread (WMI is slow); devices failing already at start aren't alerted.
+        Task.Run(() =>
+        {
+            try { _knownDevices = HardwareService.GetProblemDevices().Select(d => d.InstanceId).ToHashSet(); }
+            catch { }
+        });
         _deviceTimer = new System.Threading.Timer(_ => CheckDevices(), null, TimeSpan.FromMinutes(3), TimeSpan.FromMinutes(3));
         Logger.Write("Error monitoring enabled.");
     }
@@ -250,9 +254,13 @@ public sealed class ErrorMonitor : IDisposable
     {
         try
         {
-            foreach (var d in HardwareService.GetProblemDevices())
+            var current = HardwareService.GetProblemDevices();
+            var known = _knownDevices;
+            // Replaced every pass: a device that recovers and fails again alerts again.
+            _knownDevices = current.Select(d => d.InstanceId).ToHashSet();
+            foreach (var d in current)
             {
-                if (!_knownDevices.Add(d.InstanceId)) continue;
+                if (known.Contains(d.InstanceId)) continue;
                 Raise(new Alert
                 {
                     Kind = "device", DedupeKey = d.InstanceId,

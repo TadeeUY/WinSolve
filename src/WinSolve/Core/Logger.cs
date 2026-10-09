@@ -7,9 +7,15 @@ public static class Logger
 
     public static string LogDirectory => Path.Combine(SafePath.DataFolder, "logs");
 
+    private static readonly System.Text.RegularExpressions.Regex ProductKey =
+        new(@"\b(?:[A-Z0-9]{5}-){4}([A-Z0-9]{5})\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>Masks Windows product keys (slmgr prints the full key): only the last 5 characters stay.</summary>
+    public static string MaskSecrets(string text) => ProductKey.Replace(text, "XXXXX-XXXXX-XXXXX-XXXXX-$1");
+
     public static void Write(string message)
     {
-        var line = $"[{DateTime.Now:HH:mm:ss}] {message}";
+        var line = $"[{DateTime.Now:HH:mm:ss}] {MaskSecrets(message)}";
         try
         {
             lock (Gate)

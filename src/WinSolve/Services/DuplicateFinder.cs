@@ -64,14 +64,17 @@ public static class DuplicateFinder
         foreach (var sizeGroup in bySize)
         {
             ct.ThrowIfCancellationRequested();
-            var quick = sizeGroup.Select(f => (f.Path, f.Size, Hash: TryHash(f.Path, quickOnly: true)))
+            // Hard links are one file with several names: deleting one frees nothing.
+            var distinct = sizeGroup.DistinctBy(f => FileId(f.Path) ?? f.Path).ToList();
+            if (distinct.Count < 2) continue;
+            var quick = distinct.Select(f => (f.Path, f.Size, Hash: TryHash(f.Path, quickOnly: true, ct)))
                 .Where(f => f.Hash is not null)
                 .GroupBy(f => f.Hash!)
                 .Where(g => g.Count() > 1);
 
             foreach (var q in quick)
             {
-                var full = q.Select(f => (f.Path, f.Size, Hash: f.Size <= Chunk * 2 ? f.Hash : TryHash(f.Path, quickOnly: false)))
+                var full = q.Select(f => (f.Path, f.Size, Hash: f.Size <= Chunk * 2 ? f.Hash : TryHash(f.Path, quickOnly: false, ct)))
                     .Where(f => f.Hash is not null)
                     .GroupBy(f => f.Hash!)
                     .Where(g => g.Count() > 1);
@@ -93,13 +96,41 @@ public static class DuplicateFinder
         try { return File.GetLastWriteTime(path); } catch { return DateTime.MinValue; }
     }
 
-    private static string? TryHash(string path, bool quickOnly)
+    /// <summary>Volume serial + file index: the same for every hard link of a file.</summary>
+    private static string? FileId(string path)
+    {
+        try
+        {
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return GetFileInformationByHandle(fs.SafeFileHandle, out var info)
+                ? $"{info.VolumeSerialNumber:X8}-{info.FileIndexHigh:X8}{info.FileIndexLow:X8}"
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryHash(string path, bool quickOnly, CancellationToken ct)
     {
         try
         {
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, Chunk, FileOptions.SequentialScan);
             using var sha = SHA256.Create();
-            if (!quickOnly) return Convert.ToHexString(sha.ComputeHash(fs));
+            if (!quickOnly)
+            {
+                // Chunked so closing the dialog stops hashing a 60 GB file right away.
+                var chunk = new byte[1 << 20];
+                int n;
+                while ((n = fs.Read(chunk, 0, chunk.Length)) > 0)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    sha.TransformBlock(chunk, 0, n, null, 0);
+                }
+                sha.TransformFinalBlock([], 0, 0);
+                return Convert.ToHexString(sha.Hash!);
+            }
 
             var buffer = new byte[Chunk];
             var read = fs.Read(buffer, 0, Chunk);
@@ -113,9 +144,24 @@ public static class DuplicateFinder
             sha.TransformFinalBlock([], 0, 0);
             return Convert.ToHexString(sha.Hash!);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch
         {
             return null; // locked or inaccessible
         }
     }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct BY_HANDLE_FILE_INFORMATION
+    {
+        public uint FileAttributes;
+        public uint CreationLow, CreationHigh, AccessLow, AccessHigh, WriteLow, WriteHigh;
+        public uint VolumeSerialNumber, FileSizeHigh, FileSizeLow, NumberOfLinks, FileIndexHigh, FileIndexLow;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle h, out BY_HANDLE_FILE_INFORMATION info);
 }

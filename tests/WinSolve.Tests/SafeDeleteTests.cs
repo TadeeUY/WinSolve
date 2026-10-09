@@ -164,3 +164,14 @@ public class InstallerProcessTests
         }
     }
 }
+
+public class LoggerTests
+{
+    [Fact]
+    public void Product_keys_are_masked()
+    {
+        var masked = Logger.MaskSecrets("Installed product key ABCDE-12345-FGHIJ-67890-KLMNO successfully.");
+        Assert.Equal("Installed product key XXXXX-XXXXX-XXXXX-XXXXX-KLMNO successfully.", masked);
+        Assert.Equal("Version 1.2.3", Logger.MaskSecrets("Version 1.2.3"));
+    }
+}

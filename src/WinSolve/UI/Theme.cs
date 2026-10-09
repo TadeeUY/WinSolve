@@ -365,6 +365,16 @@ public static class Theme
         return head;
     }
 
+    /// <summary>
+    /// Removes and disposes every child (Controls.Clear alone leaks their window handles).
+    /// Controls in <paramref name="keep"/> are detached first and survive.
+    /// </summary>
+    public static void ClearAndDispose(Control parent, params Control[] keep)
+    {
+        foreach (var k in keep) k.Parent?.Controls.Remove(k);
+        while (parent.Controls.Count > 0) parent.Controls[0].Dispose();
+    }
+
     /// <summary>Puts a control (usually a grid) inside a card with a thin border.</summary>
     public static Card InCard(Control content, int padding = 6)
     {
