@@ -77,6 +77,11 @@ public static class AppsService
 
     private static string Quote(string s) => "'" + s.Replace("'", "''") + "'";
 
+    /// <summary>PowerShell splat that targets the signed-in user (not the elevating admin) when they differ.</summary>
+    private static string UserParam() => InteractiveUser.Other is { } o
+        ? $"$user = @{{ User = {Quote(o.Sid.Value)} }}"
+        : "$user = @{}";
+
     // ═══════════════════ Store apps ═══════════════════
 
     public static async Task<List<StoreApp>> GetStoreAppsAsync(CancellationToken ct = default)
@@ -116,9 +121,10 @@ public static class AppsService
         => ProcessRunner.PowerShellAsync($$"""
             $name = {{Quote(app.Name)}}
             $found = $false
-            Get-AppxPackage -Name $name | ForEach-Object {
+            {{UserParam()}}
+            Get-AppxPackage -Name $name @user | ForEach-Object {
                 $found = $true
-                try { Remove-AppxPackage -Package $_.PackageFullName -ErrorAction Stop; "Removed: $($_.PackageFullName)" }
+                try { Remove-AppxPackage -Package $_.PackageFullName @user -ErrorAction Stop; "Removed: $($_.PackageFullName)" }
                 catch { "Error: $($_.Exception.Message)" }
             }
             if (-not $found) { 'Not installed for the current user. Use Force uninstall to remove it for all users.' }
@@ -156,7 +162,7 @@ public static class AppsService
         {
             try
             {
-                using var root = RegistryKey.OpenBaseKey(hive, view);
+                using var root = InteractiveUser.OpenBase(hive, view);
                 using var uninstall = root.OpenSubKey(UninstallPath);
                 if (uninstall is null) continue;
                 foreach (var sub in uninstall.GetSubKeyNames())
@@ -261,7 +267,18 @@ public static class AppsService
         linked.CancelAfter(timeout);
         try
         {
-            if (p.Hive == RegistryHive.CurrentUser)
+            if (p.Hive == RegistryHive.CurrentUser && InteractiveUser.IsDifferent)
+            {
+                // Per-user app of the person signed in (WinSolve was elevated with another
+                // account): run its uninstaller as that person, so it removes their copy.
+                log($"Running as {InteractiveUser.Other!.Name}: {cmd.Exe} {cmd.Args}");
+                using var proc = InteractiveUser.StartAsUser(cmd.Exe, cmd.Args);
+                if (proc is null) log("Could not start the uninstaller as the signed-in user.");
+                else await proc.WaitForExitAsync(linked.Token);
+                var name = Path.GetFileNameWithoutExtension(cmd.Exe);
+                while (Process.GetProcessesByName(name).Length > 0) await Task.Delay(1000, linked.Token);
+            }
+            else if (p.Hive == RegistryHive.CurrentUser)
             {
                 log($"Running without administrator rights: {cmd.Exe} {cmd.Args}");
                 var psi = new ProcessStartInfo(ProcessRunner.Resolve("runas.exe")) { UseShellExecute = false, CreateNoWindow = true };
@@ -314,8 +331,8 @@ public static class AppsService
         {
             foreach (var baseDir in new[]
                      {
-                         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                         InteractiveUser.RoamingAppData,
+                         InteractiveUser.LocalAppData,
                          Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
                      })
             {
@@ -368,7 +385,7 @@ public static class AppsService
 
         if (!Directory.Exists(full) || SafePath.IsProtectedFolder(full) || SafePath.HasReparsePoint(full)) return null;
 
-        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var profile = InteractiveUser.Profile;
         if (p.Hive == RegistryHive.CurrentUser && !SafePath.IsSameOrInside(full, profile)) return null;
         if (p.Hive == RegistryHive.LocalMachine && !allowProfileForMachine && SafePath.IsSameOrInside(full, Path.GetDirectoryName(profile)!)) return null;
         return full;
@@ -411,17 +428,30 @@ public static class AppsService
                 log($"Skipped {dir}: protected location or junction.");
                 continue;
             }
+            // Folders a standard user can write to (profiles) are never queued for deletion at
+            // boot: by then a folder could have been swapped for a link to somewhere else.
+            var userWritable = SafePath.IsSameOrInside(dir, Path.GetDirectoryName(InteractiveUser.Profile)!);
             try
             {
-                foreach (var f in Directory.EnumerateFiles(dir, "*", SafePath.NoLinks(recursive: true)))
-                    try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
-                Directory.Delete(dir, recursive: true);
-                log($"Deleted folder: {dir}");
+                // Handle-based delete: never follows a junction swapped in during the removal.
+                var r = SafeDelete.DeleteTree(dir, ct);
+                if (!Directory.Exists(dir)) log($"Deleted folder: {dir}");
+                else if (userWritable) log($"Some files in {dir} are in use ({r.Skipped}); delete the rest after closing the program.");
+                else
+                {
+                    log($"Some files in {dir} are in use; they will be removed on restart.");
+                    ScheduleDeleteOnReboot(dir);
+                }
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                log($"Could not delete {dir}: {ex.Message} (it will be removed on restart)");
-                ScheduleDeleteOnReboot(dir);
+                if (userWritable) log($"Could not delete {dir}: {ex.Message}");
+                else
+                {
+                    log($"Could not delete {dir}: {ex.Message} (it will be removed on restart)");
+                    ScheduleDeleteOnReboot(dir);
+                }
             }
         }
 
@@ -431,8 +461,8 @@ public static class AppsService
             var shortcutScript = $$"""
                 $target = {{Quote(folder.TrimEnd('\\') + "\\")}}
                 $shell = New-Object -ComObject WScript.Shell
-                $roots = @([Environment]::GetFolderPath('StartMenu'), [Environment]::GetFolderPath('CommonStartMenu'),
-                           [Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('CommonDesktopDirectory'))
+                $roots = @({{Quote(InteractiveUser.StartMenu)}}, [Environment]::GetFolderPath('CommonStartMenu'),
+                           {{Quote(InteractiveUser.Desktop)}}, [Environment]::GetFolderPath('CommonDesktopDirectory'))
                 foreach ($r in $roots) {
                     Get-ChildItem -Path $r -Filter *.lnk -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
                         $t = $shell.CreateShortcut($_.FullName).TargetPath
@@ -446,7 +476,7 @@ public static class AppsService
         // 5) Registry entry, so it disappears from Settings > Apps.
         try
         {
-            using var root = RegistryKey.OpenBaseKey(p.Hive, p.View);
+            using var root = InteractiveUser.OpenBase(p.Hive, p.View);
             root.DeleteSubKeyTree(p.KeyPath, throwOnMissingSubKey: false);
             log("Removed the entry from the installed programs list.");
         }

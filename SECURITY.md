@@ -22,6 +22,12 @@ the current directory) was reviewed.
 | 10 | Low | Device instance IDs were placed in a quoted `pnputil` argument without validation. | IDs containing quotes or control characters are rejected. |
 | 11 | Low | Installer runtime bootstrap: predictable temp file name, no revocation check, substring signer match. | Random file name, file locked until the runtime installer exits, revocation checking, exact `Microsoft Corporation` signer match. |
 
+Fixed in 0.8.0:
+
+- **Junction swap during cleanup:** cleanup and force-uninstall deletions are handle-based (`Core/SafeDelete.cs`). Each entry is opened relative to its parent's handle (`NtCreateFile` with `RootDirectory` and `FILE_OPEN_REPARSE_POINT`) and deleted through that handle, and the root must resolve (`GetFinalPathNameByHandle`) to the expected path. A folder swapped for a junction mid-run is opened as the link itself and skipped, never followed. Profile folders are no longer queued for deletion at reboot.
+- **Over-the-shoulder elevation:** when a standard user elevates with an administrator's password, HKCU, %TEMP%, AppData, Startup, Start Menu, per-user uninstallers, Store app removal and Explorer restarts now target the signed-in user (`Core/InteractiveUser.cs`: `HKEY_USERS\<SID>`, their profile folders, and `CreateProcessWithTokenW` with a token from their own session processes) instead of the administrator's account.
+- **Updates:** the new `WinSolve.exe` is written to a temporary file and swapped in with `File.Replace` (the old version survives any failure); setup waits for the running WinSolve to exit instead of killing it, updates the folder the running copy came from, and reopens the previous version if an automatic update fails.
+
 ## Reviewed and considered safe
 
 - **PowerShell scripts** that embed data (Store package names, scheduled task names, file paths) quote it as single-quoted literals with `'` doubled.
@@ -35,5 +41,4 @@ the current directory) was reviewed.
 
 - **Per-user installs:** `%LocalAppData%\Programs\WinSolve` is writable by the user, so other programs running as that user could replace `WinSolve.exe` before you launch it (you would still see a UAC prompt for an unsigned app). Prefer the **All users** install.
 - **WinSolve itself is not code-signed.** Users cannot verify the publisher in the UAC prompt. Signing releases with a code-signing certificate is recommended.
-- **Race conditions inside cleanup folders:** reparse points are checked before enumeration and never followed during it, but a folder swapped *during* a cleanup run is not re-validated per file.
 - **Force uninstall is destructive by design.** It runs the program's own uninstaller (vendor code) and deletes the listed folders; review the list before confirming.

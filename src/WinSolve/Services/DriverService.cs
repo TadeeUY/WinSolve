@@ -249,9 +249,9 @@ public static class DriverService
             // Leftover shader caches and installer data from the previous driver.
             foreach (var dir in new[]
                      {
-                         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NVIDIA", "DXCache"),
-                         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NVIDIA", "GLCache"),
-                         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "D3DSCache"),
+                         Path.Combine(InteractiveUser.LocalAppData, "NVIDIA", "DXCache"),
+                         Path.Combine(InteractiveUser.LocalAppData, "NVIDIA", "GLCache"),
+                         Path.Combine(InteractiveUser.LocalAppData, "D3DSCache"),
                      })
             {
                 ClearCache(dir, log);
@@ -261,9 +261,9 @@ public static class DriverService
         {
             foreach (var dir in new[]
                      {
-                         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AMD", "DxCache"),
-                         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AMD", "DxcCache"),
-                         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "D3DSCache"),
+                         Path.Combine(InteractiveUser.LocalAppData, "AMD", "DxCache"),
+                         Path.Combine(InteractiveUser.LocalAppData, "AMD", "DxcCache"),
+                         Path.Combine(InteractiveUser.LocalAppData, "D3DSCache"),
                      })
             {
                 ClearCache(dir, log);

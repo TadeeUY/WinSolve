@@ -17,18 +17,34 @@ namespace WinSolve.Setup
         public bool Clean;
         public bool DesktopShortcut = true;
         public bool Launch = true;
+        /// <summary>Update in place: the folder of the running installation (set by WinSolve's updater).</summary>
+        public string UpdateDir;
+        /// <summary>Process id of the WinSolve that started the update; setup waits for it to exit.</summary>
+        public int WaitPid;
 
         public string ToArgs() =>
             "--install" + (AllUsers ? " --allusers" : "") + (Clean ? " --clean" : "") +
-            (DesktopShortcut ? " --desktop" : "") + (Launch ? " --launch" : "");
+            (DesktopShortcut ? " --desktop" : "") + (Launch ? " --launch" : "") +
+            (UpdateDir != null ? " --update-dir \"" + UpdateDir + "\"" : "") + (WaitPid > 0 ? " --wait " + WaitPid : "");
 
-        public static InstallOptions FromArgs(string[] args) => new InstallOptions
+        public static InstallOptions FromArgs(string[] args)
         {
-            AllUsers = args.Contains("--allusers"),
-            Clean = args.Contains("--clean"),
-            DesktopShortcut = args.Contains("--desktop"),
-            Launch = args.Contains("--launch"),
-        };
+            string Value(string name)
+            {
+                var i = Array.IndexOf(args, name);
+                return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
+            }
+            int.TryParse(Value("--wait"), out var pid);
+            return new InstallOptions
+            {
+                AllUsers = args.Contains("--allusers"),
+                Clean = args.Contains("--clean"),
+                DesktopShortcut = args.Contains("--desktop"),
+                Launch = args.Contains("--launch"),
+                UpdateDir = Value("--update-dir"),
+                WaitPid = pid,
+            };
+        }
     }
 
     /// <summary>Install / uninstall logic, independent of the UI.</summary>
@@ -126,6 +142,12 @@ namespace WinSolve.Setup
             progress(65);
 
             status("Closing WinSolve if it is running...");
+            // The updater passes its own process id: let it exit by itself (tray icon, settings).
+            if (o.WaitPid > 0)
+            {
+                try { using (var p = Process.GetProcessById(o.WaitPid)) p.WaitForExit(30000); }
+                catch (ArgumentException) { /* already gone */ }
+            }
             KillRunning();
 
             if (o.Clean)
@@ -136,18 +158,38 @@ namespace WinSolve.Setup
             }
             progress(75);
 
-            var dir = InstallDir(o.AllUsers);
+            // An update goes into the folder the running copy came from. Under "over-the-shoulder"
+            // elevation (a standard user typing an admin password) this process sees the admin's
+            // profile, so the per-user folder computed here would be the wrong account's.
+            var updateDir = ValidUpdateDir(o.UpdateDir);
+            var dir = updateDir ?? InstallDir(o.AllUsers);
             status($"Copying files to {dir}...");
             Directory.CreateDirectory(dir);
             var exe = Path.Combine(dir, ExeName);
-            using (var res = Assembly.GetExecutingAssembly().GetManifestResourceStream(ExeName))
-            using (var fs = File.Create(exe))
-                res.CopyTo(fs);
+            // Write next to the old file, then swap: a failure (disk full, file locked) leaves the
+            // previous version working instead of a truncated WinSolve.exe.
+            ReplaceFile(exe, fs =>
+            {
+                using (var res = Assembly.GetExecutingAssembly().GetManifestResourceStream(ExeName))
+                    res.CopyTo(fs);
+            });
 
             // The installer doubles as the uninstaller.
             var uninstaller = Path.Combine(dir, UninstallerName);
-            File.Copy(Assembly.GetExecutingAssembly().Location, uninstaller, overwrite: true);
+            ReplaceFile(uninstaller, fs =>
+            {
+                using (var self = File.OpenRead(Assembly.GetExecutingAssembly().Location))
+                    self.CopyTo(fs);
+            });
             progress(85);
+
+            if (updateDir != null && UpdateRegistration(updateDir, exe))
+            {
+                // Shortcuts and the uninstall entry already exist for the right account.
+                progress(100);
+                status("WinSolve was updated successfully.");
+                return;
+            }
 
             status("Creating shortcuts...");
             Shortcuts.Create(Path.Combine(StartMenuDir(o.AllUsers), AppName + ".lnk"), exe, dir, "Windows diagnostics, repair and optimization");
@@ -174,9 +216,9 @@ namespace WinSolve.Setup
             status("WinSolve was installed successfully.");
         }
 
-        public static void LaunchApp(bool allUsers)
+        public static void LaunchApp(InstallOptions o)
         {
-            var exe = Path.Combine(InstallDir(allUsers), ExeName);
+            var exe = Path.Combine(ValidUpdateDir(o.UpdateDir) ?? InstallDir(o.AllUsers), ExeName);
             try { Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true }); } catch { /* UAC declined */ }
         }
 
@@ -244,6 +286,87 @@ namespace WinSolve.Setup
                 try { p.Kill(); p.WaitForExit(5000); } catch { }
                 finally { p.Dispose(); }
             }
+            // WinSolve runs as administrator; a non-elevated setup can't close it. Say so now
+            // instead of failing later with "file in use".
+            var still = Process.GetProcessesByName("WinSolve");
+            var running = still.Length > 0;
+            foreach (var p in still) p.Dispose();
+            if (running)
+                throw new InvalidOperationException("WinSolve is still running. Close it (right-click its icon next to the clock > Exit) and try again.");
+        }
+
+        /// <summary>Writes <paramref name="target"/> through a temporary file and swaps it in, keeping the old one if anything fails.</summary>
+        private static void ReplaceFile(string target, Action<Stream> write)
+        {
+            var tmp = target + ".new";
+            try
+            {
+                using (var fs = File.Create(tmp)) write(fs);
+                if (File.Exists(target))
+                {
+                    var backup = target + ".old";
+                    TryDelete(backup);
+                    File.Replace(tmp, target, backup, ignoreMetadataErrors: true);
+                    TryDelete(backup);
+                }
+                else
+                {
+                    File.Move(tmp, target);
+                }
+            }
+            catch
+            {
+                TryDelete(tmp);
+                throw;
+            }
+        }
+
+        /// <summary>The updater's folder, only if it really holds a WinSolve installation.</summary>
+        private static string ValidUpdateDir(string dir)
+        {
+            if (string.IsNullOrWhiteSpace(dir)) return null;
+            try
+            {
+                var full = Path.GetFullPath(dir.Trim().Trim('"')).TrimEnd('\\');
+                return File.Exists(Path.Combine(full, ExeName)) ? full : null;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// Updates the version in the existing uninstall entry for <paramref name="dir"/>, wherever it
+        /// is (all users, this account, or another signed-in account). False if none was found.
+        /// </summary>
+        private static bool UpdateRegistration(string dir, string exe)
+        {
+            var found = false;
+            void Update(RegistryKey root, string path)
+            {
+                try
+                {
+                    using (var key = root.OpenSubKey(path, writable: true))
+                    {
+                        if (key == null) return;
+                        var location = (key.GetValue("InstallLocation") as string ?? "").TrimEnd('\\');
+                        if (!string.Equals(location, dir, StringComparison.OrdinalIgnoreCase)) return;
+                        key.SetValue("DisplayVersion", Version);
+                        key.SetValue("EstimatedSize", (int)(new FileInfo(exe).Length / 1024), RegistryValueKind.DWord);
+                        found = true;
+                    }
+                }
+                catch { }
+            }
+
+            using (var hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64)) Update(hklm, UninstallKey);
+            using (var users = RegistryKey.OpenBaseKey(RegistryHive.Users, RegistryView.Registry64))
+            {
+                foreach (var sid in users.GetSubKeyNames())
+                {
+                    if (sid.EndsWith("_Classes", StringComparison.OrdinalIgnoreCase)) continue;
+                    Update(users, sid + "\\" + UninstallKey);
+                }
+            }
+            return found;
         }
 
         /// <summary>Full System32 path for a Windows tool (never the folder setup was started from).</summary>

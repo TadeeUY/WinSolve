@@ -294,7 +294,7 @@ public static partial class TweakCatalog
     }
 
     private static bool OneDriveInstalled()
-        => File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "OneDrive", "OneDrive.exe"))
+        => File.Exists(Path.Combine(InteractiveUser.LocalAppData, "Microsoft", "OneDrive", "OneDrive.exe"))
            || File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft OneDrive", "OneDrive.exe"))
            || File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft OneDrive", "OneDrive.exe"));
 
@@ -308,17 +308,17 @@ public static partial class TweakCatalog
         Apply = () =>
         {
             foreach (var p in Process.GetProcessesByName("OneDrive")) { try { p.Kill(); } catch { } finally { p.Dispose(); } }
-            if (OneDriveSetup() is { } setup)
-            {
-                using var p = Process.Start(new ProcessStartInfo(setup, "/uninstall") { UseShellExecute = false, CreateNoWindow = true });
-                p?.WaitForExit(120000);
-            }
+            // OneDrive is installed per user: uninstall it for the person signed in.
+            if (OneDriveSetup() is { } setup) InteractiveUser.Run(setup, "/uninstall", 120000);
             Reg.Delete(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Run", "OneDrive");
         },
         Revert = () =>
         {
             if (OneDriveSetup() is { } setup)
-                Process.Start(new ProcessStartInfo(setup) { UseShellExecute = true })?.Dispose();
+            {
+                if (InteractiveUser.IsDifferent) InteractiveUser.StartAsUser(setup, "")?.Dispose();
+                else Process.Start(new ProcessStartInfo(setup) { UseShellExecute = true })?.Dispose();
+            }
             else
                 ProcessRunner.ShellOpen("https://www.microsoft.com/microsoft-365/onedrive/download");
         },

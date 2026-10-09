@@ -202,9 +202,9 @@ public static class HealthScanner
     private static long EstimateJunk()
     {
         var win = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var local = InteractiveUser.LocalAppData;
         var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-        return FileCleaner.DirectorySize(Path.GetTempPath())
+        return FileCleaner.DirectorySize(InteractiveUser.TempPath)
                + FileCleaner.DirectorySize(Path.Combine(win, "Temp"))
                + FileCleaner.DirectorySize(Path.Combine(win, "SoftwareDistribution", "Download"))
                + FileCleaner.DirectorySize(Path.Combine(programData, "Microsoft", "Windows", "WER"))

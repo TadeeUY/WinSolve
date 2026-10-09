@@ -74,6 +74,7 @@ public static class OneClickOptimizer
                 }
                 catch (Exception ex)
                 {
+                    failed++;
                     log($"  ERROR  {t.Title}: {ex.Message}");
                 }
             }
@@ -86,8 +87,14 @@ public static class OneClickOptimizer
             log($"> {task.Title}");
             try
             {
+                var errorsBefore = ctx.CommandErrors;
                 await task.Run(ctx);
-                ok++;
+                if (ctx.CommandErrors > errorsBefore)
+                {
+                    failed++;
+                    log($"  WARNING  {task.Title}: a command reported an error (see above).");
+                }
+                else ok++;
             }
             catch (OperationCanceledException)
             {

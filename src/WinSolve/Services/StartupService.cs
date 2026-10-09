@@ -44,7 +44,7 @@ public static class StartupService
         {
             try
             {
-                using var root = RegistryKey.OpenBaseKey(hive, view);
+                using var root = InteractiveUser.OpenBase(hive, view);
                 using var key = root.OpenSubKey(RunPath);
                 if (key is null) return;
                 foreach (var name in key.GetValueNames())
@@ -96,7 +96,7 @@ public static class StartupService
             }
         }
 
-        FromFolder(Environment.GetFolderPath(Environment.SpecialFolder.Startup), RegistryHive.CurrentUser, "Startup folder (current user)");
+        FromFolder(InteractiveUser.Startup, RegistryHive.CurrentUser, "Startup folder (current user)");
         FromFolder(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup), RegistryHive.LocalMachine, "Startup folder (all users)");
 
         items.AddRange(await GetScheduledTasksAsync());
@@ -179,7 +179,7 @@ public static class StartupService
         switch (item.Source)
         {
             case StartupSource.Registry:
-                using (var root = RegistryKey.OpenBaseKey(item.Hive, item.View))
+                using (var root = InteractiveUser.OpenBase(item.Hive, item.View))
                 using (var key = root.OpenSubKey(item.RunKey, writable: true))
                     key?.DeleteValue(item.Name, throwOnMissingValue: false);
                 Reg.Delete(item.Hive, item.ApprovedKey, item.Name);

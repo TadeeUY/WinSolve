@@ -145,11 +145,19 @@ public static class WindowsFeatures
 /// <summary>Power plan helpers for the Tweaks page.</summary>
 public static class PowerPlans
 {
+    /// <summary>Fixed GUID for WinSolve's copy of Ultimate Performance (language-independent lookup).</summary>
+    public const string UltimateGuid = "a6e0c9d2-57a1-4f3e-9c4b-57696e536f6c";
+
     public static Task RemoveUltimateAsync(Action<string> log, CancellationToken ct = default)
-        => ProcessRunner.PowerShellAsync("""
+        => ProcessRunner.PowerShellAsync($$"""
             powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e
-            $lines = powercfg /list | Select-String 'Ultimate Performance|Máximo rendimiento|Rendement optimal|Höchstleistung'
-            foreach ($l in $lines) { if ("$l" -match '([0-9a-f-]{36})') { powercfg /delete $Matches[1]; "Removed $($Matches[1])" } }
+            $ids = @()
+            if ((powercfg /list | Out-String) -match '{{UltimateGuid}}') { $ids += '{{UltimateGuid}}' }
+            # Copies made by older versions (found by their translated name).
+            foreach ($l in (powercfg /list | Select-String 'Ultimate Performance|Máximo rendimiento|Rendement optimal|Höchstleistung')) {
+                if ("$l" -match '([0-9a-f-]{36})' -and $Matches[1] -ne 'e9a42b02-d5df-448d-aa00-03f14749eb61') { $ids += $Matches[1] }
+            }
+            foreach ($id in ($ids | Select-Object -Unique)) { powercfg /delete $id; "Removed $id" }
             'Balanced plan active.'
             """, log, ct);
 }

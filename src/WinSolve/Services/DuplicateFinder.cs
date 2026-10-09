@@ -29,7 +29,7 @@ public static class DuplicateFinder
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Packages"),
+        Path.Combine(InteractiveUser.LocalAppData, "Packages"),
         Path.Combine(Path.GetPathRoot(Environment.SystemDirectory)!, "$Recycle.Bin"),
         Path.Combine(Path.GetPathRoot(Environment.SystemDirectory)!, "System Volume Information"),
     ];

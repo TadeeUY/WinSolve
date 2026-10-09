@@ -197,7 +197,7 @@ public sealed class OptimizePage : Page
         if (summary is { } s)
         {
             _runner.Log($"Done. {s.TasksOk} task(s) completed, {s.TweaksApplied} tweak(s) applied, {Format.Bytes(s.FreedBytes)} freed."
-                        + (s.TasksFailed > 0 ? $" {s.TasksFailed} task(s) reported errors." : ""));
+                        + (s.TasksFailed > 0 ? $" {s.TasksFailed} task(s) or tweak(s) reported errors (see the log above)." : ""));
             if (s.RebootRecommended) AskReboot(this);
         }
         OnShown();

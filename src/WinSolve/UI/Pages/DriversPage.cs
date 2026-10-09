@@ -184,7 +184,7 @@ public sealed class DriversPage : Page
         {
             Title = Localization.Loc.T($"Select the {gpu.VendorName} driver installer"),
             Filter = Localization.Loc.T("Driver installer (*.exe)|*.exe"),
-            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "\\Downloads",
+            InitialDirectory = InteractiveUser.Downloads,
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
 

@@ -7,7 +7,8 @@ namespace WinSolve.Services;
 public static class TaskCatalog
 {
     private static string Win => Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-    private static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    // The signed-in user's folders, even when WinSolve was elevated with another account.
+    private static string LocalAppData => InteractiveUser.LocalAppData;
     private static string ProgramData => Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
     private static string SystemDrive => Path.GetPathRoot(Win)!.TrimEnd('\\');
 
@@ -15,30 +16,46 @@ public static class TaskCatalog
 
     public static SystemTask? Find(string id) => All.FirstOrDefault(t => t.Id == id);
 
-    private static async Task Run(TaskContext ctx, string file, string args)
+    // A non-zero exit code is counted in ctx.CommandErrors so results don't claim success for a
+    // failed DISM, Defender update, etc. Pass check: false where non-zero is expected.
+    private static async Task Run(TaskContext ctx, string file, string args, bool check = true)
     {
         ctx.Log($"> {file} {args}");
         var r = await ProcessRunner.RunAsync(file, args, l => ctx.Log("  " + l), ctx.Token);
-        if (!r.Success) ctx.Log($"  (exit code {r.ExitCode})");
+        if (!r.Success)
+        {
+            ctx.Log($"  (exit code {r.ExitCode})");
+            if (check) ctx.CommandErrors++;
+        }
     }
 
-    private static async Task Ps(TaskContext ctx, string script)
+    private static async Task Ps(TaskContext ctx, string script, bool check = true)
     {
         var r = await ProcessRunner.PowerShellAsync(script, l => ctx.Log("  " + l), ctx.Token);
-        if (!r.Success) ctx.Log($"  (PowerShell exit code {r.ExitCode})");
+        if (!r.Success)
+        {
+            ctx.Log($"  (PowerShell exit code {r.ExitCode})");
+            if (check) ctx.CommandErrors++;
+        }
     }
 
-    private static Task Cmd(TaskContext ctx, string command)
+    private static async Task Cmd(TaskContext ctx, string command, bool check = true)
     {
         ctx.Log($"> {command}");
-        return ProcessRunner.CmdAsync(command, l => ctx.Log("  " + l), ctx.Token);
+        var r = await ProcessRunner.CmdAsync(command, l => ctx.Log("  " + l), ctx.Token);
+        if (!r.Success)
+        {
+            ctx.Log($"  (exit code {r.ExitCode})");
+            if (check) ctx.CommandErrors++;
+        }
     }
 
+    // "net stop" fails harmlessly when the service is already stopped.
     private static Task StopServices(TaskContext ctx, params string[] services)
-        => Cmd(ctx, string.Join(" & ", services.Select(s => $"net stop {s} /y")));
+        => Cmd(ctx, string.Join(" & ", services.Select(s => $"net stop {s} /y")), check: false);
 
     private static Task StartServices(TaskContext ctx, params string[] services)
-        => Cmd(ctx, string.Join(" & ", services.Select(s => $"net start {s}")));
+        => Cmd(ctx, string.Join(" & ", services.Select(s => $"net start {s}")), check: false); // "already started" is not an error
 
     private static List<SystemTask> Build() =>
     [
@@ -48,7 +65,7 @@ public static class TaskCatalog
             Id = "clean-temp-user", Category = TaskCategory.Cleanup, Recommended = true,
             Title = "User temporary files",
             Description = "Deletes the contents of %TEMP%. Files in use are skipped.",
-            Run = ctx => { FileCleaner.DeleteContents(Path.GetTempPath(), ctx); return Task.CompletedTask; },
+            Run = ctx => { FileCleaner.DeleteContents(InteractiveUser.TempPath, ctx); return Task.CompletedTask; },
         },
         new()
         {
@@ -183,12 +200,23 @@ public static class TaskCatalog
             Id = "perf-ultimate-power-plan", Category = TaskCategory.Performance,
             Title = "Power plan: Ultimate Performance",
             Description = "Creates and activates the hidden Ultimate Performance plan. Intended for desktops.",
-            Run = ctx => Ps(ctx, """
+            // Found by GUID, not by name: plan names are translated, and a missed match used to
+            // create a new copy of the plan on every run.
+            Run = ctx => Ps(ctx, $$"""
                 $template = 'e9a42b02-d5df-448d-aa00-03f14749eb61'
-                $line = powercfg /list | Select-String 'Ultimate Performance|Máximo rendimiento|Rendement optimal|Höchstleistung' | Select-Object -First 1
-                if ($line -and "$line" -match '([0-9a-f-]{36})') { $id = $Matches[1] }
-                elseif ("$(powercfg -duplicatescheme $template)" -match '([0-9a-f-]{36})') { $id = $Matches[1] }
-                if ($id) { powercfg /setactive $id; "Active plan: $id" } else { 'Could not create the Ultimate Performance plan.' }
+                $mine = '{{PowerPlans.UltimateGuid}}'
+                $list = powercfg /list | Out-String
+                if ($list -match $mine) { $id = $mine }
+                elseif ($list -match $template) { $id = $template }
+                else {
+                    $legacy = powercfg /list | Select-String 'Ultimate Performance|Máximo rendimiento|Rendement optimal|Höchstleistung' | Select-Object -First 1
+                    if ($legacy -and "$legacy" -match '([0-9a-f-]{36})') { $id = $Matches[1] }
+                    else {
+                        powercfg -duplicatescheme $template $mine | Out-Null
+                        if ((powercfg /list | Out-String) -match $mine) { $id = $mine }
+                    }
+                }
+                if ($id) { powercfg /setactive $id; "Active plan: $id" } else { 'Could not create the Ultimate Performance plan.'; exit 1 }
                 """),
         },
         new()
@@ -255,7 +283,8 @@ public static class TaskCatalog
             Description = "Schedules chkdsk /f /r for the next boot. Can take a long time on large drives.",
             Run = async ctx =>
             {
-                await Cmd(ctx, $"echo Y| chkdsk {SystemDrive} /f /r");
+                // chkdsk's exit code here means "scheduled / volume in use", not failure.
+                await Cmd(ctx, $"echo Y| chkdsk {SystemDrive} /f /r", check: false);
                 // The Y answer only works on English Windows (Spanish expects S, German J...).
                 // Marking the volume dirty guarantees at least a /f check at boot on any language.
                 await Cmd(ctx, $"fsutil dirty set {SystemDrive}");
@@ -297,7 +326,7 @@ public static class TaskCatalog
                 FileCleaner.DeleteContents(Path.Combine(LocalAppData, "Microsoft", "Windows", "Explorer"), ctx, "iconcache_*.db", recursive: false);
                 var legacy = Path.Combine(LocalAppData, "IconCache.db");
                 try { if (File.Exists(legacy)) File.Delete(legacy); } catch { }
-                ProcessRunner.ShellOpen("explorer.exe");
+                await Task.Run(InteractiveUser.StartExplorer);
                 ctx.Log("  Explorer restarted.");
             },
         },
@@ -334,7 +363,7 @@ public static class TaskCatalog
             Description = "Restarts the time service and forces a sync. A wrong clock breaks HTTPS, the Store and activation.",
             Run = async ctx =>
             {
-                await Cmd(ctx, "sc config w32time start= auto & net start w32time");
+                await Cmd(ctx, "sc config w32time start= auto & net start w32time", check: false); // may already be running
                 await Run(ctx, "w32tm.exe", "/resync /force");
             },
         },
@@ -391,7 +420,7 @@ public static class TaskCatalog
             Description = "Releases and renews the DHCP lease. The connection drops for a few seconds.",
             Run = async ctx =>
             {
-                await Run(ctx, "ipconfig.exe", "/release");
+                await Run(ctx, "ipconfig.exe", "/release", check: false); // fails on disconnected adapters
                 await Run(ctx, "ipconfig.exe", "/renew");
             },
         },
@@ -403,10 +432,11 @@ public static class TaskCatalog
             Run = async ctx =>
             {
                 await Run(ctx, "netsh.exe", "winsock reset");
-                await Run(ctx, "netsh.exe", "int ip reset");
-                await Run(ctx, "netsh.exe", "int ipv6 reset");
+                // These often report a harmless "Access is denied" on one registry key.
+                await Run(ctx, "netsh.exe", "int ip reset", check: false);
+                await Run(ctx, "netsh.exe", "int ipv6 reset", check: false);
                 await Run(ctx, "netsh.exe", "interface ip delete arpcache");
-                await Run(ctx, "nbtstat.exe", "-R");
+                await Run(ctx, "nbtstat.exe", "-R", check: false); // fails when NetBIOS over TCP/IP is off
                 await Run(ctx, "ipconfig.exe", "/flushdns");
                 ctx.RebootRecommended = true;
             },
@@ -433,7 +463,7 @@ public static class TaskCatalog
     {
         await Cmd(ctx, "taskkill /f /im explorer.exe");
         await Task.Delay(800, ctx.Token);
-        ProcessRunner.ShellOpen("explorer.exe");
+        await Task.Run(InteractiveUser.StartExplorer);
         ctx.Log("  Explorer restarted.");
     }
 

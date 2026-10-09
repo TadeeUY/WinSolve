@@ -5,7 +5,8 @@ namespace WinSolve.Core;
 /// <summary>Registry helpers (always the 64-bit view).</summary>
 public static class Reg
 {
-    public static RegistryKey Root(RegistryHive hive) => RegistryKey.OpenBaseKey(hive, RegistryView.Registry64);
+    /// <summary>64-bit root; CurrentUser is the signed-in user's hive (see <see cref="InteractiveUser"/>).</summary>
+    public static RegistryKey Root(RegistryHive hive) => InteractiveUser.OpenBase(hive, RegistryView.Registry64);
 
     public static object? Get(RegistryHive hive, string path, string name)
     {

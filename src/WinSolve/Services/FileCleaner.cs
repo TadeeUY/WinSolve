@@ -15,48 +15,23 @@ public static class FileCleaner
             ctx.Log($"  Skipped {directory}: it is (or is inside) a junction or symbolic link.");
             return 0;
         }
-        long freed = 0;
-        int skipped = 0;
 
+        SafeDelete.Result result;
         try
         {
-            var enumOptions = SafePath.NoLinks(recursive); // never follow junctions
-
-            foreach (var file in Directory.EnumerateFiles(directory, pattern, enumOptions))
-            {
-                ctx.Token.ThrowIfCancellationRequested();
-                try
-                {
-                    var info = new FileInfo(file);
-                    var len = info.Length;
-                    if (info.IsReadOnly) info.IsReadOnly = false;
-                    info.Delete();
-                    freed += len;
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    skipped++;
-                }
-            }
-
-            if (recursive && pattern == "*")
-            {
-                // Remove now-empty folders, deepest first.
-                foreach (var dir in Directory.EnumerateDirectories(directory, "*", enumOptions)
-                             .OrderByDescending(d => d.Length))
-                {
-                    try { Directory.Delete(dir, recursive: false); } catch { /* not empty or in use */ }
-                }
-            }
+            // Handle-based: links inside are never followed, even if swapped in mid-cleanup.
+            result = SafeDelete.DeleteContents(directory, pattern, recursive, ctx.Token);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
         {
-            ctx.Log($"  No access to {directory}: {ex.Message}");
+            ctx.Log($"  Skipped {directory}: {ex.Message}");
+            return 0;
         }
 
-        ctx.Log($"  {directory}: {Format.Bytes(freed)} freed" + (skipped > 0 ? $" ({skipped} files in use skipped)" : ""));
-        ctx.FreedBytes += freed;
-        return freed;
+        ctx.Log($"  {directory}: {Format.Bytes(result.Freed)} freed" + (result.Skipped > 0 ? $" ({result.Skipped} files in use skipped)" : ""));
+        ctx.FreedBytes += result.Freed;
+        return result.Freed;
     }
 
     public static long DirectorySize(string directory)

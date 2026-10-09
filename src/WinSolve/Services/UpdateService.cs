@@ -138,7 +138,11 @@ public static class UpdateService
 
             var exe = Environment.ProcessPath ?? Application.ExecutablePath;
             var allUsers = !SafePath.IsUserWritableLocation(exe);
-            var args = "--install --auto --launch" + (allUsers ? " --allusers" : "");
+            // Update the folder this copy runs from (not one derived from the elevated account's
+            // profile), and let setup wait for this process to exit instead of killing it.
+            var dir = Path.GetDirectoryName(exe)!;
+            var args = "--install --auto --launch" + (allUsers ? " --allusers" : "") +
+                       $" --update-dir \"{dir}\" --wait {Environment.ProcessId}";
             log("Starting the installer. WinSolve will restart.");
             Process.Start(new ProcessStartInfo(file, args) { UseShellExecute = true, WorkingDirectory = Environment.SystemDirectory });
             await Task.Delay(1500, ct); // let the installer open the file before the lock is released

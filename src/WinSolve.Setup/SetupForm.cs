@@ -29,8 +29,11 @@ namespace WinSolve.Setup
         private CancellationTokenSource _cts;
         private bool _done;
 
+        private readonly InstallOptions _preset;
+
         public SetupForm(InstallOptions preset, bool autoStart)
         {
+            _preset = preset;
             _autoStart = autoStart;
             Text = "WinSolve Setup";
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -136,6 +139,8 @@ namespace WinSolve.Setup
             Clean = _clean.Checked,
             DesktopShortcut = _desktop.Checked,
             Launch = _launch.Checked,
+            UpdateDir = _preset.UpdateDir,
+            WaitPid = _preset.WaitPid,
         };
 
         private async Task RunInstall()
@@ -174,6 +179,8 @@ namespace WinSolve.Setup
             {
                 _status.Text = "Setup failed: " + ex.Message;
                 _status.ForeColor = Color.FromArgb(255, 99, 97);
+                // An automatic update that failed: the previous version is still intact, reopen it.
+                if (_autoStart && o.Launch && o.UpdateDir != null) Installer.LaunchApp(o);
                 _options.Enabled = true;
                 _install.Enabled = true;
             }
@@ -192,7 +199,7 @@ namespace WinSolve.Setup
                 _cancel.Visible = false;
                 if (o.Launch)
                 {
-                    Installer.LaunchApp(o.AllUsers);
+                    Installer.LaunchApp(o);
                     Close();
                 }
             }

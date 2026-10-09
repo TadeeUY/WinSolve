@@ -17,7 +17,7 @@ public sealed class StartupPage : Page
         AddRow(Theme.Row(
             Theme.Button("Remove selected", async (_, _) => await RemoveSelected(), primary: true, glyph: "\uE74D"),
             Theme.Button("Refresh", async (_, _) => await FillAsync()),
-            Theme.Button("Open Startup folder", (_, _) => ProcessRunner.ShellOpen(Environment.GetFolderPath(Environment.SpecialFolder.Startup))),
+            Theme.Button("Open Startup folder", (_, _) => ProcessRunner.ShellOpen(InteractiveUser.Startup)),
             Theme.Button("Task Scheduler", (_, _) => ProcessRunner.ShellOpen("taskschd.msc"))));
         AddRow(_status);
 

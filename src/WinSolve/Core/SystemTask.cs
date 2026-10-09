@@ -19,6 +19,9 @@ public sealed class TaskContext(Action<string> log, CancellationToken ct)
 
     public bool RebootRecommended { get; set; }
 
+    /// <summary>Commands that ended with an error exit code (the task itself kept going).</summary>
+    public int CommandErrors { get; set; }
+
     public void Log(string message) => log(message);
 }
 

@@ -384,7 +384,9 @@ public sealed class TaskRunnerView : TableLayoutPanel
                 log($"> {t.Title}");
                 try
                 {
+                    var errorsBefore = ctx.CommandErrors;
                     await t.Run(ctx);
+                    if (ctx.CommandErrors > errorsBefore) log($"WARNING  {t.Title}: a command reported an error (see above).");
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex) { log($"ERROR  {t.Title}: {ex.Message}"); }
