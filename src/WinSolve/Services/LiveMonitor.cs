@@ -34,6 +34,12 @@ public static class LiveMonitor
 {
     private static double? _baseMhz;
 
+    private static string Adapter(string engineName)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(engineName, @"luid_0x[0-9A-Fa-f]+_0x[0-9A-Fa-f]+");
+        return m.Success ? m.Value : "";
+    }
+
     public static LiveSample Sample()
     {
         var s = new LiveSample();
@@ -64,8 +70,9 @@ public static class LiveMonitor
         if (engines.Count > 0)
         {
             // Task Manager shows the busiest engine type; 3D is the usual one.
+            // Per adapter (luid) and engine type, so an iGPU and a dGPU aren't added together.
             s.GpuPercent = Math.Min(100, engines
-                .GroupBy(e => EngineType(e.Str("Name")))
+                .GroupBy(e => (Adapter(e.Str("Name")), EngineType(e.Str("Name"))))
                 .Select(g => g.Sum(e => (double)e.Get<ulong>("UtilizationPercentage")))
                 .DefaultIfEmpty(0).Max());
         }

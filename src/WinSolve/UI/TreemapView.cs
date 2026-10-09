@@ -84,7 +84,15 @@ public sealed class TreemapView : Control
     public SpaceNode? Root
     {
         get => _root;
-        set { _root = value; _hover = null; Repaint(true); }
+        set
+        {
+            _root = value;
+            _hover = null;
+            // Old hit areas would otherwise make invisible nodes from a previous scan clickable.
+            _hits.Clear();
+            if (value is null) _selected = null;
+            Repaint(true);
+        }
     }
 
     public SpaceNode? Selected

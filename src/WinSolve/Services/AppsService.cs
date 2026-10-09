@@ -111,6 +111,19 @@ public static class AppsService
     /// Removes a Store app for every user and deprovisions it so Windows does not
     /// reinstall it for new accounts or after feature updates.
     /// </summary>
+    /// <summary>Normal uninstall: removes the app for the current user only (it stays available to others).</summary>
+    public static Task<ProcessResult> RemoveStoreAppAsync(StoreApp app, Action<string> log, CancellationToken ct = default)
+        => ProcessRunner.PowerShellAsync($$"""
+            $name = {{Quote(app.Name)}}
+            $found = $false
+            Get-AppxPackage -Name $name | ForEach-Object {
+                $found = $true
+                try { Remove-AppxPackage -Package $_.PackageFullName -ErrorAction Stop; "Removed: $($_.PackageFullName)" }
+                catch { "Error: $($_.Exception.Message)" }
+            }
+            if (-not $found) { 'Not installed for the current user. Use Force uninstall to remove it for all users.' }
+            """, log, ct);
+
     public static Task<ProcessResult> ForceRemoveStoreAppAsync(StoreApp app, Action<string> log, CancellationToken ct = default)
         => ProcessRunner.PowerShellAsync($$"""
             $name = {{Quote(app.Name)}}
@@ -293,7 +306,7 @@ public static class AppsService
     {
         var result = new List<string>();
         var folder = ValidateFolder(p, p.InstallLocation);
-        if (folder is null) return result;
+        if (folder is null || IsSharedInstallFolder(p, folder)) return result;
         result.Add(folder);
 
         var leaf = Path.GetFileName(folder);
@@ -310,6 +323,40 @@ public static class AppsService
             }
         }
         return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// True for folders other software depends on: anything in Common Files, generic names
+    /// ("Microsoft Office", vendor folders), or a folder that holds another installed program
+    /// (e.g. Visio's InstallLocation is the whole Office folder).
+    /// </summary>
+    private static bool IsSharedInstallFolder(InstalledProgram p, string folder)
+    {
+        foreach (var common in new[]
+                 {
+                     Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFiles),
+                     Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFilesX86),
+                 })
+        {
+            if (SafePath.IsSameOrInside(folder, common)) return true;
+        }
+        if (CommonFolderNames.Contains(Path.GetFileName(folder))) return true;
+
+        try
+        {
+            foreach (var other in GetPrograms())
+            {
+                if (other.KeyPath == p.KeyPath && other.Hive == p.Hive && other.View == p.View) continue;
+                if (string.IsNullOrWhiteSpace(other.InstallLocation)) continue;
+                string otherFull;
+                try { otherFull = Path.GetFullPath(other.InstallLocation.Trim().Trim('"')).TrimEnd('\\'); }
+                catch { continue; }
+                // Same folder or a parent of another program's folder: deleting it would break that program.
+                if (SafePath.IsSameOrInside(otherFull, folder)) return true;
+            }
+        }
+        catch { return true; } // can't tell: be safe
+        return false;
     }
 
     private static string? ValidateFolder(InstalledProgram p, string path, bool allowProfileForMachine = false)
@@ -415,6 +462,8 @@ public static class AppsService
     {
         "Microsoft", "Google", "Adobe", "Intel", "NVIDIA", "NVIDIA Corporation", "AMD", "Packages", "Programs", "Temp", "Common Files",
         "Mozilla", "Apple", "Windows", "Steam", "Epic Games", "Riot Games", "Roaming", "Local", "LocalLow", "Application Data",
+        "Microsoft Office", "Microsoft Visual Studio", "Windows Kits", "Dell", "HP", "Hewlett-Packard", "Lenovo", "ASUS", "Acer",
+        "Realtek", "Logitech", "Corsair", "Razer", "MSI", "Gigabyte", "Oracle", "Java",
     };
 
     private static void ScheduleDeleteOnReboot(string dir)

@@ -157,8 +157,14 @@ public sealed class AppsPage : Page
             : $"Uninstall {selected.Count} app(s)?\n\n- {string.Join("\n- ", names)}";
         if (!ConfirmDanger(message)) return;
 
+        // Stop if the restore point was cancelled; ask if it failed (the user wanted one before force removal).
         if (force && AppSettings.Current.CreateRestorePoint)
-            await _runner.RunAsync("Creating restore point", async (log, _, ct) => await TaskCatalog.CreateRestorePoint(new TaskContext(log, ct), "WinSolve - before force uninstall"));
+        {
+            var created = false;
+            if (!await _runner.RunAsync("Creating restore point", async (log, _, ct) => created = await TaskCatalog.CreateRestorePoint(new TaskContext(log, ct), "WinSolve - before force uninstall")))
+                return;
+            if (!created && !ConfirmDanger("Could not create a restore point. Continue without it?")) return;
+        }
 
         await _runner.RunAsync(force ? "Force uninstall" : "Uninstall", async (log, progress, ct) =>
         {
@@ -168,8 +174,11 @@ public sealed class AppsPage : Page
                 log($"> {names[i]}");
                 switch (selected[i])
                 {
-                    case StoreApp a:
+                    case StoreApp a when force:
                         await AppsService.ForceRemoveStoreAppAsync(a, log, ct);
+                        break;
+                    case StoreApp a:
+                        await AppsService.RemoveStoreAppAsync(a, log, ct);
                         break;
                     case InstalledProgram p when force:
                         await AppsService.ForceUninstallAsync(p, folders[p], log, ct);

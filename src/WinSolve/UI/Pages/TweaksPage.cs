@@ -197,6 +197,11 @@ public sealed class TweaksPage : Page
                 catch (Exception ex)
                 {
                     Info($"Could not change '{Loc.T(t.Title)}': {ex.Message}");
+                    // Show the real state again instead of leaving the switch flipped.
+                    var actual = await Task.Run(() => { try { return t.IsApplied(); } catch { return !on; } });
+                    _loading = true;
+                    toggle.Checked = actual;
+                    _loading = false;
                 }
             };
             row.Controls.Add(label, 0, 0);
@@ -322,7 +327,7 @@ public sealed class TweaksPage : Page
             Info("There are no changes to apply.");
             return;
         }
-        RunDialog.Run(this, "Windows features", async (log, progress, ct) =>
+        var ok = RunDialog.Run(this, "Windows features", async (log, progress, ct) =>
         {
             for (int i = 0; i < changes.Count; i++)
             {
@@ -332,7 +337,7 @@ public sealed class TweaksPage : Page
             log("Done. Restart the PC to finish.");
         });
         _ = LoadFeaturesAsync();
-        AskReboot(this);
+        if (ok) AskReboot(this);
     }
 
     // ───────────── Load ─────────────

@@ -256,6 +256,9 @@ public static class TaskCatalog
             Run = async ctx =>
             {
                 await Cmd(ctx, $"echo Y| chkdsk {SystemDrive} /f /r");
+                // The Y answer only works on English Windows (Spanish expects S, German J...).
+                // Marking the volume dirty guarantees at least a /f check at boot on any language.
+                await Cmd(ctx, $"fsutil dirty set {SystemDrive}");
                 ctx.RebootRecommended = true;
             },
         },
@@ -353,9 +356,9 @@ public static class TaskCatalog
             Title = "Verify and repair WMI",
             Description = "Checks the WMI repository (used by many diagnostic tools) and salvages it if inconsistent.",
             Run = ctx => Ps(ctx, """
-                $r = winmgmt /verifyrepository
-                $r
-                if ($r -notmatch 'consistent|coherente') { winmgmt /salvagerepository }
+                winmgmt /verifyrepository
+                # Exit code, not the (localized) text: 0 means the repository is consistent.
+                if ($LASTEXITCODE -ne 0) { winmgmt /salvagerepository }
                 """),
         },
         new()

@@ -216,8 +216,16 @@ namespace WinSolve.Setup
             {
                 // We are running from the folder being removed: delete it after this process exits.
                 status("Files will be removed when the uninstaller closes.");
-                var cmd = $"/d /c ping 127.0.0.1 -n 3 > nul & rmdir /s /q \"{dir}\"";
-                Process.Start(new ProcessStartInfo(Sys("cmd.exe"), cmd) { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = Environment.SystemDirectory });
+                // Wait for this process to really exit (the user may leave the final message open),
+                // then remove the folder.
+                var pid = Process.GetCurrentProcess().Id;
+                var script = $"Wait-Process -Id {pid} -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; " +
+                             $"Remove-Item -LiteralPath '{dir.Replace("'", "''")}' -Recurse -Force -ErrorAction SilentlyContinue";
+                var ps = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
+                Process.Start(new ProcessStartInfo(ps, $"-NoProfile -NonInteractive -WindowStyle Hidden -Command \"{script}\"")
+                {
+                    CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = Environment.SystemDirectory,
+                });
             }
             else
             {

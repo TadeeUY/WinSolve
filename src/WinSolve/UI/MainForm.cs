@@ -19,6 +19,7 @@ public sealed class MainForm : Form
     private bool _exiting;
     private bool _animating;
     private bool _trayHintShown;
+    private bool _loaded, _shownOnce;
     private readonly InfoBar _infoBar = new() { Dock = DockStyle.Top, Visible = false };
     private UpdateInfo? _update;
     private bool _updating;
@@ -72,6 +73,9 @@ public sealed class MainForm : Form
 
         Load += (_, _) =>
         {
+            // With --tray, OnLoad is called by hand and again by WinForms on the first Show().
+            if (_loaded) return;
+            _loaded = true;
             ErrorMonitor.Instance.AlertRaised += OnAlert;
             ErrorMonitor.Instance.Apply();
             _ = CheckForUpdateAsync();
@@ -87,13 +91,16 @@ public sealed class MainForm : Form
         };
         Shown += async (_, _) =>
         {
+            if (_shownOnce || !Visible) return;
+            _shownOnce = true;
             SplashScreen.SetStatus("Loading pages...");
             PreloadPages();
             Refresh();
             SplashScreen.SetStatus("Ready");
             await SplashScreen.CloseAsync();
             Activate();
-            await AnimateInAsync();
+            // When started in the tray, ShowFromTray runs the fade-in itself.
+            if (!_startHidden) await AnimateInAsync();
         };
         HandleCreated += (_, _) => Theme.StyleWindow(this);
         FormClosing += OnFormClosing;
@@ -136,16 +143,18 @@ public sealed class MainForm : Form
 
     public async void ShowFromTray()
     {
+        // Only fade in when the window was actually hidden or minimized.
+        var wasHidden = !Visible || WindowState == FormWindowState.Minimized;
         if (!Visible)
         {
             Opacity = 0;
             Show();
-            if (_pages.Count == 0) Navigate("home");
-            else CurrentPage?.OnShown();
+            if (CurrentPage is null) Navigate("home");
+            else CurrentPage.OnShown();
         }
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         Activate();
-        await AnimateInAsync();
+        if (wasHidden) await AnimateInAsync();
     }
 
     private async void OnFormClosing(object? sender, FormClosingEventArgs e)
@@ -163,8 +172,16 @@ public sealed class MainForm : Form
         if (!_trayHintShown)
         {
             _trayHintShown = true;
-            _tray.ShowBalloonTip(3000, Localization.Loc.T("WinSolve is still running"),
-                Localization.Loc.T("You'll be alerted if Windows reports an error. Double-click the icon to open WinSolve."), ToolTipIcon.Info);
+            Toast.Show(new ToastOptions
+            {
+                Title = "WinSolve is still running",
+                Detail = "You'll be alerted if Windows reports an error. Double-click the icon to open WinSolve.",
+                Glyph = "\uE9F5",
+                Open = ShowFromTray,
+                SecondaryText = "OK",
+                AutoCloseSeconds = 8,
+                Sound = false,
+            });
         }
     }
 
@@ -195,7 +212,18 @@ public sealed class MainForm : Form
         _infoBar.Show($"WinSolve {update.Tag} is available",
             $"You have {UpdateService.CurrentVersion}. Updating takes less than a minute and keeps your settings.", install, notes);
         if (!Visible)
-            _tray.ShowBalloonTip(4000, Localization.Loc.T("WinSolve update available"), Localization.Loc.T($"Version {update.Tag} is ready to install."), ToolTipIcon.Info);
+            Toast.Show(new ToastOptions
+            {
+                Title = "WinSolve update available",
+                Detail = $"Version {update.Tag} is ready to install.",
+                Glyph = "\uE896",
+                PrimaryText = "Update now",
+                Primary = () => _ = InstallUpdateAsync(update),
+                SecondaryText = "Later",
+                Open = ShowFromTray,
+                AutoCloseSeconds = 20,
+                Sound = false,
+            });
     }
 
     /// <summary>
@@ -253,7 +281,7 @@ public sealed class MainForm : Form
 
     // ───────────── Alerts ─────────────
 
-    private void OnAlert(Alert alert) => AlertWindow.Show(alert, FixAlert);
+    private void OnAlert(Alert alert) => AlertWindow.Show(alert, FixAlert, ShowFromTray);
 
     private void FixAlert(Alert alert)
     {
@@ -315,7 +343,7 @@ public sealed class MainForm : Form
     /// <summary>Fades out while sliding down, as if dropping into the taskbar.</summary>
     private async Task AnimateOutAsync()
     {
-        if (!AppSettings.Current.Animations) return;
+        if (!AppSettings.Current.Animations || _animating) return;
         _animating = true;
         var top = Top;
         const int steps = 12;
@@ -338,6 +366,8 @@ public sealed class MainForm : Form
             Opacity = 1;
             return;
         }
+        // Overlapping fades would read Top mid-slide and leave the window lower each time.
+        if (_animating) return;
         _animating = true;
         var top = Top;
         var slide = WindowState == FormWindowState.Normal;
@@ -532,8 +562,14 @@ public sealed class MainForm : Form
     private Page? CurrentPage => _currentPage is not null && _content.Controls.Contains(_currentPage) ? _currentPage : null;
 
     /// <summary>Recreates every page (e.g. after the accent color changes).</summary>
-    public void Reload(string current)
+    /// <summary>True while any page is running a task (optimization, uninstall, driver install...).</summary>
+    public bool IsBusy => _pages.Values.Any(p => p.IsBusy);
+
+    /// <summary>Returns false (and does nothing) while a task is running.</summary>
+    public bool Reload(string current)
     {
+        // Recreating pages would orphan running work (no log, no Cancel) and allow a second run.
+        if (IsBusy) return false;
         _currentPage = null;
         _content.Controls.Clear();
         foreach (var p in _pages.Values) p.Dispose();
@@ -544,6 +580,7 @@ public sealed class MainForm : Form
         if (_update is not null && !_updating) ShowUpdate(_update);
         _tray.Text = Localization.Loc.T("WinSolve - watching for Windows errors");
         Navigate(current);
+        return true;
     }
 
     protected override void Dispose(bool disposing)

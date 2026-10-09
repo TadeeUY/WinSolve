@@ -326,6 +326,7 @@ public sealed class OptionCard : Control
 
     protected override void OnMouseEnter(EventArgs e) { FadeHover(true); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { FadeHover(false); base.OnMouseLeave(e); }
+    protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -340,9 +341,10 @@ public sealed class OptionCard : Control
             g.DrawPath(pen, path);
         }
 
-        TextRenderer.DrawText(g, Glyph, Theme.IconsLarge, new Rectangle(14, 14, 32, 32), _selected ? ControlPaint.Light(Theme.Accent, 0.6f) : Theme.Text,
+        var textColor = Enabled ? Theme.Text : Theme.Muted;
+        TextRenderer.DrawText(g, Glyph, Theme.IconsLarge, new Rectangle(14, 14, 32, 32), _selected ? ControlPaint.Light(Theme.Accent, 0.6f) : textColor,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        TextRenderer.DrawText(g, Loc.T(Text), Theme.BodyBold, new Rectangle(56, 14, Width - 70, 22), Theme.Text,
+        TextRenderer.DrawText(g, Loc.T(Text), Theme.BodyBold, new Rectangle(56, 14, Width - 70, 22), textColor,
             TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
         TextRenderer.DrawText(g, Loc.T(Description), Theme.Small, new Rectangle(56, 38, Width - 70, Height - 46), Theme.Muted,
             TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);

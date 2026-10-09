@@ -120,7 +120,7 @@ public static partial class TweakCatalog
                 ]),
             RegTweak("ess-storage-sense", "System", "Disable Storage Sense",
                 "Stops Windows from deleting files automatically (Downloads, Recycle Bin) when space runs low.",
-                [D(HKCU, @"Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy", "01", 0, 1)]),
+                [D(HKCU, @"Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy", "01", 0, null)]),
             RegTweak("ess-wifi-sense", "Privacy", "Disable Wi-Fi Sense",
                 "Stops automatic connections to suggested open hotspots and hotspot reporting.",
                 [
@@ -205,7 +205,7 @@ public static partial class TweakCatalog
         list.Add(RegTweak("pref-numlock", "Interface", "NumLock on at startup",
             "Turns NumLock on at the sign-in screen and when you sign in.",
             [
-                new(RegistryHive.Users, @".DEFAULT\Control Panel\Keyboard", "InitialKeyboardIndicators", "2", "0", RegistryValueKind.String),
+                new(RegistryHive.Users, @".DEFAULT\Control Panel\Keyboard", "InitialKeyboardIndicators", "2", "2147483648", RegistryValueKind.String),
                 S(HKCU, @"Control Panel\Keyboard", "InitialKeyboardIndicators", "2", "0"),
             ]));
         list.Add(RegTweak("pref-snap-assist-off", "Interface", "Turn off Snap Assist suggestions",

@@ -19,7 +19,6 @@ public sealed class OptimizePage : Page
         "Choose the device type and level. WinSolve tailors the changes to the hardware it detects.")
     {
         _start = Theme.Button("Start optimization", async (_, _) => await StartAsync(), primary: true, glyph: "\uE945");
-        _runner.BusyChanged += busy => _start.Enabled = !busy;
 
         _desktop = new OptionCard("\uE7F4", "Desktop PC", "Highest power plan when you choose Maximum performance.");
         _desktop.Click += (_, _) => SetDevice(DeviceKind.PC);
@@ -59,6 +58,13 @@ public sealed class OptimizePage : Page
 
         AddRow(new Stack(scroll: true).Add(_results, card), fill: true);
         AddRow(_runner, height: 220);
+
+        // Changing device or level mid-run would make the run differ from what was confirmed.
+        _runner.BusyChanged += busy =>
+        {
+            _start.Enabled = !busy;
+            foreach (var c in _levels.Append(_desktop).Append(_laptop).Append(_custom)) c.Enabled = !busy;
+        };
     }
 
     /// <summary>Equal-width row of option cards.</summary>

@@ -177,11 +177,12 @@ public static class DiskHealthService
 
     private static void AttachRawSmart(List<DiskInfo> disks)
     {
-        var drives = Wmi.Query("SELECT Model, SerialNumber, PNPDeviceID FROM Win32_DiskDrive");
+        var drives = Wmi.Query("SELECT Index, Model, SerialNumber, PNPDeviceID FROM Win32_DiskDrive");
         var predict = Wmi.Query("SELECT InstanceName, PredictFailure FROM MSStorageDriver_FailurePredictStatus", @"root\wmi");
         var data = Wmi.Query("SELECT InstanceName, VendorSpecific FROM MSStorageDriver_FailurePredictData", @"root\wmi");
         var thresholds = Wmi.Query("SELECT InstanceName, VendorSpecific FROM MSStorageDriver_FailurePredictThresholds", @"root\wmi");
 
+        var used = new HashSet<DiskInfo>();
         foreach (var drive in drives)
         {
             var pnp = drive.Str("PNPDeviceID");
@@ -190,11 +191,18 @@ public static class DiskHealthService
             bool Matches(System.Management.ManagementBaseObject o) =>
                 o.Str("InstanceName").StartsWith(pnp, StringComparison.OrdinalIgnoreCase);
 
-            var serial = drive.Str("SerialNumber");
+            // Match by disk number first (unique); serial and model are only fallbacks, and a disk
+            // never receives a second drive's data (two identical models would otherwise collide).
+            var serial = drive.Str("SerialNumber").Trim();
             var model = drive.Str("Model");
-            var disk = disks.FirstOrDefault(d => serial.Length > 0 && d.Serial.Equals(serial, StringComparison.OrdinalIgnoreCase))
-                       ?? disks.FirstOrDefault(d => d.Model.Equals(model, StringComparison.OrdinalIgnoreCase));
+            var index = drive.Get<uint?>("Index");
+            var free = disks.Where(d => !used.Contains(d)).ToList();
+            var disk = (index is { } i ? free.FirstOrDefault(d => d.DiskNumber == (int)i) : null)
+                       ?? free.FirstOrDefault(d => serial.Length > 0 && d.Serial.Trim().Equals(serial, StringComparison.OrdinalIgnoreCase))
+                       ?? (free.Count(d => d.Model.Equals(model, StringComparison.OrdinalIgnoreCase)) == 1
+                           ? free.First(d => d.Model.Equals(model, StringComparison.OrdinalIgnoreCase)) : null);
             if (disk is null) continue;
+            used.Add(disk);
 
             var p = predict.FirstOrDefault(Matches);
             if (p is not null) disk.PredictFailure = p.Get<bool>("PredictFailure");

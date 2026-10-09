@@ -55,7 +55,14 @@ jobs:
           # Version comes from the app's project file; one release per version.
           [xml]$proj = Get-Content src/WinSolve/WinSolve.csproj
           $version = ($proj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
-          $tag = if ("${{ github.ref }}".StartsWith('refs/tags/v')) { "${{ github.ref_name }}" } else { "v$version" }
+          [xml]$setupProj = Get-Content src/WinSolve.Setup/WinSolve.Setup.csproj
+          $setupVersion = ($setupProj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          if ($setupVersion -ne $version) { throw "Version mismatch: app $version, setup $setupVersion." }
+          $tag = "v$version"
+          # A tag that doesn't match the app's version would make every install see an "update" forever.
+          if ("${{ github.ref }}".StartsWith('refs/tags/') -and "${{ github.ref_name }}" -ne $tag) {
+            throw "Tag ${{ github.ref_name }} does not match the app version $version."
+          }
           gh release view $tag --repo ${{ github.repository }} *> $null
           if ($LASTEXITCODE -eq 0) {
             Write-Host "Release $tag exists; updating its files."

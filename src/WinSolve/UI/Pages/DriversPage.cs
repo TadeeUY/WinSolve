@@ -154,19 +154,28 @@ public sealed class DriversPage : Page
         }
 
         if (!ConfirmDanger($"Clean install NVIDIA driver {latest.Version}?\n\n" +
-                           "1. A restore point is created\n2. The driver is downloaded from nvidia.com\n3. Every installed NVIDIA display driver is removed\n4. The new driver is installed silently with a clean profile\n\n" +
+                           "1. A restore point is created\n2. The driver is downloaded from nvidia.com\n3. The new driver is installed silently with a clean profile, replacing the old one\n\n" +
                            "The screen will flicker and NVIDIA Control Panel settings are reset. Close games and video apps first."))
             return;
 
-        await _runner.RunAsync("NVIDIA clean install", async (log, progress, ct) =>
+        var ok = await _runner.RunAsync("NVIDIA clean install", async (log, progress, ct) =>
         {
             var file = await DriverService.DownloadAsync(latest.DownloadUrl, log, progress, ct);
-            await DriverService.CleanInstallAsync(GpuVendor.Nvidia, file, requireVendorSignature: true, log, ct);
+            try
+            {
+                await DriverService.CleanInstallAsync(GpuVendor.Nvidia, file, requireVendorSignature: true, log, ct);
+            }
+            finally
+            {
+                // The package is ~700 MB; don't leave it in ProgramData after installing.
+                try { Directory.Delete(Path.GetDirectoryName(file)!, recursive: true); } catch { }
+            }
         });
         _gpus = DriverService.GetGpus();
         _latest.Clear();
         Render();
-        AskReboot(this, "Restart now to finish the driver installation?");
+        // Only offer a restart when the install actually ran (not cancelled, failed or refused because busy).
+        if (ok) AskReboot(this, "Restart now to finish the driver installation?");
     }
 
     private async Task CleanInstallFromFile(GpuInfo gpu)
@@ -187,9 +196,9 @@ public sealed class DriversPage : Page
         if (!ConfirmDanger($"Clean install using {Path.GetFileName(dlg.FileName)}?\n\nEvery installed {gpu.VendorName} display driver is removed first, then the installer runs. The screen will flicker."))
             return;
 
-        await _runner.RunAsync($"{gpu.VendorName} clean install", (log, _, ct) => DriverService.CleanInstallAsync(gpu.Vendor, dlg.FileName, requireVendorSignature: signed, log, ct));
+        var ok = await _runner.RunAsync($"{gpu.VendorName} clean install", (log, _, ct) => DriverService.CleanInstallAsync(gpu.Vendor, dlg.FileName, requireVendorSignature: signed, log, ct));
         _gpus = DriverService.GetGpus();
         Render();
-        AskReboot(this, "Restart now to finish the driver installation?");
+        if (ok) AskReboot(this, "Restart now to finish the driver installation?");
     }
 }

@@ -343,14 +343,24 @@ public sealed class SpacePage : Page
         {
             Logger.Write($"Moved to Recycle Bin: {path} ({Format.Bytes(n.Size)})");
             var zoomRoot = _map.Root;
+            var parent = n.Parent;
             n.Detach();
             ShowResult();
-            if (zoomRoot is not null && zoomRoot != n) ZoomTo(zoomRoot);
+            // If the zoomed folder was inside what was deleted, go to the deleted item's parent.
+            if (zoomRoot is not null && IsAttached(zoomRoot)) ZoomTo(zoomRoot);
+            else if (parent is not null && IsAttached(parent)) ZoomTo(parent);
         }
         else
         {
             Info("Could not delete it (it may be in use or access was denied).");
         }
+    }
+
+    private bool IsAttached(SpaceNode node)
+    {
+        for (var p = node; p is not null; p = p.Parent)
+            if (p == _result?.Root) return true;
+        return false;
     }
 
     public override void OnShown()

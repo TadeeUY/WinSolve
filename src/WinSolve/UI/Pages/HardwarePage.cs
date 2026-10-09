@@ -67,6 +67,7 @@ public sealed class HardwarePage : Page
         private readonly StackCard _repair = new();
         private readonly DataGridView _attrs = new();
         private List<DiskInfo> _disks = [];
+        private Control AttrsCard => _attrs.Parent ?? _attrs;
         private bool _loading;
         private bool _loaded;
 
@@ -126,7 +127,7 @@ public sealed class HardwarePage : Page
                 _diskButtons.Controls.Add(b);
             }
             _diskButtons.Controls.Add(Theme.Button("Refresh", (_, _) => Refresh(true)));
-            _detail.Visible = _attrs.Visible = _repair.Visible = _disks.Count > 0;
+            _detail.Visible = AttrsCard.Visible = _repair.Visible = _disks.Count > 0;
             if (_disks.Count > 0) ShowDisk(0);
             else _diskButtons.Controls.Add(Theme.Label("No drives found. Is WinSolve running as administrator?", Theme.Body, Theme.Warn));
         }
@@ -174,13 +175,16 @@ public sealed class HardwarePage : Page
                 if (a.Failing) _attrs.Rows[i].DefaultCellStyle.ForeColor = Theme.Bad;
                 else if (a.Raw > 0 && a.Id is 0x05 or 0xC5 or 0xC6 or 0xBB) _attrs.Rows[i].DefaultCellStyle.ForeColor = Theme.Warn;
             }
-            _attrs.Visible = d.Attributes.Count > 0;
+            AttrsCard.Visible = d.Attributes.Count > 0;
             _ = ShowRepairAsync(d);
         }
 
         /// <summary>Repair panel: advice for this drive plus Check / Fix / bad sector buttons per volume.</summary>
+        private int _repairVersion;
+
         private async Task ShowRepairAsync(DiskInfo d)
         {
+            var version = ++_repairVersion;
             _repair.Body.Controls.Clear();
             var (advice, level) = DiskRepairService.Advice(d);
             _repair.Add(
@@ -195,6 +199,8 @@ public sealed class HardwarePage : Page
             }
 
             var volumes = await DiskRepairService.GetVolumesAsync(number);
+            // Another drive was selected while this one was loading: don't show its volumes there.
+            if (version != _repairVersion) return;
             if (volumes.Count == 0)
             {
                 _repair.Add(Theme.Paragraph("This drive has no volumes with a drive letter to check."));

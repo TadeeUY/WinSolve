@@ -132,12 +132,18 @@ public sealed class DuplicatesDialog : Form
             return;
 
         var failed = 0;
+        var moved = new HashSet<DuplicateFile>();
         foreach (var f in sel)
         {
-            if (RecycleBin.Send(f.Path, Handle)) Logger.Write($"Duplicate moved to Recycle Bin: {f.Path}");
+            if (RecycleBin.Send(f.Path, Handle))
+            {
+                moved.Add(f);
+                Logger.Write($"Duplicate moved to Recycle Bin: {f.Path}");
+            }
             else failed++;
         }
-        foreach (var g in _groups) g.Files.RemoveAll(sel.Contains);
+        // Only drop the files that were really moved; the others are still on disk.
+        foreach (var g in _groups) g.Files.RemoveAll(moved.Contains);
         _groups.RemoveAll(g => g.Files.Count < 2);
         Fill();
         if (failed > 0) Localization.Loc.Show(this, $"{failed} file(s) could not be moved (in use or access denied).", "Duplicate files");

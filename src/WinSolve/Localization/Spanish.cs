@@ -924,7 +924,7 @@ public static class Spanish
         ["Check for updates now"] = "Buscar actualizaciones ahora",
         ["Language"] = "Idioma",
         ["Automatic maintenance"] = "Mantenimiento automático",
-        ["Runs a light cleanup in the background (temporary files, update cache, error reports, DNS cache, Defender definitions) at 3:00 AM, or as soon as the PC is on afterwards. Not on battery power."] = "Hace una limpieza ligera en segundo plano (temporales, caché de actualizaciones, informes de errores, caché DNS, firmas de Defender) a las 3:00, o en cuanto el PC se encienda después. No funciona con batería.",
+        ["Runs a light cleanup in the background (temporary files, error reports, Delivery Optimization cache, DNS cache, Defender definitions) at 3:00 AM, or as soon as the PC is on afterwards. Not on battery power."] = "Hace una limpieza ligera en segundo plano (temporales, informes de errores, caché de Optimización de distribución, caché DNS, firmas de Defender) a las 3:00, o en cuanto el PC se encienda después. No funciona con batería.",
         ["Off"] = "Desactivado",
         ["Daily"] = "Diario",
         ["Weekly"] = "Semanal",
@@ -1007,8 +1007,7 @@ public static class Spanish
         ["Clean install NVIDIA driver {0}?"] = "¿Instalación limpia del driver de NVIDIA {0}?",
         ["1. A restore point is created"] = "1. Se crea un punto de restauración",
         ["2. The driver is downloaded from nvidia.com"] = "2. Se descarga el driver de nvidia.com",
-        ["3. Every installed NVIDIA display driver is removed"] = "3. Se quitan todos los drivers de video de NVIDIA instalados",
-        ["4. The new driver is installed silently with a clean profile"] = "4. Se instala el driver nuevo en silencio con un perfil limpio",
+        ["3. The new driver is installed silently with a clean profile, replacing the old one"] = "3. Se instala el driver nuevo en silencio con un perfil limpio, reemplazando al anterior",
         ["The screen will flicker and NVIDIA Control Panel settings are reset. Close games and video apps first."] = "La pantalla va a parpadear y se restablece la configuración del Panel de control de NVIDIA. Cierra juegos y apps de video antes.",
         ["This file is not digitally signed by {0} (signer: {1})."] = "Este archivo no está firmado digitalmente por {0} (firmante: {1}).",
         ["It will run with administrator rights. Only continue if you are sure it is a genuine driver installer. Continue anyway?"] = "Se ejecutará con permisos de administrador. Continúa solo si estás seguro de que es un instalador de driver legítimo. ¿Continuar de todos modos?",
@@ -1043,5 +1042,13 @@ public static class Spanish
         ["Used when you pick 'Custom list' on the One-click page."] = "Se usa cuando eliges 'Lista personalizada' en Optimización en 1 clic.",
         ["Tasks"] = "Tareas",
         ["{0} task(s) and {1} tweak(s) selected."] = "{0} tarea(s) y {1} ajuste(s) seleccionados.",
+        // ── Notifications ──
+        ["Dismiss"] = "Descartar",
+        ["Don't show alerts like this"] = "No mostrar alertas como esta",
+        ["Later"] = "Más tarde",
+        ["OK"] = "Aceptar",
+        ["Could not create a restore point. Continue without it?"] = "No se pudo crear un punto de restauración. ¿Continuar sin él?",
+        ["Settings saved. A task is still running, so the new color or language will apply the next time WinSolve starts."] = "Configuración guardada. Hay una tarea en curso, así que el nuevo color o idioma se aplicará la próxima vez que abras WinSolve.",
+        ["Settings could not be saved. Details are in the log ({0})."] = "No se pudo guardar la configuración. Los detalles están en el registro ({0}).",
     };
 }

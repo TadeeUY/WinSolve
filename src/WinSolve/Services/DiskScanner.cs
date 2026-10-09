@@ -7,7 +7,7 @@ namespace WinSolve.Services;
 public sealed class SpaceNode
 {
     public string Name { get; }
-    public SpaceNode? Parent { get; }
+    public SpaceNode? Parent { get; private set; }
     public bool IsFile { get; }
 
     /// <summary>Groups many small files to keep memory usage low.</summary>
@@ -53,6 +53,8 @@ public sealed class SpaceNode
             p.Size -= Size;
             p.FileCount -= IsFile ? 1 : FileCount;
         }
+        // Detached: a second Detach (or a delete from inside this subtree) must not subtract again.
+        Parent = null;
     }
 }
 

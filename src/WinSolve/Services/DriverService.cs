@@ -115,8 +115,14 @@ public static class DriverService
 
         var match = products.FirstOrDefault(p => Normalize(p.Name) == wanted);
         if (match.Name is null or "")
-            match = products.Where(p => wanted.Contains(Normalize(p.Name)) || Normalize(p.Name).Contains(wanted))
+        {
+            // Never pick a desktop package for a laptop GPU (or the other way round): it won't install.
+            static bool IsMobile(string n) => n.Contains("laptop", StringComparison.OrdinalIgnoreCase) || n.Contains("notebook", StringComparison.OrdinalIgnoreCase)
+                || n.Contains("max-q", StringComparison.OrdinalIgnoreCase) || n.Contains("mobile", StringComparison.OrdinalIgnoreCase);
+            var mobile = IsMobile(gpu.Name);
+            match = products.Where(p => IsMobile(p.Name) == mobile && (wanted.Contains(Normalize(p.Name)) || Normalize(p.Name).Contains(wanted)))
                 .OrderByDescending(p => p.Name.Length).FirstOrDefault();
+        }
         if (match.Name is null or "")
         {
             log($"'{gpu.Name}' was not found in NVIDIA's product list.");
@@ -221,9 +227,10 @@ public static class DriverService
     {
         var provider = vendor switch
         {
-            GpuVendor.Nvidia => "NVIDIA",
-            GpuVendor.Amd => "Advanced Micro Devices|AMD|ATI",
-            GpuVendor.Intel => "Intel",
+            GpuVendor.Nvidia => "^NVIDIA",
+            // Anchored: an unanchored "ATI" would also match "Corporation" (Intel/NVIDIA Corporation).
+            GpuVendor.Amd => "^(Advanced Micro Devices|AMD|ATI Technologies)",
+            GpuVendor.Intel => "^Intel",
             _ => throw new ArgumentException("Unknown vendor"),
         };
 
@@ -311,7 +318,10 @@ public static class DriverService
         if (AppSettings.Current.CreateRestorePoint)
             await TaskCatalog.CreateRestorePoint(ctx, "WinSolve - before graphics driver clean install");
 
-        await RemoveDisplayDriversAsync(vendor, log, ct);
+        // NVIDIA's installer does its own clean install (-clean), so the working driver is only
+        // replaced once the new one installs. Other vendors' installers don't, so remove first.
+        if (vendor != GpuVendor.Nvidia)
+            await RemoveDisplayDriversAsync(vendor, log, ct);
 
         log($"Starting the installer: {Path.GetFileName(safeCopy)}");
         if (vendor == GpuVendor.Nvidia)

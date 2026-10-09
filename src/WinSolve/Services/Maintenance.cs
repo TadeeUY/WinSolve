@@ -16,7 +16,9 @@ public static class Maintenance
     /// <summary>Safe tasks only: nothing here changes settings or needs a restart.</summary>
     public static readonly string[] TaskIds =
     [
-        "clean-temp-user", "clean-temp-windows", "clean-error-reports", "clean-wu-cache",
+        // Not the Windows Update cache: unattended at night it could delete updates that are
+        // downloaded but not yet installed, while Windows' own maintenance is using them.
+        "clean-temp-user", "clean-temp-windows", "clean-error-reports",
         "clean-delivery-opt", "clean-thumbnails", "net-flush-dns", "sec-defender-update",
     ];
 

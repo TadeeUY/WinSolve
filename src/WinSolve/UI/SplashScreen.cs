@@ -11,8 +11,10 @@ public static class SplashScreen
 {
     private const int MinimumVisibleMs = 900;
 
-    private static SplashForm? _form;
+    private static volatile SplashForm? _form;
     private static long _shownAt;
+    // Read by the splash thread's timer, so closing works even if the splash appeared late.
+    private static volatile bool _closeRequested;
 
     /// <summary>Shows the splash screen. Call on the main thread before creating the main window.</summary>
     public static void Show(string status)
@@ -43,7 +45,7 @@ public static class SplashScreen
         };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        ready.Wait(3000);
+        ready.Wait(3000); // keep starting even if the splash is slow; it closes itself when asked
         _shownAt = Environment.TickCount64;
     }
 
@@ -61,12 +63,11 @@ public static class SplashScreen
     /// </summary>
     public static async Task CloseAsync()
     {
-        var form = _form;
-        if (form is null) return;
-        _form = null;
+        if (_closeRequested || _shownAt == 0) return;
         var wait = MinimumVisibleMs - (int)(Environment.TickCount64 - _shownAt);
         if (wait > 0) await Task.Delay(wait);
-        try { form.BeginInvoke(form.FadeOutAndClose); } catch { }
+        _closeRequested = true;
+        _form = null;
     }
 
     private sealed class SplashForm : Form
@@ -159,6 +160,7 @@ public static class SplashScreen
         private void Tick()
         {
             var now = Environment.TickCount64;
+            if (_closeRequested && !_closing) FadeOutAndClose();
             if (_closing)
             {
                 var t = Math.Clamp((now - _closeStart) / 220.0, 0, 1);
@@ -186,11 +188,14 @@ public static class SplashScreen
 
             var w = ClientSize.Width;
             var h = ClientSize.Height;
+            // Layout is designed at 96 DPI (520x320); scale every position with the window.
+            var k = DeviceDpi / 96f;
+            int S(double v) => (int)Math.Round(v * k);
             var elapsed = (Environment.TickCount64 - _start) / 1000.0;
 
             // Soft accent glow behind the logo that slowly breathes.
             var glow = 0.5 + 0.5 * Math.Sin(elapsed * 2.2);
-            var glowRect = new RectangleF(w / 2f - 150, 6, 300, 220);
+            var glowRect = new RectangleF(w / 2f - S(150), S(6), S(300), S(220));
             using (var path = new GraphicsPath())
             {
                 path.AddEllipse(glowRect);
@@ -204,18 +209,18 @@ public static class SplashScreen
 
             // Logo rises into place as the window appears.
             var intro = Ease.OutCubic(Math.Clamp(elapsed / 0.5, 0, 1));
-            var logoSize = 76;
-            var logoY = 52 + (int)(14 * (1 - intro));
+            var logoSize = S(76);
+            var logoY = S(52 + 14 * (1 - intro));
             if (_logo is not null)
                 g.DrawImage(_logo, new Rectangle(w / 2 - logoSize / 2, logoY, logoSize, logoSize));
 
             var center = TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix;
-            TextRenderer.DrawText(g, "WinSolve", _titleFont, new Rectangle(0, 140, w, 44), Blend(Background, Foreground, intro), center);
-            TextRenderer.DrawText(g, _subtitle, _bodyFont, new Rectangle(0, 184, w, 22), Blend(Background, Muted, intro), center);
+            TextRenderer.DrawText(g, "WinSolve", _titleFont, new Rectangle(0, S(140), w, S(44)), Blend(Background, Foreground, intro), center);
+            TextRenderer.DrawText(g, _subtitle, _bodyFont, new Rectangle(0, S(184), w, S(22)), Blend(Background, Muted, intro), center);
 
             // Windows 11 style indeterminate progress bar.
-            var barW = 240;
-            var bar = new Rectangle(w / 2 - barW / 2, 236, barW, 3);
+            var barW = S(240);
+            var bar = new Rectangle(w / 2 - barW / 2, S(236), barW, Math.Max(3, S(3)));
             using (var track = new SolidBrush(Color.FromArgb(50, 50, 50))) g.FillRectangle(track, bar);
             const double segLen = 0.38;
             var p = Ease.InOut(elapsed % 1.5 / 1.5) * (1 + segLen) - segLen;
@@ -230,12 +235,12 @@ public static class SplashScreen
 
             // Status text cross-fades when it changes.
             var st = Math.Clamp((Environment.TickCount64 - _statusChangedAt) / 200.0, 0, 1);
-            var statusRect = new Rectangle(0, 252, w, 20);
+            var statusRect = new Rectangle(0, S(252), w, S(20));
             if (st < 1 && _previousStatus.Length > 0)
                 TextRenderer.DrawText(g, _previousStatus, _smallFont, statusRect, Blend(Background, Muted, 1 - st), center);
             TextRenderer.DrawText(g, _status, _smallFont, statusRect, Blend(Background, Muted, st * intro), center);
 
-            TextRenderer.DrawText(g, _version, _smallFont, new Rectangle(16, h - 28, w / 2, 18), Color.FromArgb(110, 110, 110),
+            TextRenderer.DrawText(g, _version, _smallFont, new Rectangle(S(16), h - S(28), w / 2, S(18)), Color.FromArgb(110, 110, 110),
                 TextFormatFlags.NoPrefix);
 
             using var border = new Pen(Color.FromArgb(56, 56, 56));

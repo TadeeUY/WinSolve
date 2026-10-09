@@ -81,16 +81,21 @@ public sealed class AppSettings
         return new AppSettings();
     }
 
-    public void Save()
+    /// <summary>Saves atomically (temp file + rename), so a crash mid-write can't corrupt the settings.</summary>
+    public bool Save()
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, JsonOptions));
+            var tmp = FilePath + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(this, JsonOptions));
+            File.Move(tmp, FilePath, overwrite: true);
+            return true;
         }
         catch (Exception ex)
         {
             Logger.Write($"Could not save settings: {ex.Message}");
+            return false;
         }
     }
 

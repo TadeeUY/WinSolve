@@ -125,7 +125,7 @@ public static class HardwareService
         var ms = (long)TimeSpan.FromDays(days).TotalMilliseconds;
         var query = $"""
             <QueryList><Query Id="0" Path="System">
-              <Select Path="System">*[System[Provider[@Name='Microsoft-Windows-WHEA-Logger'] and TimeCreated[timediff(@SystemTime) &lt;= {ms}]]]</Select>
+              <Select Path="System">*[System[Provider[@Name='Microsoft-Windows-WHEA-Logger'] and (Level=1 or Level=2) and TimeCreated[timediff(@SystemTime) &lt;= {ms}]]]</Select>
               <Select Path="System">*[System[Provider[@Name='Microsoft-Windows-Kernel-Power'] and (EventID=41) and TimeCreated[timediff(@SystemTime) &lt;= {ms}]]]</Select>
               <Select Path="System">*[System[Provider[@Name='Microsoft-Windows-WER-SystemErrorReporting' or @Name='BugCheck'] and (EventID=1001) and TimeCreated[timediff(@SystemTime) &lt;= {ms}]]]</Select>
               <Select Path="System">*[System[Provider[@Name='disk' or @Name='Disk' or @Name='Ntfs' or @Name='storahci' or @Name='stornvme'] and (Level=1 or Level=2) and TimeCreated[timediff(@SystemTime) &lt;= {ms}]]]</Select>

@@ -411,7 +411,20 @@ public abstract class Page : UserControl
         ["startup"] = "\uE7E8", ["apps"] = "\uE71D", ["activation"] = "\uE8D7", ["settings"] = "\uE713",
     };
 
-    protected MainForm Main => (MainForm)FindForm()!;
+    // Not FindForm(): a page that isn't on screen (e.g. after navigating away mid-await) has no form.
+    protected MainForm Main => (MainForm?)FindForm() ?? Application.OpenForms.OfType<MainForm>().First();
+
+    /// <summary>True while one of this page's task runners is working.</summary>
+    public bool IsBusy => Runners(this).Any(r => r.IsBusy);
+
+    private static IEnumerable<TaskRunnerView> Runners(Control c)
+    {
+        foreach (Control child in c.Controls)
+        {
+            if (child is TaskRunnerView r) yield return r;
+            foreach (var nested in Runners(child)) yield return nested;
+        }
+    }
 
     protected Page(string title, string subtitle)
     {

@@ -45,14 +45,17 @@ public sealed class RunDialog : Form
         dlg.ShowDialog(owner);
     }
 
-    public static void Run(IWin32Window owner, string title, Func<Action<string>, Action<int, int>, CancellationToken, Task> work)
+    /// <summary>Runs the work in a modal window. Returns false if it was cancelled or failed.</summary>
+    public static bool Run(IWin32Window owner, string title, Func<Action<string>, Action<int, int>, CancellationToken, Task> work)
     {
         using var dlg = new RunDialog(title);
+        var ok = false;
         dlg.Shown += async (_, _) =>
         {
-            await dlg._runner.RunAsync(title, work);
+            ok = await dlg._runner.RunAsync(title, work);
             dlg._close.Enabled = true;
         };
         dlg.ShowDialog(owner);
+        return ok;
     }
 }

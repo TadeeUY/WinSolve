@@ -57,7 +57,7 @@ public sealed class SettingsPage : Page
             Theme.SettingRow("Start WinSolve with Windows", null, _autoStart, _autoStartDescription),
             new Divider(),
             Theme.SettingRow("Automatic maintenance",
-                "Runs a light cleanup in the background (temporary files, update cache, error reports, DNS cache, Defender definitions) at 3:00 AM, or as soon as the PC is on afterwards. Not on battery power.",
+                "Runs a light cleanup in the background (temporary files, error reports, Delivery Optimization cache, DNS cache, Defender definitions) at 3:00 AM, or as soon as the PC is on afterwards. Not on battery power.",
                 _schedule));
 
         var updates = new StackCard().Add(
@@ -122,11 +122,19 @@ public sealed class SettingsPage : Page
             Theme.Row(
                 Theme.Button("Create bug report", async (_, _) => await CreateBugReport(), glyph: "\uEBE8"),
                 Theme.Button("Open log folder", (_, _) => { Directory.CreateDirectory(Logger.LogDirectory); ProcessRunner.ShellOpen(Logger.LogDirectory); }),
-                Theme.Button("Reset settings", (_, _) =>
+                Theme.Button("Reset settings", async (_, _) =>
                 {
-                    if (!Confirm("Restore the default settings?")) return;
-                    AppSettings.Reset();
-                    Main.Reload("settings");
+                    if (_saving || !Confirm("Restore the default settings?")) return;
+                    _saving = true;
+                    try
+                    {
+                        // The default schedule is Off: remove the scheduled task too, not just the setting.
+                        if (AppSettings.Current.MaintenanceSchedule != "Off") await Maintenance.ApplyScheduleAsync("Off");
+                        AppSettings.Reset();
+                        ErrorMonitor.Instance.Apply();
+                        if (!Main.Reload("settings")) Info(RestartToApply);
+                    }
+                    finally { _saving = false; }
                 })));
 
         var save = Theme.Button("Save", async (_, _) => await SaveAsync(), primary: true, glyph: "\uE74E");
@@ -139,6 +147,9 @@ public sealed class SettingsPage : Page
 
     public override async void OnShown()
     {
+        // Read once: re-reading on every visit would silently undo an unsaved change to the switch.
+        if (_autoStartLoaded) return;
+        _autoStartLoaded = true;
         _autoStart.Checked = await Task.Run(AutoStart.IsEnabled);
         _autoStart.Enabled = AutoStart.IsAllowed || _autoStart.Checked;
         _autoStartDescription.Text = AutoStart.IsAllowed ? "Starts hidden in the notification area." : "Requires an all-users install (in Program Files).";
@@ -237,7 +248,19 @@ public sealed class SettingsPage : Page
         CheckWhere(t => taskIds.Contains(t.Id), t => tweakIds.Contains(t.Id));
     }
 
+    private const string RestartToApply = "Settings saved. A task is still running, so the new color or language will apply the next time WinSolve starts.";
+    private bool _saving;
+    private bool _autoStartLoaded;
+
     private async Task SaveAsync()
+    {
+        if (_saving) return;
+        _saving = true;
+        try { await SaveCoreAsync(); }
+        finally { _saving = false; }
+    }
+
+    private async Task SaveCoreAsync()
     {
         var s = AppSettings.Current;
         s.CreateRestorePoint = _restorePoint.Checked;
@@ -264,7 +287,11 @@ public sealed class SettingsPage : Page
         s.OneClickTweaks = _tweaks.Where(p => p.Value.Checked).Select(p => p.Key.Id).ToList();
         var accentChanged = !string.Equals(s.AccentColor, _accent, StringComparison.OrdinalIgnoreCase);
         s.AccentColor = _accent;
-        s.Save();
+        if (!s.Save())
+        {
+            Info($"Settings could not be saved. Details are in the log ({Logger.LogDirectory}).");
+            return;
+        }
 
         if (_autoStart.Checked != await Task.Run(AutoStart.IsEnabled) && !await AutoStart.SetAsync(_autoStart.Checked))
             Info("Start with Windows is only available when WinSolve is installed for all users (in Program Files). " +
@@ -272,7 +299,10 @@ public sealed class SettingsPage : Page
 
         ErrorMonitor.Instance.Apply();
 
-        if (accentChanged || languageChanged) Main.Reload("settings");
+        if (accentChanged || languageChanged)
+        {
+            if (!Main.Reload("settings")) Info(RestartToApply);
+        }
         else Info("Settings saved.");
     }
 }
