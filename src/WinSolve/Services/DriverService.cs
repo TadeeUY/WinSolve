@@ -113,16 +113,27 @@ public static class DriverService
             .Where(p => p.Name.Length > 0)
             .ToList();
 
-        var match = products.FirstOrDefault(p => Normalize(p.Name) == wanted);
+        // Never pick a desktop package for a laptop GPU (or the other way round): it may not install.
+        // Laptop GPUs before the RTX 30 series report the same name as the desktop card
+        // ("GeForce GTX 1060"), so the PC's chassis decides too.
+        static bool IsMobile(string n) => n.Contains("laptop", StringComparison.OrdinalIgnoreCase) || n.Contains("notebook", StringComparison.OrdinalIgnoreCase)
+            || n.Contains("max-q", StringComparison.OrdinalIgnoreCase) || n.Contains("mobile", StringComparison.OrdinalIgnoreCase);
+        bool laptop;
+        try { laptop = IsMobile(gpu.Name) || HardwareProfile.Detect().IsLaptop; }
+        catch { laptop = IsMobile(gpu.Name); }
+
+        var match = laptop
+            // e.g. "GeForce GTX 1060" on a laptop -> "GeForce GTX 1060 (Notebooks)"
+            ? products.Where(p => IsMobile(p.Name) && (Normalize(p.Name) == wanted || Normalize(p.Name).StartsWith(wanted + " ")))
+                .OrderBy(p => p.Name.Length).FirstOrDefault()
+            : default;
         if (match.Name is null or "")
-        {
-            // Never pick a desktop package for a laptop GPU (or the other way round): it won't install.
-            static bool IsMobile(string n) => n.Contains("laptop", StringComparison.OrdinalIgnoreCase) || n.Contains("notebook", StringComparison.OrdinalIgnoreCase)
-                || n.Contains("max-q", StringComparison.OrdinalIgnoreCase) || n.Contains("mobile", StringComparison.OrdinalIgnoreCase);
-            var mobile = IsMobile(gpu.Name);
-            match = products.Where(p => IsMobile(p.Name) == mobile && (wanted.Contains(Normalize(p.Name)) || Normalize(p.Name).Contains(wanted)))
+            match = products.FirstOrDefault(p => Normalize(p.Name) == wanted && IsMobile(p.Name) == laptop);
+        if (match.Name is null or "")
+            match = products.Where(p => IsMobile(p.Name) == laptop && (wanted.Contains(Normalize(p.Name)) || Normalize(p.Name).Contains(wanted)))
                 .OrderByDescending(p => p.Name.Length).FirstOrDefault();
-        }
+        if (match.Name is null or "")
+            match = products.FirstOrDefault(p => Normalize(p.Name) == wanted); // last resort: same name, other form factor
         if (match.Name is null or "")
         {
             log($"'{gpu.Name}' was not found in NVIDIA's product list.");
@@ -142,6 +153,8 @@ public static class DriverService
         var version = Str("Version") ?? "";
         var download = Str("DownloadURL") ?? "";
         if (version.Length == 0 || download.Length == 0) return null;
+        if (laptop && download.Contains("-desktop-", StringComparison.OrdinalIgnoreCase))
+            log("Note: NVIDIA returned the desktop package for this laptop GPU. If it doesn't install, download the notebook driver from nvidia.com.");
         return new DriverRelease(version, download, Str("ReleaseDateTime"), Str("DetailsURL"));
     }
 
@@ -244,31 +257,7 @@ public static class DriverService
             }
             """, log, ct);
 
-        if (vendor == GpuVendor.Nvidia)
-        {
-            // Leftover shader caches and installer data from the previous driver.
-            foreach (var dir in new[]
-                     {
-                         Path.Combine(InteractiveUser.LocalAppData, "NVIDIA", "DXCache"),
-                         Path.Combine(InteractiveUser.LocalAppData, "NVIDIA", "GLCache"),
-                         Path.Combine(InteractiveUser.LocalAppData, "D3DSCache"),
-                     })
-            {
-                ClearCache(dir, log);
-            }
-        }
-        else if (vendor == GpuVendor.Amd)
-        {
-            foreach (var dir in new[]
-                     {
-                         Path.Combine(InteractiveUser.LocalAppData, "AMD", "DxCache"),
-                         Path.Combine(InteractiveUser.LocalAppData, "AMD", "DxcCache"),
-                         Path.Combine(InteractiveUser.LocalAppData, "D3DSCache"),
-                     })
-            {
-                ClearCache(dir, log);
-            }
-        }
+        ClearShaderCaches(vendor, log);
     }
 
     private static void ClearCache(string dir, Action<string> log)
@@ -277,14 +266,19 @@ public static class DriverService
         try { Directory.Delete(dir, true); log($"Cleared {dir}"); } catch { /* in use */ }
     }
 
+    /// <summary>What a clean install ended with, checked against what Windows reports afterwards.</summary>
+    public sealed record InstallOutcome(bool Success, string Message);
+
     /// <summary>
-    /// Clean install: restore point, full removal of the old driver, then the new installer.
+    /// Clean install: restore point, removal of the old driver (except NVIDIA, whose installer
+    /// replaces it itself with -clean), then the new installer, waiting for the whole setup.
+    /// Windows Update is kept from slipping its own driver in meanwhile, the unpacked installer
+    /// files are removed, and the result is verified against the driver Windows actually loaded.
     /// The installer is copied into an administrators-only folder and kept open (no writes,
     /// no deletes) while its signature is verified and it runs, so it cannot be swapped.
-    /// NVIDIA packages install silently with -clean; AMD's installer opens so you can pick
-    /// "Factory Reset" and the components you want.
     /// </summary>
-    public static async Task CleanInstallAsync(GpuVendor vendor, string installer, bool requireVendorSignature, Action<string> log, CancellationToken ct)
+    public static async Task<InstallOutcome> CleanInstallAsync(GpuVendor vendor, string installer, bool requireVendorSignature,
+        string? expectedVersion, Action<string> log, CancellationToken ct)
     {
         var protectedRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSolve", "Drivers");
         string safeCopy;
@@ -318,31 +312,187 @@ public static class DriverService
         if (AppSettings.Current.CreateRestorePoint)
             await TaskCatalog.CreateRestorePoint(ctx, "WinSolve - before graphics driver clean install");
 
-        // NVIDIA's installer does its own clean install (-clean), so the working driver is only
-        // replaced once the new one installs. Other vendors' installers don't, so remove first.
-        if (vendor != GpuVendor.Nvidia)
-            await RemoveDisplayDriversAsync(vendor, log, ct);
+        var before = DriverState(vendor);
+        var started = DateTime.Now;
 
-        log($"Starting the installer: {Path.GetFileName(safeCopy)}");
-        if (vendor == GpuVendor.Nvidia)
+        BlockWindowsUpdateDrivers(log);
+        try
         {
-            log("Installing silently with a clean profile (-s -clean -noreboot). This takes a few minutes...");
-            var r = await ProcessRunner.RunAsync(safeCopy, "-s -clean -noreboot -noeula", log, ct);
-            log(r.Success ? "NVIDIA driver installed." : $"Installer exit code: {r.ExitCode}. If nothing was installed, run the installer manually.");
-        }
-        else
-        {
-            if (vendor == GpuVendor.Amd)
-                log("The AMD installer is opening. Choose 'Factory Reset' if it is offered, then follow the steps.");
-            using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(safeCopy)
+            // NVIDIA's installer does its own clean install (-clean), so the working driver is only
+            // replaced once the new one installs. Other vendors' installers don't, so remove first.
+            if (vendor != GpuVendor.Nvidia)
+                await RemoveDisplayDriversAsync(vendor, log, ct);
+
+            log($"Starting the installer: {Path.GetFileName(safeCopy)}");
+            if (vendor == GpuVendor.Nvidia)
             {
-                UseShellExecute = true,
-                WorkingDirectory = Path.GetDirectoryName(safeCopy)!,
-            });
-            if (p is not null) await p.WaitForExitAsync(ct);
-            log("Installer closed.");
+                log("Installing silently with a clean profile (-s -clean -noreboot). This takes a few minutes; the screen will flicker...");
+                var code = await InstallerProcess.RunAndWaitAsync(safeCopy, "-s -clean -noreboot -noeula", shellExecute: false, log, ct);
+                log($"NVIDIA installer finished (exit code {code?.ToString() ?? "unknown"}).");
+            }
+            else
+            {
+                log(vendor == GpuVendor.Amd
+                    ? "The AMD installer is opening. Choose 'Factory Reset' if it is offered, then follow the steps. WinSolve waits until it finishes."
+                    : "The installer is opening. If it offers a clean installation, choose it. WinSolve waits until it finishes.");
+                await InstallerProcess.RunAndWaitAsync(safeCopy, null, shellExecute: true, log, ct);
+                log("Installer finished.");
+            }
         }
-        log("Restart the PC to finish the clean install.");
+        finally
+        {
+            RestoreWindowsUpdateDrivers(log);
+        }
+
+        ClearShaderCaches(vendor, log);
+        RemoveExtractedFiles(vendor, started, log);
+
+        log("Checking which driver Windows is using now...");
+        await Task.Delay(3000, ct);
+        var outcome = Verify(vendor, before, DriverState(vendor), expectedVersion);
+        log(outcome.Message);
+        return outcome;
+    }
+
+    // ───────────── Verification ─────────────
+
+    private sealed record AdapterState(string Name, string WindowsVersion, bool BasicDriver)
+    {
+        public string Friendly(GpuVendor vendor) => vendor == GpuVendor.Nvidia ? NvidiaVersion(WindowsVersion) : WindowsVersion;
+    }
+
+    /// <summary>Every display adapter of this vendor, including ones left on Microsoft's basic driver.</summary>
+    private static List<AdapterState> DriverState(GpuVendor vendor)
+    {
+        var ven = vendor switch { GpuVendor.Nvidia => "VEN_10DE", GpuVendor.Amd => "VEN_1002", GpuVendor.Intel => "VEN_8086", _ => "?" };
+        return Wmi.Query("SELECT Name, DriverVersion, PNPDeviceID, InfFilename FROM Win32_VideoController")
+            .Where(v => v.Str("PNPDeviceID").Contains(ven, StringComparison.OrdinalIgnoreCase))
+            .Select(v => new AdapterState(v.Str("Name"), v.Str("DriverVersion"),
+                v.Str("Name").Contains("Basic Display", StringComparison.OrdinalIgnoreCase) ||
+                v.Str("InfFilename").Equals("display.inf", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
+    private static InstallOutcome Verify(GpuVendor vendor, List<AdapterState> before, List<AdapterState> after, string? expected)
+    {
+        var name = vendor switch { GpuVendor.Nvidia => "NVIDIA", GpuVendor.Amd => "AMD", GpuVendor.Intel => "Intel", _ => "graphics" };
+        if (after.Count == 0)
+            return new(false, $"Windows doesn't list any {name} graphics device right now. Restart the PC and check the Drivers page again.");
+
+        if (after.Any(a => a.BasicDriver))
+            return new(false, $"The {name} driver is not active: Windows is using its basic display driver. Restart the PC; if it stays like this, run the installer again.");
+
+        var versions = after.Select(a => a.Friendly(vendor)).Distinct().ToList();
+        var now = string.Join(", ", versions);
+        if (expected is not null)
+        {
+            if (versions.All(v => v == expected))
+                return new(true, $"Installed and active: {name} driver {expected}.");
+            return new(false, $"Windows reports driver {now}, not {expected}. If the installer asked for a restart, restart and check again; otherwise run the installation again.");
+        }
+
+        var old = before.Where(b => !b.BasicDriver).Select(b => b.Friendly(vendor)).Distinct().ToList();
+        if (old.Count > 0 && old.SequenceEqual(versions))
+            return new(true, $"The {name} driver is active, version {now} (same as before; expected if you reinstalled the same version).");
+        return new(true, $"Installed and active: {name} driver {now}.");
+    }
+
+    // ───────────── Keeping Windows Update out of the way ─────────────
+
+    private const string SearchingKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\DriverSearching";
+    private const string PendingKey = @"SOFTWARE\WinSolve\Pending";
+
+    /// <summary>
+    /// While the old driver is gone, Windows Update would install its own (often older) driver
+    /// for the "new" device and break the clean install. Turned off for the duration, then the
+    /// previous setting is restored (also on the next start if WinSolve was closed meanwhile).
+    /// </summary>
+    private static void BlockWindowsUpdateDrivers(Action<string> log)
+    {
+        try
+        {
+            var previous = Reg.Get(RegistryHive.LocalMachine, SearchingKey, "SearchOrderConfig");
+            Reg.Set(RegistryHive.LocalMachine, PendingKey, "SearchOrderConfig", previous is int i ? i : -1, RegistryValueKind.DWord);
+            Reg.Set(RegistryHive.LocalMachine, SearchingKey, "SearchOrderConfig", 0, RegistryValueKind.DWord);
+            log("Automatic driver downloads from Windows Update paused during the installation.");
+        }
+        catch (Exception ex)
+        {
+            log($"Could not pause Windows Update driver downloads: {ex.Message}");
+        }
+    }
+
+    /// <summary>Restores the Windows Update driver setting saved by <see cref="BlockWindowsUpdateDrivers"/>.</summary>
+    public static void RestoreWindowsUpdateDrivers(Action<string>? log = null)
+    {
+        try
+        {
+            if (Reg.Get(RegistryHive.LocalMachine, PendingKey, "SearchOrderConfig") is not int previous) return;
+            if (previous == -1) Reg.Delete(RegistryHive.LocalMachine, SearchingKey, "SearchOrderConfig");
+            else Reg.Set(RegistryHive.LocalMachine, SearchingKey, "SearchOrderConfig", previous, RegistryValueKind.DWord);
+            Reg.Delete(RegistryHive.LocalMachine, PendingKey, "SearchOrderConfig");
+            log?.Invoke("Windows Update driver downloads restored to their previous setting.");
+        }
+        catch (Exception ex)
+        {
+            log?.Invoke($"Could not restore the Windows Update driver setting: {ex.Message}");
+        }
+    }
+
+    // ───────────── Leftovers ─────────────
+
+    private static void ClearShaderCaches(GpuVendor vendor, Action<string> log)
+    {
+        string[] dirs = vendor switch
+        {
+            GpuVendor.Nvidia => [Path.Combine(InteractiveUser.LocalAppData, "NVIDIA", "DXCache"), Path.Combine(InteractiveUser.LocalAppData, "NVIDIA", "GLCache"), Path.Combine(InteractiveUser.LocalAppData, "D3DSCache")],
+            GpuVendor.Amd => [Path.Combine(InteractiveUser.LocalAppData, "AMD", "DxCache"), Path.Combine(InteractiveUser.LocalAppData, "AMD", "DxcCache"), Path.Combine(InteractiveUser.LocalAppData, "D3DSCache")],
+            _ => [Path.Combine(InteractiveUser.LocalAppData, "D3DSCache")],
+        };
+        foreach (var dir in dirs) ClearCache(dir, log);
+    }
+
+    /// <summary>
+    /// NVIDIA unpacks every package to C:\NVIDIA\DisplayDriver\(version) and AMD to C:\AMD
+    /// (hundreds of MB to several GB each time) and leaves them there. Only folders created
+    /// during this installation are removed.
+    /// </summary>
+    private static void RemoveExtractedFiles(GpuVendor vendor, DateTime started, Action<string> log)
+    {
+        var drive = Path.GetPathRoot(Environment.SystemDirectory)!;
+        var root = vendor switch
+        {
+            GpuVendor.Nvidia => Path.Combine(drive, "NVIDIA", "DisplayDriver"),
+            GpuVendor.Amd => Path.Combine(drive, "AMD"),
+            _ => null,
+        };
+        if (root is null || !Directory.Exists(root) || SafePath.HasReparsePoint(root)) return;
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(root, "*", SafePath.NoLinks(recursive: false)))
+            {
+                if (Directory.GetCreationTime(dir) < started.AddMinutes(-1)) continue;
+                try
+                {
+                    SafeDelete.DeleteTree(dir, CancellationToken.None);
+                    log($"Removed unpacked installer files: {dir}");
+                }
+                catch (Exception ex)
+                {
+                    log($"Could not remove {dir}: {ex.Message}");
+                }
+            }
+            // Remove the now-empty parents NVIDIA created (C:\NVIDIA\DisplayDriver, C:\NVIDIA).
+            foreach (var dir in new[] { root, Path.GetDirectoryName(root)! })
+            {
+                if (dir.Length > drive.Length && Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
+                    try { Directory.Delete(dir); } catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            log($"Could not clean up {root}: {ex.Message}");
+        }
     }
 
     // ═══════════════════ Other drivers ═══════════════════
@@ -356,7 +506,8 @@ public static class DriverService
         $searcher.SearchScope = 1
         $searcher.ServerSelection = 3
         'Searching Windows Update for driver updates...'
-        $result = $searcher.Search("IsInstalled=0 and Type='Driver'")
+        try { $result = $searcher.Search("IsInstalled=0 and Type='Driver' and IsHidden=0") }
+        catch { "Windows Update could not be reached: $($_.Exception.Message)"; exit 1 }
         """;
 
     /// <summary>Lists pending driver updates on Windows Update (Microsoft Update catalog).</summary>
@@ -374,12 +525,27 @@ public static class DriverService
             if ($result.Updates.Count -eq 0) { 'No driver updates to install.'; return }
             $list = New-Object -ComObject Microsoft.Update.UpdateColl
             foreach ($u in $result.Updates) { if (-not $u.EulaAccepted) { $u.AcceptEula() }; $list.Add($u) | Out-Null; "Queued: $($u.Title)" }
-            'Downloading...'
-            $dl = $session.CreateUpdateDownloader(); $dl.Updates = $list; $dl.Download() | Out-Null
-            'Installing...'
-            $inst = $session.CreateUpdateInstaller(); $inst.Updates = $list; $res = $inst.Install()
-            for ($i = 0; $i -lt $list.Count; $i++) { "  $($list.Item($i).Title): result code $($res.GetUpdateResult($i).ResultCode)" }
-            if ($res.RebootRequired) { 'A restart is required to finish installing drivers.' }
+            $codes = @{ 0 = 'not started'; 1 = 'in progress'; 2 = 'installed'; 3 = 'installed with errors'; 4 = 'FAILED'; 5 = 'aborted' }
+            try {
+                'Downloading...'
+                $dl = $session.CreateUpdateDownloader(); $dl.Updates = $list; $dlr = $dl.Download()
+                $ready = New-Object -ComObject Microsoft.Update.UpdateColl
+                for ($i = 0; $i -lt $list.Count; $i++) {
+                    $c = $dlr.GetUpdateResult($i).ResultCode
+                    if ($c -eq 2 -or $c -eq 3) { $ready.Add($list.Item($i)) | Out-Null } else { "  $($list.Item($i).Title): download $($codes[[int]$c])" }
+                }
+                if ($ready.Count -eq 0) { 'Nothing could be downloaded.'; exit 1 }
+                'Installing...'
+                $inst = $session.CreateUpdateInstaller(); $inst.Updates = $ready; $res = $inst.Install()
+                $failed = 0
+                for ($i = 0; $i -lt $ready.Count; $i++) {
+                    $c = $res.GetUpdateResult($i).ResultCode
+                    if ($c -ne 2) { $failed++ }
+                    "  $($ready.Item($i).Title): $($codes[[int]$c])"
+                }
+                if ($res.RebootRequired) { 'A restart is required to finish installing drivers.' }
+                if ($failed -gt 0) { "$failed driver update(s) did not install correctly."; exit 1 } else { 'All driver updates installed.' }
+            } catch { "Windows Update error: $($_.Exception.Message)"; exit 1 }
             """, log, ct);
 
     /// <summary>Restarts, and if needed reinstalls, every device with an error.</summary>
@@ -409,11 +575,13 @@ public static class DriverService
     /// <summary>Exports every third-party driver (DISM) so they can be restored later.</summary>
     public static async Task<string> BackupDriversAsync(Action<string> log, CancellationToken ct)
     {
-        var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "WinSolve Driver Backup", DateTime.Now.ToString("yyyy-MM-dd_HHmm"));
+        var folder = Path.Combine(InteractiveUser.Documents, "WinSolve Driver Backup", DateTime.Now.ToString("yyyy-MM-dd_HHmm"));
         Directory.CreateDirectory(folder);
         if (SafePath.HasReparsePoint(folder)) throw new InvalidOperationException("The backup folder is a link; choose another location.");
         log($"Exporting drivers to {folder}");
-        await ProcessRunner.RunAsync("dism.exe", $"/Online /Export-Driver /Destination:\"{folder}\" /English", log, ct);
+        var r = await ProcessRunner.RunAsync("dism.exe", $"/Online /Export-Driver /Destination:\"{folder}\" /English", log, ct);
+        var count = Directory.Exists(folder) ? Directory.GetFiles(folder, "*.inf", SearchOption.AllDirectories).Length : 0;
+        log(r.Success ? $"Backup complete: {count} driver(s) saved." : $"DISM reported an error (exit code {r.ExitCode}); {count} driver(s) were saved.");
         return folder;
     }
 }

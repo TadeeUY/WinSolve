@@ -142,3 +142,25 @@ public sealed class SafeDeleteTests : IDisposable
         Assert.Equal(Path.GetTempPath(), InteractiveUser.TempPath);
     }
 }
+
+public class InstallerProcessTests
+{
+    [Fact]
+    public async Task Waits_for_child_processes_of_a_self_extractor()
+    {
+        // The started process exits at once and leaves a child running ~3 s, like a driver
+        // package that unpacks itself and launches the real setup.
+        var script = Path.Combine(Path.GetTempPath(), $"winsolve-job-{Guid.NewGuid():N}.cmd");
+        File.WriteAllText(script, "@start \"\" /b cmd /c ping -n 4 127.0.0.1 >nul\r\n@exit 0\r\n");
+        try
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await InstallerProcess.RunAndWaitAsync(script, null, shellExecute: false, _ => { }, default);
+            Assert.True(sw.Elapsed.TotalSeconds >= 2.5, $"returned after {sw.Elapsed.TotalSeconds:0.0} s");
+        }
+        finally
+        {
+            File.Delete(script);
+        }
+    }
+}

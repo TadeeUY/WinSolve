@@ -76,6 +76,8 @@ public sealed class MainForm : Form
             // With --tray, OnLoad is called by hand and again by WinForms on the first Show().
             if (_loaded) return;
             _loaded = true;
+            // If WinSolve was closed during a driver install, put Windows Update's driver setting back.
+            _ = Task.Run(() => DriverService.RestoreWindowsUpdateDrivers(Logger.Write));
             ErrorMonitor.Instance.AlertRaised += OnAlert;
             ErrorMonitor.Instance.Apply();
             _ = CheckForUpdateAsync();

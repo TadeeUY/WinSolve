@@ -562,7 +562,6 @@ public static class Spanish
         ["{0} clean install"] = "Instalación limpia de {0}",
         ["Select the {0} driver installer"] = "Elige el instalador del driver de {0}",
         ["Driver installer (*.exe)|*.exe"] = "Instalador de driver (*.exe)|*.exe",
-        ["Clean install using {0}?\n\nEvery installed {1} display driver is removed first, then the installer runs. The screen will flicker."] = "¿Instalación limpia con {0}?\n\nPrimero se quitan todos los drivers de video de {1} y luego se ejecuta el instalador. La pantalla va a parpadear.",
         ["Looking up the product on nvidia.com..."] = "Buscando el producto en nvidia.com...",
         ["Removing the current graphics driver (the screen may flicker or change resolution)..."] = "Quitando el driver gráfico actual (la pantalla puede parpadear o cambiar de resolución)...",
         ["Copying the installer to a protected folder..."] = "Copiando el instalador a una carpeta protegida...",
@@ -1050,5 +1049,14 @@ public static class Spanish
         ["Could not create a restore point. Continue without it?"] = "No se pudo crear un punto de restauración. ¿Continuar sin él?",
         ["Settings saved. A task is still running, so the new color or language will apply the next time WinSolve starts."] = "Configuración guardada. Hay una tarea en curso, así que el nuevo color o idioma se aplicará la próxima vez que abras WinSolve.",
         ["Settings could not be saved. Details are in the log ({0})."] = "No se pudo guardar la configuración. Los detalles están en el registro ({0}).",
+        // ── Driver installs (0.9) ──
+        ["Installed and active: {0} driver {1}."] = "Instalado y funcionando: driver de {0} {1}.",
+        ["Installed and active: NVIDIA driver {0}."] = "Instalado y funcionando: driver de NVIDIA {0}.",
+        ["The {0} driver is not active: Windows is using its basic display driver. Restart the PC; if it stays like this, run the installer again."] = "El driver de {0} no está activo: Windows está usando su driver de pantalla básico. Reinicia el PC; si sigue así, vuelve a ejecutar el instalador.",
+        ["Windows doesn't list any {0} graphics device right now. Restart the PC and check the Drivers page again."] = "Windows no muestra ninguna tarjeta gráfica de {0} ahora. Reinicia el PC y revisa de nuevo la página Drivers.",
+        ["Windows reports driver {0}, not {1}. If the installer asked for a restart, restart and check again; otherwise run the installation again."] = "Windows informa el driver {0}, no {1}. Si el instalador pidió reiniciar, reinicia y vuelve a revisar; si no, repite la instalación.",
+        ["The {0} driver is active, version {1} (same as before; expected if you reinstalled the same version)."] = "El driver de {0} está activo, versión {1} (igual que antes; es normal si reinstalaste la misma versión).",
+        ["The NVIDIA installer runs silently with a clean install, replacing the current driver. The screen will flicker."] = "El instalador de NVIDIA se ejecuta en silencio con instalación limpia, reemplazando el driver actual. La pantalla va a parpadear.",
+        ["Every installed {0} display driver is removed first, then the installer opens. The screen will flicker and may change resolution until the new driver is installed."] = "Primero se quitan todos los drivers de video de {0} instalados y luego se abre el instalador. La pantalla va a parpadear y puede cambiar de resolución hasta que se instale el driver nuevo.",
     };
 }

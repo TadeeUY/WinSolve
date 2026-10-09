@@ -10,7 +10,7 @@
     <ApplicationIcon>..\..\assets\winsolve.ico</ApplicationIcon>
     <AssemblyName>WinSolve</AssemblyName>
     <RootNamespace>WinSolve</RootNamespace>
-    <Version>0.8.0</Version>
+    <Version>0.9.0</Version>
     <Product>WinSolve</Product>
     <Description>Diagnóstico, reparación y optimización de Windows</Description>
     <Company>WinSolve</Company>

@@ -1,0 +1,119 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+
+namespace WinSolve.Core;
+
+/// <summary>
+/// Runs an installer and waits for the whole installation, not just the first process.
+/// </summary>
+/// <remarks>
+/// Driver packages are usually self-extractors: the exe you start unpacks the files, launches
+/// the real setup and exits right away. Waiting for that first process made WinSolve offer a
+/// restart while AMD's or Intel's setup was still running. The installer is put in a job object
+/// (children join it automatically) and we wait until nothing in the job is left running,
+/// except apps an installer opens at the end and that keep running (control panels, tray apps).
+/// </remarks>
+public static class InstallerProcess
+{
+    /// <summary>Apps that installers start when they finish and that stay open.</summary>
+    private static readonly HashSet<string> StaysRunning = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // NVIDIA
+        "NVIDIA app", "NVIDIA Share", "NVIDIA Web Helper", "nvcontainer", "NVIDIA Overlay", "nvsphelper64", "NVDisplay.Container",
+        // AMD
+        "RadeonSoftware", "AMDRSServ", "AMDRSSrcExt", "cncmd", "atieclxx", "amdow", "AMDSoftwareInstaller_Launcher", "AMD Software",
+        // Intel
+        "IntelGraphicsSoftware", "IGCC", "igfxEM", "IntelGraphicsSoftware.Service", "DSAService", "DSATray",
+        // Generic
+        "explorer", "msedge", "chrome", "firefox", "conhost",
+    };
+
+    /// <summary>Starts <paramref name="file"/> and waits until the installation it starts has finished.</summary>
+    /// <returns>The exit code of the process that was started (not of its children).</returns>
+    public static async Task<int?> RunAndWaitAsync(string file, string? arguments, bool shellExecute, Action<string> log, CancellationToken ct)
+    {
+        using var job = CreateJobObject(IntPtr.Zero, null);
+        var psi = new ProcessStartInfo(file)
+        {
+            UseShellExecute = shellExecute,
+            WorkingDirectory = Path.GetDirectoryName(file)!,
+        };
+        if (!string.IsNullOrEmpty(arguments)) psi.Arguments = arguments;
+        if (!shellExecute) psi.CreateNoWindow = true;
+
+        using var p = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start {Path.GetFileName(file)}.");
+        var inJob = !job.IsInvalid && AssignProcessToJobObject(job, p.Handle);
+        if (!inJob) log("  (could not track the installer's child processes; waiting for the main one only)");
+
+        await p.WaitForExitAsync(ct);
+        int? exitCode = null;
+        try { exitCode = p.ExitCode; } catch { }
+        if (!inJob) return exitCode;
+
+        // The started exe is done; its setup may still be running.
+        var announced = false;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var running = RunningInJob(job).Where(n => !StaysRunning.Contains(n)).ToList();
+            if (running.Count == 0) break;
+            if (!announced)
+            {
+                log($"  Waiting for the installer to finish ({string.Join(", ", running.Distinct())})...");
+                announced = true;
+            }
+            await Task.Delay(2000, ct);
+        }
+        return exitCode;
+    }
+
+    private static List<string> RunningInJob(SafeJobHandle job)
+    {
+        var names = new List<string>();
+        // JOBOBJECT_BASIC_PROCESS_ID_LIST: two DWORDs (assigned, in list), then ULONG_PTR ids.
+        const int max = 256;
+        var size = 8 + IntPtr.Size * max;
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.WriteInt32(buffer, 0, max);
+            if (!QueryInformationJobObject(job, JobObjectBasicProcessIdList, buffer, size, IntPtr.Zero)) return names;
+            var count = Marshal.ReadInt32(buffer, 4);
+            for (int i = 0; i < count; i++)
+            {
+                var pid = (int)Marshal.ReadIntPtr(buffer, 8 + i * IntPtr.Size);
+                try
+                {
+                    using var proc = Process.GetProcessById(pid);
+                    if (!proc.HasExited) names.Add(proc.ProcessName);
+                }
+                catch { /* exited between the query and now */ }
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+        return names;
+    }
+
+    private const int JobObjectBasicProcessIdList = 3;
+
+    private sealed class SafeJobHandle : Microsoft.Win32.SafeHandles.SafeHandleZeroOrMinusOneIsInvalid
+    {
+        public SafeJobHandle() : base(true) { }
+        protected override bool ReleaseHandle() => CloseHandle(handle);
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeJobHandle CreateJobObject(IntPtr attributes, string? name);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AssignProcessToJobObject(SafeJobHandle job, IntPtr process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool QueryInformationJobObject(SafeJobHandle job, int infoClass, IntPtr info, int length, IntPtr returnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr handle);
+}

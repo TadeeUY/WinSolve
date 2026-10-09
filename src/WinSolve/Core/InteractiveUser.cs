@@ -89,6 +89,7 @@ public static class InteractiveUser
     public static string RoamingAppData => Folder("AppData", @"AppData\Roaming", () => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
     public static string Startup => Folder("Startup", @"AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup", () => Environment.GetFolderPath(Environment.SpecialFolder.Startup));
     public static string StartMenu => Folder("Start Menu", @"AppData\Roaming\Microsoft\Windows\Start Menu", () => Environment.GetFolderPath(Environment.SpecialFolder.StartMenu));
+    public static string Documents => Folder("Personal", "Documents", () => Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
     public static string Desktop => Folder("Desktop", "Desktop", () => Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
     public static string Downloads => Folder("{374DE290-123F-4565-9164-39C4925E467B}", "Downloads",
         () => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"));
