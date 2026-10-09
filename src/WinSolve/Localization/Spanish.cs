@@ -1285,5 +1285,10 @@ public static class Spanish
         ["Windows has no previous driver saved for this device, so there is nothing to go back to."] = "Windows no tiene guardado un driver anterior para este dispositivo, así que no hay a cuál volver.",
         ["Windows Update is not available on this PC."] = "Windows Update no está disponible en esta PC.",
         ["Windows Update no longer offers this update."] = "Windows Update ya no ofrece esta actualización.",
+        ["Pause Windows Update for a week"] = "Pausar Windows Update una semana",
+        ["Nothing is downloaded or installed for 7 days."] = "No se descarga ni instala nada durante 7 días.",
+        ["Windows Update paused"] = "Windows Update en pausa",
+        ["Updates resume by themselves in 7 days."] = "Las actualizaciones vuelven solas en 7 días.",
+        ["Releases the standby cache so more RAM shows as free."] = "Libera la caché en espera para que haya más RAM libre.",
     };
 }

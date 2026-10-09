@@ -590,8 +590,21 @@ public sealed class MainForm : Form
         foreach (var b in _nav)
         {
             var key = b.Key;
-            items.Add(new PaletteItem(b.Text, "Open this page", Page.PageGlyphs.GetValueOrDefault(key, b.Glyph), "Page", () => Navigate(key)));
+            items.Add(new PaletteItem(b.Text, "Open this page", Page.PageGlyphs.GetValueOrDefault(key, b.Glyph), "Page", () => Navigate(key),
+                key == "winupdate" ? "pause resume hide history rollback driver pausar reanudar ocultar historial revertir" : ""));
         }
+        items.Add(new PaletteItem("Pause Windows Update for a week", "Nothing is downloaded or installed for 7 days.", "\uE769", "Action", () =>
+        {
+            try
+            {
+                WindowsUpdateService.Pause(7);
+                Toast.Show(new ToastOptions { Title = "Windows Update paused", Detail = "Updates resume by themselves in 7 days.", Glyph = "\uE769", SecondaryText = "OK", AutoCloseSeconds = 6, Sound = false });
+            }
+            catch (Exception ex) { Localization.Loc.Show(this, ex.Message, "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            if (CurrentPage?.Key == "winupdate") CurrentPage.OnShown();
+        }, "pausar actualizaciones"));
+        items.Add(new PaletteItem("Free up memory", "Releases the standby cache so more RAM shows as free.", "\uE964", "Action",
+            () => QuickAction(QuickFreeMemory), "ram liberar"));
         foreach (var t in TaskCatalog.All)
         {
             var task = t;
