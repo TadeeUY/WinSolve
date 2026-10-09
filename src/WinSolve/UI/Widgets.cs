@@ -181,7 +181,7 @@ public sealed class ActionTile : Control
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(Parent?.BackColor ?? Theme.Background);
+        g.Clear(Theme.SurfaceColor(this));
 
         var fill = _pressed ? Color.FromArgb(40, 40, 40) : _hover ? Theme.CardHover : Theme.Card;
         using (var path = Theme.RoundedRect(new Rectangle(0, 0, Width - 1, Height - 1), 6))

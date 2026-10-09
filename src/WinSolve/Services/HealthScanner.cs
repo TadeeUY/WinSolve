@@ -70,7 +70,7 @@ public static class HealthScanner
                 Severity = IssueSeverity.Critical,
                 Title = $"Drive in bad health: {d.Model}",
                 Detail = string.Join(" ", d.Findings) + " Back up your data as soon as possible.",
-                NavigateTo = "hardware", FixLabel = "View details",
+                NavigateTo = "hardware", FixLabel = "Repair",
             });
         foreach (var d in disks.Where(d => d.Health == HealthLevel.Caution))
             issues.Add(new Issue
@@ -78,7 +78,7 @@ public static class HealthScanner
                 Severity = IssueSeverity.Warning,
                 Title = $"Drive needs attention: {d.Model}",
                 Detail = string.Join(" ", d.Findings),
-                NavigateTo = "hardware", FixLabel = "View details",
+                NavigateTo = "hardware", FixLabel = "Repair",
             });
 
         foreach (var drive in system.Drives.Where(d => d.FreePercent < 10))

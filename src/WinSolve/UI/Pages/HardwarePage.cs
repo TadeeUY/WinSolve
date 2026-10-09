@@ -72,6 +72,7 @@ public sealed class HardwarePage : Page
     {
         private readonly FlowLayoutPanel _diskButtons = Theme.Row();
         private readonly StackCard _detail = new();
+        private readonly StackCard _repair = new();
         private readonly DataGridView _attrs = new();
         private List<DiskInfo> _disks = [];
         private bool _loading;
@@ -81,6 +82,7 @@ public sealed class HardwarePage : Page
         {
             ColumnCount = 1;
             BackColor = Color.Transparent;
+            RowStyles.Add(new RowStyle(SizeType.AutoSize));
             RowStyles.Add(new RowStyle(SizeType.AutoSize));
             RowStyles.Add(new RowStyle(SizeType.AutoSize));
             RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -98,9 +100,11 @@ public sealed class HardwarePage : Page
 
             Controls.Add(_diskButtons, 0, 0);
             Controls.Add(_detail, 0, 1);
-            Controls.Add(_attrs, 0, 2);
+            Controls.Add(_repair, 0, 2);
+            Controls.Add(_attrs, 0, 3);
             _diskButtons.Dock = DockStyle.Fill;
             _detail.Dock = DockStyle.Fill;
+            _repair.Dock = DockStyle.Fill;
             _attrs.Dock = DockStyle.Fill;
         }
 
@@ -130,7 +134,7 @@ public sealed class HardwarePage : Page
                 _diskButtons.Controls.Add(b);
             }
             _diskButtons.Controls.Add(Theme.Button("Refresh", (_, _) => Refresh(true)));
-            _detail.Visible = _attrs.Visible = _disks.Count > 0;
+            _detail.Visible = _attrs.Visible = _repair.Visible = _disks.Count > 0;
             if (_disks.Count > 0) ShowDisk(0);
             else _diskButtons.Controls.Add(Theme.Label("No drives found. Is WinSolve running as administrator?", Theme.Body, Theme.Warn));
         }
@@ -179,6 +183,71 @@ public sealed class HardwarePage : Page
                 else if (a.Raw > 0 && a.Id is 0x05 or 0xC5 or 0xC6 or 0xBB) _attrs.Rows[i].DefaultCellStyle.ForeColor = Theme.Warn;
             }
             _attrs.Visible = d.Attributes.Count > 0;
+            _ = ShowRepairAsync(d);
+        }
+
+        /// <summary>Repair panel: advice for this drive plus Check / Fix / bad sector buttons per volume.</summary>
+        private async Task ShowRepairAsync(DiskInfo d)
+        {
+            _repair.Body.Controls.Clear();
+            var (advice, level) = DiskRepairService.Advice(d);
+            _repair.Add(
+                Theme.Label("Repair", Theme.H2),
+                Theme.Status(level switch { HealthLevel.Bad => "Back up first", HealthLevel.Caution => "Needs attention", _ => "Healthy" }, Theme.For(level)),
+                Theme.Paragraph(advice, level == HealthLevel.Good ? null : Theme.Text));
+
+            if (d.DiskNumber is not { } number)
+            {
+                _repair.Add(Theme.Paragraph("The volumes of this drive could not be identified."));
+                return;
+            }
+
+            var volumes = await DiskRepairService.GetVolumesAsync(number);
+            if (volumes.Count == 0)
+            {
+                _repair.Add(Theme.Paragraph("This drive has no volumes with a drive letter to check."));
+                return;
+            }
+
+            foreach (var v in volumes)
+            {
+                var name = $"{v.Letter}:  {(v.Label.Length > 0 ? v.Label : Localization.Loc.T("Local Disk"))}  ·  {v.FileSystem}  ·  {Format.Bytes(v.Free)} free of {Format.Bytes(v.Size)}"
+                           + (v.IsSystem ? "  ·  Windows" : "");
+                _repair.Add(new Divider(), Theme.Label(name, Theme.BodyBold));
+                _repair.Add(Theme.Row(
+                    Theme.Button("Check", (_, _) => Run($"Checking {v.Letter}:", (log, ct) => DiskRepairService.ScanAsync(v, log, ct)), glyph: "\uE721"),
+                    Theme.Button("Fix file system errors", (_, _) =>
+                    {
+                        var msg = v.IsSystem
+                            ? $"Repair {v.Letter}: on the next restart? Windows will check the drive before starting."
+                            : $"Repair {v.Letter}: now? The drive is dismounted for a moment; save and close files that are open on it.";
+                        if (Localization.Loc.Show(this, msg, "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                        var reboot = false;
+                        Run($"Repairing {v.Letter}:", async (log, ct) => reboot = await DiskRepairService.FixAsync(v, log, ct));
+                        if (reboot) AskRestart();
+                    }, glyph: "\uE90F"),
+                    Theme.Button("Scan & repair bad sectors", (_, _) =>
+                    {
+                        var msg = (d.Health == HealthLevel.Bad ? "This drive is failing: copy your files first. " : "") +
+                                  (v.IsSystem
+                                      ? $"Scan every sector of {v.Letter}: on the next restart? It can take hours; do not turn the PC off."
+                                      : $"Scan every sector of {v.Letter}: now? It can take hours and the drive is unavailable meanwhile.");
+                        if (Localization.Loc.Show(this, msg, "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+                        var reboot = false;
+                        Run($"Bad sector scan on {v.Letter}:", async (log, ct) => reboot = await DiskRepairService.RepairBadSectorsAsync(v, log, ct));
+                        if (reboot) AskRestart();
+                        else Refresh(true);
+                    }, primary: level != HealthLevel.Good, glyph: "\uE9F5")));
+            }
+        }
+
+        private void Run(string title, Func<Action<string>, CancellationToken, Task> work)
+            => RunDialog.Run(FindForm()!, title, (log, _, ct) => work(log, ct));
+
+        private void AskRestart()
+        {
+            if (Localization.Loc.Show(this, "The repair runs when Windows starts. Restart now?", "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                ProcessRunner.Reboot();
         }
     }
 

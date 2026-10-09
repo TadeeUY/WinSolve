@@ -10,6 +10,7 @@ public sealed class SettingsPage : Page
     private readonly CheckBox _restorePoint, _confirm, _scanOnStartup, _alerts, _tray, _animations, _autoStart, _updates, _autoUpdate;
     private readonly ComboBox _schedule = Theme.Combo(Maintenance.Schedules);
     private readonly ComboBox _language = Theme.Combo("English", "Español");
+    private readonly Label _autoStartDescription = Theme.Label("Starts hidden in the notification area.", Theme.Small, Theme.Muted);
     private readonly Panel _accentPreview = new() { Size = new Size(36, 36), Margin = new Padding(0, 4, 8, 4) };
     private string _accent = AppSettings.Current.AccentColor;
 
@@ -29,31 +30,53 @@ public sealed class SettingsPage : Page
     public SettingsPage() : base("Settings", "Customize how WinSolve works.")
     {
         var s = AppSettings.Current;
-        _restorePoint = Theme.Check("Create a restore point before making changes", s.CreateRestorePoint);
-        _confirm = Theme.Check("Ask for confirmation before changing the system", s.ConfirmActions);
-        _scanOnStartup = Theme.Check("Scan the PC when WinSolve opens", s.ScanOnStartup);
-        _alerts = Theme.Check("Alert me when Windows reports an error (blue screens, crashes, disk, drivers)", s.ErrorAlerts);
-        _tray = Theme.Check("Keep running in the notification area when the window is closed", s.CloseToTray);
-        _animations = Theme.Check("Minimize and restore animations", s.Animations);
-        _autoStart = Theme.Check("Start WinSolve with Windows (in the notification area)", false);
-        _updates = Theme.Check("Check for updates automatically", s.CheckForUpdates);
-        _autoUpdate = Theme.Check("Install updates automatically (no need to click)", s.AutoInstallUpdates);
+        _restorePoint = Theme.Toggle("", s.CreateRestorePoint);
+        _confirm = Theme.Toggle("", s.ConfirmActions);
+        _scanOnStartup = Theme.Toggle("", s.ScanOnStartup);
+        _alerts = Theme.Toggle("", s.ErrorAlerts);
+        _tray = Theme.Toggle("", s.CloseToTray);
+        _animations = Theme.Toggle("", s.Animations);
+        _autoStart = Theme.Toggle("", false);
+        _updates = Theme.Toggle("", s.CheckForUpdates);
+        _autoUpdate = Theme.Toggle("", s.AutoInstallUpdates);
         _schedule.SelectedItem = Maintenance.Schedules.Contains(s.MaintenanceSchedule) ? s.MaintenanceSchedule : "Off";
         _language.SelectedIndex = s.Language == "es" ? 1 : 0;
+        _schedule.Width = _language.Width = 170;
 
         var general = new StackCard().Add(
             Theme.Label("General", Theme.H2),
-            _restorePoint, _confirm, _scanOnStartup, _alerts, _tray, _animations, _autoStart,
-            _updates,
-            _autoUpdate,
-            Theme.Row(Theme.Button("Show a test alert", (_, _) => ErrorMonitor.Instance.RaiseTest()),
-                Theme.Button("Check for updates now", async (_, _) => await CheckUpdatesNow())),
-            Theme.Label("Language", Theme.BodyBold),
-            Theme.Row(_language),
-            Theme.Label("Automatic maintenance", Theme.BodyBold),
-            Theme.Paragraph("Runs a light cleanup in the background (temporary files, update cache, error reports, DNS cache, Defender definitions) at 3:00 AM, or as soon as the PC is on afterwards. Not on battery power."),
-            Theme.Row(_schedule),
-            Theme.Label("Accent color", Theme.BodyBold),
+            Theme.SettingRow("Language", "English or Spanish.", _language),
+            new Divider(),
+            Theme.SettingRow("Create a restore point before making changes", "Lets you undo optimizations and tweaks with System Restore.", _restorePoint),
+            new Divider(),
+            Theme.SettingRow("Ask for confirmation before changing the system", null, _confirm),
+            new Divider(),
+            Theme.SettingRow("Scan the PC when WinSolve opens", null, _scanOnStartup),
+            new Divider(),
+            Theme.SettingRow("Minimize and restore animations", null, _animations));
+
+        var background = new StackCard().Add(
+            Theme.Label("Background", Theme.H2),
+            Theme.SettingRow("Alert me when Windows reports an error", "Blue screens, crashes, disk and driver problems.", _alerts),
+            Theme.Row(Theme.Button("Show a test alert", (_, _) => ErrorMonitor.Instance.RaiseTest())),
+            new Divider(),
+            Theme.SettingRow("Keep running in the notification area when the window is closed", null, _tray),
+            new Divider(),
+            Theme.SettingRow("Start WinSolve with Windows", null, _autoStart, _autoStartDescription),
+            new Divider(),
+            Theme.SettingRow("Automatic maintenance",
+                "Runs a light cleanup in the background (temporary files, update cache, error reports, DNS cache, Defender definitions) at 3:00 AM, or as soon as the PC is on afterwards. Not on battery power.",
+                _schedule));
+
+        var updates = new StackCard().Add(
+            Theme.Label("Updates", Theme.H2),
+            Theme.SettingRow("Check for updates automatically", "At startup and every 4 hours.", _updates),
+            new Divider(),
+            Theme.SettingRow("Install updates automatically (no need to click)", "Updates are verified (SHA-256) and installed without asking.", _autoUpdate),
+            Theme.Row(Theme.Button("Check for updates now", async (_, _) => await CheckUpdatesNow(), glyph: "\uE895")));
+
+        var appearance = new StackCard().Add(
+            Theme.Label("Accent color", Theme.H2),
             Theme.Row(_accentPreview,
                 Theme.Button("Custom color", (_, _) => PickColor()),
                 Swatch("#0067C0"), Swatch("#4F6BED"), Swatch("#107C10"), Swatch("#C42B1C"), Swatch("#CA5010"), Swatch("#5C5C5C")));
@@ -92,7 +115,7 @@ public sealed class SettingsPage : Page
                 })));
 
         var save = Theme.Button("Save", async (_, _) => await SaveAsync(), primary: true);
-        var body = new Stack(scroll: true).Add(general, oneClick, about);
+        var body = new Stack(scroll: true).Add(general, background, updates, appearance, oneClick, about);
         AddRow(body, fill: true);
         AddRow(Theme.Row(save));
         LoadChecks();
@@ -103,7 +126,7 @@ public sealed class SettingsPage : Page
     {
         _autoStart.Checked = await Task.Run(AutoStart.IsEnabled);
         _autoStart.Enabled = AutoStart.IsAllowed || _autoStart.Checked;
-        if (!AutoStart.IsAllowed) _autoStart.Text = "Start WinSolve with Windows (requires an all-users install)";
+        _autoStartDescription.Text = AutoStart.IsAllowed ? "Starts hidden in the notification area." : "Requires an all-users install (in Program Files).";
     }
 
     private Task CheckUpdatesNow() => Main.CheckForUpdatesNowAsync();

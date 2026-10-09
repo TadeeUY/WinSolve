@@ -122,13 +122,63 @@ public class LocLabel : Label
     }
 }
 
-/// <summary>CheckBox whose text is translated whenever it is set.</summary>
+/// <summary>
+/// CheckBox whose text is translated whenever it is set, painted as a Windows 11 check box
+/// or, with <see cref="Switch"/>, as an on/off toggle.
+/// </summary>
 public sealed class LocCheckBox : CheckBox
 {
+    private bool _hover;
+    private bool _switch;
+
+    public LocCheckBox()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
+        Cursor = Cursors.Hand;
+    }
+
     [System.Diagnostics.CodeAnalysis.AllowNull]
     public override string Text
     {
         get => base.Text;
-        set => base.Text = Loc.T(value);
+        set { base.Text = Loc.T(value); AdjustSize(); }
+    }
+
+    /// <summary>Draw as a toggle switch instead of a check box.</summary>
+    public bool Switch
+    {
+        get => _switch;
+        set { _switch = value; AdjustSize(); Invalidate(); }
+    }
+
+    private int MarkWidth => _switch ? 40 : 20;
+
+    public override Size GetPreferredSize(Size proposedSize)
+    {
+        var text = TextRenderer.MeasureText(Text, Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPrefix);
+        return new Size(MarkWidth + 10 + text.Width, Math.Max(_switch ? 22 : 20, text.Height) + 4);
+    }
+
+    private void AdjustSize()
+    {
+        if (AutoSize) Size = GetPreferredSize(Size.Empty);
+    }
+
+    protected override void OnFontChanged(EventArgs e) { base.OnFontChanged(e); AdjustSize(); }
+    protected override void OnMouseEnter(EventArgs eventargs) { _hover = true; Invalidate(); base.OnMouseEnter(eventargs); }
+    protected override void OnMouseLeave(EventArgs eventargs) { _hover = false; Invalidate(); base.OnMouseLeave(eventargs); }
+
+    protected override void OnPaint(PaintEventArgs pevent)
+    {
+        var g = pevent.Graphics;
+        g.Clear(WinSolve.UI.Theme.SurfaceColor(this));
+        var mid = Height / 2;
+        if (_switch)
+            WinSolve.UI.Theme.DrawSwitch(g, new Rectangle(0, mid - 10, 40, 20), Checked, _hover, Enabled);
+        else
+            WinSolve.UI.Theme.DrawCheckBox(g, new Rectangle(0, mid - 9, 18, 18), Checked, _hover, Enabled);
+        TextRenderer.DrawText(g, Text, Font, new Rectangle(MarkWidth + 8, 0, Width - MarkWidth - 8, Height),
+            Enabled ? ForeColor : Color.FromArgb(120, 120, 120),
+            TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
     }
 }

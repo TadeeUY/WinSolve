@@ -82,6 +82,14 @@ public static class Theme
         return path;
     }
 
+    /// <summary>First opaque background behind a control (transparent containers are skipped).</summary>
+    public static Color SurfaceColor(Control? c)
+    {
+        for (var p = c?.Parent; p is not null; p = p.Parent)
+            if (p.BackColor.A == 255) return p.BackColor;
+        return Background;
+    }
+
     private static readonly Dictionary<int, Icon> IconCache = [];
 
     /// <summary>The WinSolve icon at the requested size (embedded resource).</summary>
@@ -189,6 +197,17 @@ public static class Theme
             WrapMode = DataGridViewTriState.False,
         };
         g.AlternatingRowsDefaultCellStyle = g.DefaultCellStyle;
+        // Windows 11 style check boxes inside grids.
+        g.CellPainting += (_, e) =>
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0 || e.Graphics is null || g.Columns[e.ColumnIndex] is not DataGridViewCheckBoxColumn) return;
+            e.PaintBackground(e.CellBounds, (e.State & DataGridViewElementStates.Selected) != 0);
+            var size = 18;
+            var box = new Rectangle(e.CellBounds.X + (e.CellBounds.Width - size) / 2, e.CellBounds.Y + (e.CellBounds.Height - size) / 2, size, size);
+            DrawCheckBox(e.Graphics, box, e.Value is true, false);
+            e.Handled = true;
+        };
+
         // Subtle row highlight under the mouse.
         g.CellMouseEnter += (_, e) => { if (e.RowIndex >= 0 && !g.Rows[e.RowIndex].Selected) g.Rows[e.RowIndex].DefaultCellStyle.BackColor = Color.FromArgb(48, 48, 48); };
         g.CellMouseLeave += (_, e) => { if (e.RowIndex >= 0 && e.RowIndex < g.Rows.Count) g.Rows[e.RowIndex].DefaultCellStyle.BackColor = Color.Empty; };
@@ -222,6 +241,18 @@ public static class Theme
             Margin = new Padding(0, 5, 8, 5),
         };
         c.Format += (_, e) => e.Value = Loc.T(e.ListItem?.ToString());
+        // Dark drop-down list.
+        c.DrawMode = DrawMode.OwnerDrawFixed;
+        c.ItemHeight = 22;
+        c.DrawItem += (_, e) =>
+        {
+            if (e.Index < 0) return;
+            var selected = (e.State & DrawItemState.Selected) != 0;
+            using (var bg = new SolidBrush(selected ? ControlHover : Control)) e.Graphics.FillRectangle(bg, e.Bounds);
+            TextRenderer.DrawText(e.Graphics, Loc.T(c.Items[e.Index]?.ToString()), Body,
+                new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - 6, e.Bounds.Height), Text,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        };
         c.Items.AddRange(items);
         if (items.Length > 0) c.SelectedIndex = 0;
         return c;
@@ -237,6 +268,84 @@ public static class Theme
         BackColor = Color.Transparent,
         Margin = new Padding(0, 3, 0, 3),
     };
+
+    /// <summary>Windows 11 style on/off switch (a CheckBox, so Checked/CheckedChanged work as usual).</summary>
+    public static CheckBox Toggle(string text, bool value) => new LocCheckBox
+    {
+        Text = text,
+        Checked = value,
+        Switch = true,
+        ForeColor = Text,
+        Font = Body,
+        AutoSize = true,
+        BackColor = Color.Transparent,
+        Margin = new Padding(0, 3, 0, 3),
+    };
+
+    /// <summary>Draws a Windows 11 check box (rounded, accent filled when checked).</summary>
+    public static void DrawCheckBox(Graphics g, Rectangle box, bool isChecked, bool hover, bool enabled = true)
+    {
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using var path = RoundedRect(box, 4);
+        if (isChecked)
+        {
+            using (var b = new SolidBrush(enabled ? (hover ? ControlPaint.Light(Accent, 0.1f) : Accent) : Color.FromArgb(80, 80, 80))) g.FillPath(b, path);
+            using var pen = new Pen(Color.White, 1.8f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+            var x = box.X; var y = box.Y; var w = box.Width;
+            g.DrawLines(pen, [new PointF(x + w * 0.24f, y + w * 0.52f), new PointF(x + w * 0.43f, y + w * 0.70f), new PointF(x + w * 0.76f, y + w * 0.32f)]);
+        }
+        else
+        {
+            using (var b = new SolidBrush(hover ? Color.FromArgb(52, 52, 52) : Color.FromArgb(40, 40, 40))) g.FillPath(b, path);
+            using var pen = new Pen(Color.FromArgb(enabled ? 150 : 90, 150, 150, 150));
+            g.DrawPath(pen, path);
+        }
+    }
+
+    /// <summary>Draws a Windows 11 toggle switch.</summary>
+    public static void DrawSwitch(Graphics g, Rectangle r, bool on, bool hover, bool enabled = true)
+    {
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using var path = RoundedRect(r, r.Height / 2);
+        var knob = r.Height - 8;
+        if (on)
+        {
+            using (var b = new SolidBrush(enabled ? (hover ? ControlPaint.Light(Accent, 0.1f) : Accent) : Color.FromArgb(80, 80, 80))) g.FillPath(b, path);
+            using var k = new SolidBrush(Color.White);
+            g.FillEllipse(k, r.Right - knob - 4, r.Y + 4, knob, knob);
+        }
+        else
+        {
+            using (var b = new SolidBrush(hover ? Color.FromArgb(52, 52, 52) : Color.FromArgb(40, 40, 40))) g.FillPath(b, path);
+            using (var pen = new Pen(Color.FromArgb(160, 160, 160))) g.DrawPath(pen, path);
+            using var k = new SolidBrush(Color.FromArgb(200, 200, 200));
+            g.FillEllipse(k, r.X + 5, r.Y + 5, knob - 2, knob - 2);
+        }
+    }
+
+    /// <summary>
+    /// Windows 11 Settings row: title and description on the left, a control (switch, list,
+    /// button) on the right.
+    /// </summary>
+    public static Control SettingRow(string title, string? description, Control control, Label? descriptionLabel = null)
+    {
+        var row = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 4, 0, 4) };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, BackColor = Color.Transparent, Margin = new Padding(0), Dock = DockStyle.Fill };
+        text.Controls.Add(Label(title, Body));
+        var desc = descriptionLabel ?? (description is null ? null : Label(description, Small, Muted));
+        if (desc is not null)
+        {
+            desc.MaximumSize = new Size(620, 0);
+            text.Controls.Add(desc);
+        }
+        control.Anchor = AnchorStyles.Right;
+        control.Margin = new Padding(12, 2, 0, 2);
+        row.Controls.Add(text, 0, 0);
+        row.Controls.Add(control, 1, 0);
+        return row;
+    }
 
     /// <summary>Small colored dot followed by text, used for status values.</summary>
     public static Control Status(string text, Color color) => new StatusLabel(text, color);
@@ -296,7 +405,7 @@ public sealed class FlatBtn : Button
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(Parent?.BackColor is { A: 255 } pc ? pc : Theme.Background);
+        g.Clear(Theme.SurfaceColor(this));
 
         Color fill = _primary ? Theme.Accent : (_hover ? Theme.ControlHover : Theme.Control);
         if (_primary && _hover) fill = ControlPaint.Light(fill, 0.12f);

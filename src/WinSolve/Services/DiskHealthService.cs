@@ -14,6 +14,9 @@ public sealed record SmartAttribute(byte Id, string Name, byte Current, byte Wor
 public sealed class DiskInfo
 {
     public string Model { get; set; } = "";
+
+    /// <summary>Windows disk number (Get-PhysicalDisk DeviceId).</summary>
+    public int? DiskNumber { get; set; }
     public string Serial { get; set; } = "";
     public string Firmware { get; set; } = "";
     public string MediaType { get; set; } = "";
@@ -142,6 +145,7 @@ public static class DiskHealthService
                     disks.Add(new DiskInfo
                     {
                         Model = p.FriendlyName ?? "Disk",
+                        DiskNumber = int.TryParse(p.DeviceId, out var number) ? number : null,
                         Serial = p.SerialNumber ?? "",
                         Firmware = p.FirmwareVersion ?? "",
                         MediaType = p.MediaType switch { "SSD" => "SSD", "HDD" => "HDD", "SCM" => "SCM", _ => "Unspecified" },

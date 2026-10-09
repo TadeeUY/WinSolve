@@ -219,3 +219,63 @@ public class LocalizationTests
         }
     }
 }
+
+public class TweakCatalogTests
+{
+    [Fact]
+    public void Catalog_loads_with_unique_ids_and_groups()
+    {
+        var all = TweakCatalog.All;
+        Assert.NotEmpty(all);
+        Assert.Equal(all.Count, all.Select(t => t.Id).Distinct().Count());
+        Assert.Contains(all, t => t.Group == TweakGroup.Essential);
+        Assert.Contains(all, t => t.Group == TweakGroup.Advanced);
+        Assert.Contains(all, t => t.Group == TweakGroup.Preference);
+    }
+
+    [Fact]
+    public void Presets_only_reference_existing_non_preference_tweaks()
+    {
+        foreach (var id in TweakCatalog.StandardPreset.Concat(TweakCatalog.MinimalPreset))
+        {
+            var t = TweakCatalog.Find(id);
+            Assert.NotNull(t);
+            Assert.NotEqual(TweakGroup.Preference, t!.Group);
+        }
+    }
+
+    [Fact]
+    public void Actions_are_never_reported_as_applied()
+    {
+        foreach (var t in TweakCatalog.All.Where(t => t.IsAction))
+            Assert.False(t.SafeIsApplied());
+    }
+
+    [Fact]
+    public void Dns_providers_have_valid_addresses()
+    {
+        foreach (var p in DnsService.Providers.Skip(1))
+        {
+            Assert.NotEmpty(p.IPv4);
+            Assert.All(p.IPv4.Concat(p.IPv6), a => Assert.True(System.Net.IPAddress.TryParse(a, out _), a));
+        }
+    }
+}
+
+public class DiskRepairTests
+{
+    [Fact]
+    public void Advice_escalates_with_bad_sectors()
+    {
+        var good = new DiskInfo { Health = HealthLevel.Good, MediaType = "HDD" };
+        Assert.Equal(HealthLevel.Good, DiskRepairService.Advice(good).Level);
+
+        var pending = new DiskInfo { Health = HealthLevel.Caution };
+        pending.Attributes.Add(new SmartAttribute(0xC5, "Current pending sectors", 100, 100, 0, 8));
+        Assert.Equal(HealthLevel.Caution, DiskRepairService.Advice(pending).Level);
+        Assert.Contains("pending: 8", DiskRepairService.Advice(pending).Text);
+
+        var failing = new DiskInfo { Health = HealthLevel.Bad };
+        Assert.Equal(HealthLevel.Bad, DiskRepairService.Advice(failing).Level);
+    }
+}

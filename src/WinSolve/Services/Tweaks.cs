@@ -7,9 +7,20 @@ namespace WinSolve.Services;
 /// A reversible system tweak (Wintoys style): it can read its current state,
 /// apply itself and revert itself.
 /// </summary>
+public enum TweakGroup { Essential, Advanced, Preference }
+
 public sealed class Tweak
 {
     public required string Id { get; init; }
+
+    /// <summary>Where the tweak appears on the Tweaks page (WinUtil-style sections).</summary>
+    public TweakGroup Group { get; internal set; } = TweakGroup.Advanced;
+
+    /// <summary>One-shot action (e.g. delete temp files): never shows as applied and cannot be undone.</summary>
+    public bool IsAction { get; init; }
+
+    /// <summary>Extra warning shown before running it.</summary>
+    public string? Warning { get; init; }
     public required string Category { get; init; }
     public required string Title { get; init; }
     public required string Description { get; init; }
@@ -41,7 +52,7 @@ public sealed record RegValue(
     object? Off,                 // null = delete the value when reverting
     RegistryValueKind Kind = RegistryValueKind.DWord);
 
-public static class TweakCatalog
+public static partial class TweakCatalog
 {
     private const RegistryHive HKCU = RegistryHive.CurrentUser;
     private const RegistryHive HKLM = RegistryHive.LocalMachine;
@@ -51,7 +62,11 @@ public static class TweakCatalog
     private const string Personalize = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
     private const string ClassicMenuKey = @"Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}";
 
-    public static IReadOnlyList<Tweak> All { get; } = Build();
+    // Lazy: the catalog uses static tables declared in TweaksExtra.cs, whose initialization
+    // order relative to this file is not guaranteed.
+    private static readonly Lazy<IReadOnlyList<Tweak>> Catalog = new(Build);
+
+    public static IReadOnlyList<Tweak> All => Catalog.Value;
 
     public static Tweak? Find(string id) => All.FirstOrDefault(t => t.Id == id);
 
@@ -253,6 +268,8 @@ public static class TweakCatalog
             ]);
         }
 
+        list.AddRange(BuildExtra());
+        AssignGroups(list);
         return list;
     }
 }
