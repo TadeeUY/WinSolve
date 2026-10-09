@@ -130,8 +130,15 @@ public sealed class MainForm : Form
     {
         var menu = Menus.Create();
         menu.Items.Add("Open WinSolve", null, (_, _) => ShowFromTray());
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Clean temporary files", null, (_, _) => QuickAction(QuickClean));
+        menu.Items.Add("Free up memory", null, (_, _) => QuickAction(QuickFreeMemory));
+        menu.Items.Add("Flush DNS cache", null, (_, _) => QuickAction(QuickFlushDns));
+        menu.Items.Add("Restart Windows Explorer", null, (_, _) => QuickAction(QuickRestartExplorer));
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("One-click optimization", null, (_, _) => { ShowFromTray(); Navigate("optimize"); });
         menu.Items.Add("Disk space", null, (_, _) => { ShowFromTray(); Navigate("space"); });
+        menu.Items.Add("Toolbox", null, (_, _) => { ShowFromTray(); Navigate("toolbox"); });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitApp());
 
@@ -144,6 +151,64 @@ public sealed class MainForm : Form
         };
         tray.DoubleClick += (_, _) => ShowFromTray();
         return tray;
+    }
+
+    // ───────────── Quick actions (tray menu) ─────────────
+
+    private bool _quickBusy;
+
+    private async void QuickAction(Func<Task<ToastOptions>> action)
+    {
+        if (_quickBusy) return;
+        _quickBusy = true;
+        ToastOptions result;
+        try
+        {
+            result = await action();
+        }
+        catch (Exception ex)
+        {
+            Logger.Write($"Quick action failed: {ex}");
+            result = new ToastOptions { Title = "That didn't work", Detail = ex.Message, Severity = IssueSeverity.Warning, AutoCloseSeconds = 8, Sound = false };
+        }
+        finally { _quickBusy = false; }
+        Toast.Show(result);
+    }
+
+    private static ToastOptions Done(string title, string detail, string glyph) => new()
+    {
+        Title = title, Detail = detail, Glyph = glyph, SecondaryText = "OK", AutoCloseSeconds = 6, Sound = false,
+    };
+
+    private static async Task<ToastOptions> QuickClean()
+    {
+        var ctx = new TaskContext(Logger.Write, default);
+        foreach (var id in new[] { "clean-temp-user", "clean-temp-windows" })
+            if (TaskCatalog.Find(id) is { } task) await Task.Run(() => task.Run(ctx));
+        return Done("Temporary files cleaned",
+            ctx.FreedBytes > 0 ? string.Format(Localization.Loc.T("{0} freed. Files in use were skipped."), Format.Bytes(ctx.FreedBytes))
+                               : "There was nothing left to clean.", "\uE74D");
+    }
+
+    private static async Task<ToastOptions> QuickFreeMemory()
+    {
+        var r = await Task.Run(MemoryCleaner.PurgeStandbyList);
+        return Done("Memory freed",
+            string.Format(Localization.Loc.T("{0} released from the cache. {1} of {2} is now available."),
+                Format.Bytes(r.Freed), Format.Bytes(r.AvailableAfter), Format.Bytes(r.Total)), "\uE964");
+    }
+
+    private static async Task<ToastOptions> QuickFlushDns()
+    {
+        var r = await ProcessRunner.RunAsync("ipconfig.exe", "/flushdns", _ => { }, default);
+        if (!r.Success) throw new InvalidOperationException(Localization.Loc.T("ipconfig couldn't flush the DNS cache."));
+        return Done("DNS cache flushed", "Websites will be looked up again from scratch.", "\uE774");
+    }
+
+    private static async Task<ToastOptions> QuickRestartExplorer()
+    {
+        await TaskCatalog.ExplorerRestart(new TaskContext(Logger.Write, default));
+        return Done("Explorer restarted", "The taskbar and desktop were reloaded.", "\uE8B7");
     }
 
     public async void ShowFromTray()
