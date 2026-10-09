@@ -27,6 +27,8 @@ public sealed class MainForm : Form
 
     public const string Slogan = "The multitool for Windows";
 
+    private static string VersionText => $"Version {Application.ProductVersion.Split('+')[0]}" + (Edition.IsPortable ? " (portable)" : "");
+
     private static string BrandSubtitle => Admin.IsElevated ? Slogan : "Not running as administrator";
 
     public MainForm(bool startHidden = false)
@@ -269,7 +271,7 @@ public sealed class MainForm : Form
     {
         var update = await UpdateService.CheckIfDueAsync();
         if (update is null) return;
-        if (AppSettings.Current.AutoInstallUpdates) await InstallUpdateAsync(update);
+        if (AppSettings.Current.AutoInstallUpdates && !Edition.IsPortable) await InstallUpdateAsync(update);
         else ShowUpdate(update);
     }
 
@@ -277,8 +279,16 @@ public sealed class MainForm : Form
     public void ShowUpdate(UpdateInfo update)
     {
         _update = update;
-        var install = Theme.Button("Update now", async (_, _) => await InstallUpdateAsync(update), primary: true, glyph: "");
         var notes = Theme.Button("What's new", (_, _) => ProcessRunner.ShellOpen(update.ReleaseUrl));
+        if (Edition.IsPortable)
+        {
+            // Nothing to install: the user replaces the .exe on the USB stick.
+            var download = Theme.Button("Download the new version", (_, _) => ProcessRunner.ShellOpen(update.ReleaseUrl), primary: true, glyph: "\uE896");
+            _infoBar.Show($"WinSolve {update.Tag} is available",
+                $"You have {UpdateService.CurrentVersion}. Download WinSolve-Portable.exe and replace this file.", download);
+            return;
+        }
+        var install = Theme.Button("Update now", async (_, _) => await InstallUpdateAsync(update), primary: true, glyph: "\uE896");
         _infoBar.Show($"WinSolve {update.Tag} is available",
             $"You have {UpdateService.CurrentVersion}. Updating takes less than a minute and keeps your settings.", install, notes);
         if (!Visible)
@@ -302,6 +312,11 @@ public sealed class MainForm : Form
     /// </summary>
     public async Task InstallUpdateAsync(UpdateInfo update)
     {
+        if (Edition.IsPortable)
+        {
+            ProcessRunner.ShellOpen(update.ReleaseUrl);
+            return;
+        }
         if (_updating) return;
         _updating = true;
         ShowFromTray();
@@ -531,7 +546,7 @@ public sealed class MainForm : Form
         footer.Controls.Add(NavItem("settings", "", "Settings", width));
         footer.Controls.Add(_versionLabel = new Localization.LocLabel
         {
-            Text = $"Version {Application.ProductVersion.Split('+')[0]}",
+            Text = VersionText,
             ForeColor = Color.FromArgb(120, 120, 120),
             Font = Theme.Small,
             AutoSize = true,
@@ -701,7 +716,7 @@ public sealed class MainForm : Form
         _pages.Clear();
         foreach (var b in _nav) b.Invalidate();
         if (_brandSubtitle is not null) _brandSubtitle.Text = BrandSubtitle;
-        if (_versionLabel is not null) _versionLabel.Text = $"Version {Application.ProductVersion.Split('+')[0]}";
+        if (_versionLabel is not null) _versionLabel.Text = VersionText;
         if (_update is not null && !_updating) ShowUpdate(_update);
         _tray.Text = Localization.Loc.T("WinSolve - watching for Windows errors");
         Navigate(current);

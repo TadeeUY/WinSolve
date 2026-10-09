@@ -1224,5 +1224,8 @@ public static class Spanish
         ["Explorer restarted"] = "Explorador reiniciado",
         ["The taskbar and desktop were reloaded."] = "Se recargaron la barra de tareas y el escritorio.",
         ["Freeing memory needs administrator rights."] = "Liberar memoria requiere permisos de administrador.",
+        ["Download the new version"] = "Descargar la nueva versión",
+        ["You have {0}. Download WinSolve-Portable.exe and replace this file."] = "Tienes la {0}. Descarga WinSolve-Portable.exe y reemplaza este archivo.",
+        ["Not available in the portable version."] = "No disponible en la versión portable.",
     };
 }

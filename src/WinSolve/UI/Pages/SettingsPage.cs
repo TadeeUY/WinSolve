@@ -34,6 +34,13 @@ public sealed class SettingsPage : Page
         _schedule.SelectedItem = Maintenance.Schedules.Contains(s.MaintenanceSchedule) ? s.MaintenanceSchedule : "Off";
         _language.SelectedIndex = s.Language == "es" ? 1 : 0;
         _schedule.Width = _language.Width = 170;
+        if (Edition.IsPortable)
+        {
+            // The portable build leaves nothing behind on the PC.
+            _schedule.SelectedItem = "Off";
+            _schedule.Enabled = _autoUpdate.Enabled = false;
+            _autoUpdate.Checked = false;
+        }
 
         var general = new StackCard().Add(
             Theme.SectionHeader("\uE713", "General", "Language, safety and behavior."),
@@ -152,7 +159,8 @@ public sealed class SettingsPage : Page
         _autoStartLoaded = true;
         _autoStart.Checked = await Task.Run(AutoStart.IsEnabled);
         _autoStart.Enabled = AutoStart.IsAllowed || _autoStart.Checked;
-        _autoStartDescription.Text = AutoStart.IsAllowed ? "Starts hidden in the notification area." : "Requires an all-users install (in Program Files).";
+        _autoStartDescription.Text = Edition.IsPortable ? "Not available in the portable version."
+            : AutoStart.IsAllowed ? "Starts hidden in the notification area." : "Requires an all-users install (in Program Files).";
     }
 
     private Task CheckUpdatesNow() => Main.CheckForUpdatesNowAsync();

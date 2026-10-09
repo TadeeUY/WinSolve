@@ -34,6 +34,13 @@
     <UseSystemResourceKeys>false</UseSystemResourceKeys>
   </PropertyGroup>
 
+  <!-- Versión portable: dotnet publish -p:Portable=true (incluye el runtime, no instala nada). -->
+  <PropertyGroup Condition="'$(Portable)' == 'true'">
+    <DefineConstants>$(DefineConstants);PORTABLE</DefineConstants>
+    <SelfContained>true</SelfContained>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
   <!--
     La UI está hecha en Windows Forms 100% en código (sin diseñador), así que
     alcanza con referenciar el framework de escritorio. Compila tanto en Windows

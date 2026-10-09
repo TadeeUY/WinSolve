@@ -16,7 +16,7 @@ public static class AutoStart
     /// standard user can replace it (e.g. a per-user install), that would hand any program
     /// silent administrator rights, so it is only allowed from Program Files.
     /// </summary>
-    public static bool IsAllowed => !SafePath.IsUserWritableLocation(Environment.ProcessPath ?? Application.ExecutablePath);
+    public static bool IsAllowed => !Edition.IsPortable && !SafePath.IsUserWritableLocation(Environment.ProcessPath ?? Application.ExecutablePath);
 
     public static async Task<bool> SetAsync(bool enabled)
     {
