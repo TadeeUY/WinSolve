@@ -30,24 +30,32 @@ public static class InstallerProcess
 
     /// <summary>Starts <paramref name="file"/> and waits until the installation it starts has finished.</summary>
     /// <returns>The exit code of the process that was started (not of its children).</returns>
-    public static async Task<int?> RunAndWaitAsync(string file, string? arguments, bool shellExecute, Action<string> log, CancellationToken ct)
+    public static async Task<int?> RunAndWaitAsync(string file, string? arguments, Action<string> log, CancellationToken ct)
     {
         using var job = CreateJobObject(IntPtr.Zero, null);
-        var psi = new ProcessStartInfo(file)
-        {
-            UseShellExecute = shellExecute,
-            WorkingDirectory = Path.GetDirectoryName(file)!,
-        };
-        if (!string.IsNullOrEmpty(arguments)) psi.Arguments = arguments;
-        if (!shellExecute) psi.CreateNoWindow = true;
+        if (job.IsInvalid) throw new InvalidOperationException("Could not create a job object to track the installer.");
 
-        using var p = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start {Path.GetFileName(file)}.");
-        var inJob = !job.IsInvalid && AssignProcessToJobObject(job, p.Handle);
+        // Started suspended and put in the job before it runs a single instruction: a fast
+        // self-extractor could otherwise launch its setup before being tracked.
+        var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>() };
+        var commandLine = $"\"{file}\"" + (string.IsNullOrEmpty(arguments) ? "" : " " + arguments);
+        if (!CreateProcessW(file, commandLine, IntPtr.Zero, IntPtr.Zero, false, CREATE_SUSPENDED, IntPtr.Zero,
+                Path.GetDirectoryName(file), ref si, out var pi))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), $"Could not start {Path.GetFileName(file)}");
+
+        using var process = new SafeJobHandle(pi.hProcess);
+        using var thread = new SafeJobHandle(pi.hThread);
+        var inJob = AssignProcessToJobObject(job, pi.hProcess);
+        ResumeThread(pi.hThread);
         if (!inJob) log("  (could not track the installer's child processes; waiting for the main one only)");
 
-        await p.WaitForExitAsync(ct);
-        int? exitCode = null;
-        try { exitCode = p.ExitCode; } catch { }
+        while (WaitForSingleObject(pi.hProcess, 500) == WAIT_TIMEOUT)
+        {
+            if (ct.IsCancellationRequested) break;
+            await Task.Delay(50, CancellationToken.None);
+        }
+        ct.ThrowIfCancellationRequested();
+        int? exitCode = GetExitCodeProcess(pi.hProcess, out var code) ? (int)code : null;
         if (!inJob) return exitCode;
 
         // The started exe is done; its setup may still be running.
@@ -98,12 +106,45 @@ public static class InstallerProcess
     }
 
     private const int JobObjectBasicProcessIdList = 3;
+    private const uint CREATE_SUSPENDED = 0x4;
+    private const uint WAIT_TIMEOUT = 0x102;
 
     private sealed class SafeJobHandle : Microsoft.Win32.SafeHandles.SafeHandleZeroOrMinusOneIsInvalid
     {
         public SafeJobHandle() : base(true) { }
+        public SafeJobHandle(IntPtr existing) : base(true) => SetHandle(existing);
         protected override bool ReleaseHandle() => CloseHandle(handle);
     }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct STARTUPINFO
+    {
+        public int cb;
+        public string? lpReserved, lpDesktop, lpTitle;
+        public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+        public short wShowWindow, cbReserved2;
+        public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PROCESS_INFORMATION
+    {
+        public IntPtr hProcess, hThread;
+        public int dwProcessId, dwThreadId;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CreateProcessW(string application, string commandLine, IntPtr processAttributes, IntPtr threadAttributes,
+        bool inheritHandles, uint flags, IntPtr environment, string? currentDirectory, ref STARTUPINFO startupInfo, out PROCESS_INFORMATION info);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint ResumeThread(IntPtr thread);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetExitCodeProcess(IntPtr process, out uint exitCode);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeJobHandle CreateJobObject(IntPtr attributes, string? name);

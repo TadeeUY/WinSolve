@@ -327,7 +327,7 @@ public static class DriverService
             if (vendor == GpuVendor.Nvidia)
             {
                 log("Installing silently with a clean profile (-s -clean -noreboot). This takes a few minutes; the screen will flicker...");
-                var code = await InstallerProcess.RunAndWaitAsync(safeCopy, "-s -clean -noreboot -noeula", shellExecute: false, log, ct);
+                var code = await InstallerProcess.RunAndWaitAsync(safeCopy, "-s -clean -noreboot -noeula", log, ct);
                 log($"NVIDIA installer finished (exit code {code?.ToString() ?? "unknown"}).");
             }
             else
@@ -335,7 +335,7 @@ public static class DriverService
                 log(vendor == GpuVendor.Amd
                     ? "The AMD installer is opening. Choose 'Factory Reset' if it is offered, then follow the steps. WinSolve waits until it finishes."
                     : "The installer is opening. If it offers a clean installation, choose it. WinSolve waits until it finishes.");
-                await InstallerProcess.RunAndWaitAsync(safeCopy, null, shellExecute: true, log, ct);
+                await InstallerProcess.RunAndWaitAsync(safeCopy, null, log, ct);
                 log("Installer finished.");
             }
         }

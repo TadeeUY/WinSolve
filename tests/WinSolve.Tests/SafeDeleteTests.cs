@@ -155,7 +155,7 @@ public class InstallerProcessTests
         try
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            await InstallerProcess.RunAndWaitAsync(script, null, shellExecute: false, _ => { }, default);
+            await InstallerProcess.RunAndWaitAsync(Path.Combine(Environment.SystemDirectory, "cmd.exe"), $"/c \"{script}\"", _ => { }, default);
             Assert.True(sw.Elapsed.TotalSeconds >= 2.5, $"returned after {sw.Elapsed.TotalSeconds:0.0} s");
         }
         finally
