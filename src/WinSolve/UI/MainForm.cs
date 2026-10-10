@@ -198,8 +198,8 @@ public sealed class MainForm : Form
     {
         var r = await Task.Run(MemoryCleaner.PurgeStandbyList);
         return Done("Memory freed",
-            string.Format(Localization.Loc.T("{0} released from the cache. {1} of {2} is now available."),
-                Format.Bytes(r.Freed), Format.Bytes(r.AvailableAfter), Format.Bytes(r.Total)), "\uE964");
+            string.Format(Localization.Loc.T("{0} released from the cache. {1} of {2} is now free."),
+                Format.Bytes(r.Freed), Format.Bytes(r.FreeAfter), Format.Bytes(r.Total)), "\uE964");
     }
 
     private static async Task<ToastOptions> QuickFlushDns()

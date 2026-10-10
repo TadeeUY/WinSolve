@@ -103,9 +103,11 @@ public sealed class CommandPalette : Form
     private void Run(PaletteItem? item)
     {
         if (item is null) return;
+        // Closing disposes the palette, which clears Owner: keep it first.
+        var owner = Owner;
         Close();
         // After the palette is gone, so dialogs open over the main window.
-        Owner?.BeginInvoke(item.Run);
+        owner?.BeginInvoke(item.Run);
     }
 
     // ───────────── Matching ─────────────

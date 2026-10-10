@@ -10,22 +10,45 @@ namespace WinSolve.Services;
 /// </summary>
 public static class MemoryCleaner
 {
-    public sealed record Result(long AvailableBefore, long AvailableAfter, long Total)
-    {
-        public long Freed => Math.Max(0, AvailableAfter - AvailableBefore);
-    }
+    /// <param name="Freed">Cache released (standby list before minus after).</param>
+    /// <param name="FreeAfter">Memory that is now completely free (free and zeroed pages).</param>
+    public sealed record Result(long Freed, long FreeAfter, long Total);
 
     public static Result PurgeStandbyList()
     {
-        var before = Status();
         EnablePrivilege("SeProfileSingleProcessPrivilege");
+        // "Available" memory already includes the standby list, so it barely moves: measure the
+        // list itself instead.
+        var before = Lists();
         int command = MemoryPurgeStandbyList;
         var status = NtSetSystemInformation(SystemMemoryListInformation, ref command, sizeof(int));
         if (status != 0)
             throw new Win32Exception(RtlNtStatusToDosError(status));
-        var after = Status();
-        return new Result((long)before.ullAvailPhys, (long)after.ullAvailPhys, (long)after.ullTotalPhys);
+        var after = Lists();
+        return new Result(Math.Max(0, before.Standby - after.Standby), after.Free, (long)Status().ullTotalPhys);
     }
+
+    private static unsafe (long Standby, long Free) Lists()
+    {
+        var info = new SYSTEM_MEMORY_LIST_INFORMATION();
+        var status = NtQuerySystemInformation(SystemMemoryListInformation, ref info, Marshal.SizeOf<SYSTEM_MEMORY_LIST_INFORMATION>(), out _);
+        if (status != 0) throw new Win32Exception(RtlNtStatusToDosError(status));
+        long page = Environment.SystemPageSize;
+        long standby = 0;
+        for (int i = 0; i < 8; i++) standby += (long)info.PageCountByPriority[i];
+        return (standby * page, ((long)info.ZeroPageCount + (long)info.FreePageCount) * page);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct SYSTEM_MEMORY_LIST_INFORMATION
+    {
+        public nuint ZeroPageCount, FreePageCount, ModifiedPageCount, ModifiedNoWritePageCount, BadPageCount;
+        public fixed ulong PageCountByPriority[8];
+        public fixed ulong RepurposedPagesByPriority[8];
+        public nuint ModifiedPageCountPageFile;
+    }
+
+    [DllImport("ntdll.dll")] private static extern int NtQuerySystemInformation(int infoClass, ref SYSTEM_MEMORY_LIST_INFORMATION info, int length, out int returned);
 
     private static MEMORYSTATUSEX Status()
     {

@@ -30,13 +30,14 @@ public static class PcReport
             var source = Path.Combine(work, "report.html");
             var profile = Path.Combine(work, "edge-profile");
             var pdf = Path.Combine(folder, name + ".pdf");
+            // Today's report may already be open in a PDF reader: use a new name then.
+            for (int n = 2; File.Exists(pdf) && !TryDelete(pdf); n++) pdf = Path.Combine(folder, $"{name} ({n}).pdf");
             try
             {
                 await File.WriteAllTextAsync(source, html, Encoding.UTF8, ct);
                 log("Creating the PDF...");
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeout.CancelAfter(TimeSpan.FromSeconds(90));
-                File.Delete(pdf);
                 await ProcessRunner.RunAsync(edge,
                     $"--headless --disable-gpu --no-first-run --disable-extensions --user-data-dir=\"{profile}\" " +
                     $"--no-pdf-header-footer --print-to-pdf-no-header --print-to-pdf=\"{pdf}\" \"{new Uri(source).AbsoluteUri}\"",
@@ -62,6 +63,12 @@ public static class PcReport
         await File.WriteAllTextAsync(file, await Task.Run(() => Build(disks, pdf: false), ct), Encoding.UTF8, ct);
         log($"Saved to {file}");
         return file;
+    }
+
+    private static bool TryDelete(string file)
+    {
+        try { File.Delete(file); return true; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
     }
 
     private static string? EdgePath()

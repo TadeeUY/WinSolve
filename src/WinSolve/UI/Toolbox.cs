@@ -246,7 +246,7 @@ internal sealed class LockedFileDialog : ToolDialog
 
     private void PickFile()
     {
-        using var dlg = new OpenFileDialog { Title = Loc.T("Choose the locked file") };
+        using var dlg = new OpenFileDialog { Title = Loc.T("Choose the locked file"), DereferenceLinks = false };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
         _chosen = dlg.FileName;
         _files = [dlg.FileName];
@@ -288,6 +288,12 @@ internal sealed class LockedFileDialog : ToolDialog
     private void CloseSelected()
     {
         if (_grid.CurrentRow?.Tag is not LockingProcess p) return;
+        if (p.IsService)
+        {
+            // Services often share one process (svchost) with other services: killing it stops them all.
+            Tell("This is a Windows service, often sharing its process with other services, so WinSolve won't close it. Use 'Delete at next restart' instead.", warning: true);
+            return;
+        }
         if (!Ask($"Close {p.Name}? Unsaved work in it will be lost.", danger: true)) return;
         try
         {
@@ -343,7 +349,7 @@ internal sealed class ShredDialog : ToolDialog
 
     private void AddFiles()
     {
-        using var dlg = new OpenFileDialog { Multiselect = true, Title = Loc.T("Files to shred") };
+        using var dlg = new OpenFileDialog { Multiselect = true, Title = Loc.T("Files to shred"), DereferenceLinks = false };
         if (dlg.ShowDialog(this) == DialogResult.OK) foreach (var f in dlg.FileNames) if (!_list.Items.Contains(f)) _list.Items.Add(f);
     }
 
@@ -385,6 +391,7 @@ internal sealed class NetworkDialog : ToolDialog
     private readonly DataGridView _adapters = Grid(("name", "Adapter", 150), ("type", "Type", 80), ("ip", "IPv4", 100), ("gw", "Gateway", 100), ("dns", "DNS", 140), ("speed", "Link", 70));
     private readonly DataGridView _results = Grid(("what", "Test", 150), ("value", "Result", 250));
     private readonly FlatBtn _run;
+    private CancellationTokenSource? _cts;
 
     public NetworkDialog() : base("", "Network test",
         "Latency to your router and the internet, download and upload speed and your public IP. The speed test uses Cloudflare's servers.", new Size(900, 620))
@@ -399,6 +406,8 @@ internal sealed class NetworkDialog : ToolDialog
         AddRow(adapters);
         Theme.EmptyState(_results, "Select Run test.");
         Shown += (_, _) => FillAdapters();
+        // Closing the window stops the test instead of leaving downloads running in the background.
+        FormClosing += (_, _) => _cts?.Cancel();
     }
 
     private void FillAdapters()
@@ -411,6 +420,8 @@ internal sealed class NetworkDialog : ToolDialog
     {
         _run.Enabled = false;
         _results.Rows.Clear();
+        _cts = new CancellationTokenSource();
+        var ct = _cts.Token;
         void Row(string what, string value) => _results.Rows.Add(Loc.T(what), value);
         try
         {
@@ -422,16 +433,21 @@ internal sealed class NetworkDialog : ToolDialog
             foreach (var (host, label) in targets)
             {
                 Status.Text = Loc.T($"Pinging {label}...");
-                var p = await NetworkTest.PingAsync(host, label, 10, CancellationToken.None);
+                var p = await NetworkTest.PingAsync(host, label, 10, ct);
                 Row($"Ping {label}", p.AvgMs is { } avg ? $"{avg:0} ms  ·  jitter {p.JitterMs:0} ms  ·  {p.LossPercent}% lost" : "No reply");
             }
             Status.Text = Loc.T("Measuring download speed...");
-            Row("Download", $"{await NetworkTest.DownloadMbpsAsync(CancellationToken.None):0.0} Mbps");
+            var down = await NetworkTest.DownloadMbpsAsync(ct);
+            Row("Download", $"{down:0.0} Mbps");
             Status.Text = Loc.T("Measuring upload speed...");
-            Row("Upload", $"{await NetworkTest.UploadMbpsAsync(CancellationToken.None):0.0} Mbps");
-            var (ip, country) = await NetworkTest.PublicIpAsync(CancellationToken.None);
+            Row("Upload", $"{await NetworkTest.UploadMbpsAsync(down, ct):0.0} Mbps");
+            var (ip, country) = await NetworkTest.PublicIpAsync(ct);
             Row("Public IP", $"{ip}  ·  {country}");
             Status.Text = Loc.T("Done.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return; // window closed
         }
         catch (Exception ex)
         {
@@ -439,7 +455,9 @@ internal sealed class NetworkDialog : ToolDialog
         }
         finally
         {
-            _run.Enabled = true;
+            _cts?.Dispose();
+            _cts = null;
+            if (!IsDisposed) _run.Enabled = true;
         }
     }
 }
@@ -507,7 +525,7 @@ internal sealed class HostsDialog : ToolDialog
         Buttons.Controls.Add(Theme.Button("Save", async (_, _) => await SaveAsync(), primary: true, glyph: ""));
         Buttons.Controls.Add(Theme.Button("Restore Windows default", (_, _) =>
         {
-            if (Ask("Replace the content with the Windows default? (Save to apply.)")) _text.Text = HostsFile.WindowsDefault.Replace("\n", "\r\n");
+            if (Ask("Replace the content with the Windows default? (Save to apply.)")) _text.Text = HostsFile.WindowsDefault.ReplaceLineEndings("\r\n");
         }));
         Shown += (_, _) =>
         {

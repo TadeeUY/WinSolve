@@ -120,14 +120,16 @@ public static class LockFinder
             if (err != 0) throw new System.ComponentModel.Win32Exception(err);
 
             uint needed = 0, count = 0, reasons = 0;
-            err = RmGetList(session, out needed, ref count, null, ref reasons);
-            if (err == 0) return result;
-            if (err != ERROR_MORE_DATA) throw new System.ComponentModel.Win32Exception(err);
-
-            var infos = new RM_PROCESS_INFO[needed];
-            count = needed;
-            err = RmGetList(session, out needed, ref count, infos, ref reasons);
-            if (err != 0) throw new System.ComponentModel.Win32Exception(err);
+            var infos = Array.Empty<RM_PROCESS_INFO>();
+            // The list can grow between the calls when another program opens the file meanwhile.
+            for (int attempt = 0; ; attempt++)
+            {
+                count = (uint)infos.Length;
+                err = RmGetList(session, out needed, ref count, infos.Length == 0 ? null : infos, ref reasons);
+                if (err == 0) break;
+                if (err != ERROR_MORE_DATA || attempt == 5) throw new System.ComponentModel.Win32Exception(err);
+                infos = new RM_PROCESS_INFO[needed + 4];
+            }
 
             for (int i = 0; i < count; i++)
             {
@@ -206,7 +208,7 @@ public static class SecureDelete
             var full = Path.GetFullPath(p);
             if (Directory.Exists(full))
             {
-                if (SafePath.IsProtectedFolder(full) || SafePath.HasReparsePoint(full))
+                if (SafePath.IsProtectedFolder(full) || InsideProgramOrSystemFolder(full) || SafePath.HasReparsePoint(full))
                 {
                     log($"Skipped {full}: protected location or link.");
                     continue;
@@ -217,7 +219,8 @@ public static class SecureDelete
             else if (File.Exists(full))
             {
                 var parent = Path.GetDirectoryName(full)!;
-                if (SafePath.IsProtectedFolder(parent) && !SafePath.IsSameOrInside(parent, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)))
+                if ((SafePath.IsProtectedFolder(parent) && !SafePath.IsSameOrInside(parent, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)))
+                    || InsideProgramOrSystemFolder(full))
                 {
                     log($"Skipped {full}: inside a system or program folder.");
                     continue;
@@ -227,6 +230,7 @@ public static class SecureDelete
         }
 
         var done = 0;
+        var failed = new List<string>();
         var buffer = new byte[1 << 20];
         for (int i = 0; i < files.Count; i++)
         {
@@ -258,14 +262,37 @@ public static class SecureDelete
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 log($"Could not shred {f}: {ex.Message}");
+                failed.Add(f);
             }
             progress(i + 1, files.Count);
         }
         foreach (var d in dirs)
         {
+            // A folder with a file that couldn't be overwritten stays: deleting it would remove that
+            // file without wiping it, and it could be recovered.
+            if (failed.Any(f => SafePath.IsSameOrInside(f, d)))
+            {
+                log($"Kept {d}: some files in it could not be shredded.");
+                continue;
+            }
             try { Directory.Delete(d, recursive: true); } catch { }
         }
         return done;
+    }
+
+    /// <summary>Program Files, ProgramData and Windows: shredding there breaks programs or Windows.</summary>
+    private static bool InsideProgramOrSystemFolder(string path)
+    {
+        foreach (var folder in new[]
+        {
+            Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86,
+            Environment.SpecialFolder.CommonApplicationData, Environment.SpecialFolder.Windows,
+        })
+        {
+            var f = Environment.GetFolderPath(folder);
+            if (f.Length > 0 && SafePath.IsSameOrInside(path, f)) return true;
+        }
+        return false;
     }
 }
 
@@ -277,7 +304,7 @@ public sealed record AdapterInfo(string Name, string Type, string IPv4, string G
 
 public static class NetworkTest
 {
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) };
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(3) };
 
     public static List<AdapterInfo> Adapters() =>
         NetworkInterface.GetAllNetworkInterfaces()
@@ -339,9 +366,12 @@ public static class NetworkTest
     }
 
     /// <summary>Upload speed in Mbit/s.</summary>
-    public static async Task<double> UploadMbpsAsync(CancellationToken ct)
+    /// <param name="downloadMbps">Sizes the upload so slow connections finish in a few seconds too.</param>
+    public static async Task<double> UploadMbpsAsync(double downloadMbps, CancellationToken ct)
     {
-        var data = new byte[10_000_000];
+        // Uploads are usually slower than downloads: aim for ~8 s at a quarter of the download speed.
+        var size = (int)Math.Clamp(downloadMbps / 4 * 1_000_000 / 8 * 8, 1_000_000, 10_000_000);
+        var data = new byte[size];
         RandomNumberGenerator.Fill(data);
         var sw = Stopwatch.StartNew();
         using var content = new ByteArrayContent(data);
@@ -488,10 +518,10 @@ public static class HostsFile
     /// <summary>Saves (keeping a timestamped backup next to it) and flushes the DNS cache.</summary>
     public static async Task<string> SaveAsync(string text)
     {
-        var backup = PathName + $".winsolve-{DateTime.Now:yyyyMMdd-HHmmss}.bak";
-        if (File.Exists(PathName)) File.Copy(PathName, backup, overwrite: false);
+        var backup = PathName + $".winsolve-{DateTime.Now:yyyyMMdd-HHmmss-fff}.bak";
+        if (File.Exists(PathName) && !File.Exists(backup)) File.Copy(PathName, backup, overwrite: false);
         var tmp = PathName + ".winsolve-new";
-        await File.WriteAllTextAsync(tmp, text.Replace("\r\n", "\n").Replace("\n", "\r\n"), new UTF8Encoding(false));
+        await File.WriteAllTextAsync(tmp, text.ReplaceLineEndings("\r\n"), new UTF8Encoding(false));
         File.Move(tmp, PathName, overwrite: true);
         await ProcessRunner.RunAsync("ipconfig.exe", "/flushdns");
         return backup;
@@ -518,6 +548,7 @@ public sealed class ContextMenuEntry
     public required bool IsHandler { get; init; }
     public required string RegistryPath { get; init; }
     public string? Clsid { get; init; }
+    public RegistryHive Hive { get; init; } = RegistryHive.LocalMachine;
     public bool Enabled { get; set; }
 }
 
@@ -543,51 +574,82 @@ public static class ContextMenuItems
         "format", "share", "copyaspath", "WSL", "TakeOwnership", "Windows.ModernShare",
     };
 
+    // The signed-in user's own classes (per-user installs such as VS Code) and the machine's.
+    // Not HKEY_CLASSES_ROOT: when WinSolve was elevated with another account it merges that
+    // administrator's classes instead of the user's.
+    private static RegistryKey? OpenClasses(RegistryHive hive, bool writable = false)
+    {
+        if (hive == RegistryHive.LocalMachine) return Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Classes", writable);
+        using var user = Reg.Root(RegistryHive.CurrentUser);
+        return user.OpenSubKey(@"Software\Classes", writable);
+    }
+
+    private static readonly RegistryHive[] Hives = [RegistryHive.CurrentUser, RegistryHive.LocalMachine];
+
     public static List<ContextMenuEntry> List()
     {
         var entries = new List<ContextMenuEntry>();
         var blocked = BlockedSet();
-        foreach (var (root, label) in Roots)
+        foreach (var hive in Hives)
         {
-            using var shell = Registry.ClassesRoot.OpenSubKey($@"{root}\shell");
-            if (shell is not null)
+            using var classes = OpenClasses(hive);
+            if (classes is null) continue;
+            foreach (var (root, label) in Roots)
             {
-                foreach (var verb in shell.GetSubKeyNames())
+                using var shell = classes.OpenSubKey($@"{root}\shell");
+                if (shell is not null)
                 {
-                    if (BuiltInVerbs.Contains(verb)) continue;
-                    using var k = shell.OpenSubKey(verb);
-                    if (k is null) continue;
-                    var name = ResolveName(k.GetValue("MUIVerb") as string ?? k.GetValue("") as string) ?? verb;
-                    var command = k.OpenSubKey("command")?.GetValue("") as string ?? "";
-                    if (command.Contains(@"\Windows\", StringComparison.OrdinalIgnoreCase) && !command.Contains("Program", StringComparison.OrdinalIgnoreCase)) continue;
+                    foreach (var verb in shell.GetSubKeyNames())
+                    {
+                        if (BuiltInVerbs.Contains(verb)) continue;
+                        using var k = shell.OpenSubKey(verb);
+                        if (k is null) continue;
+                        var name = ResolveName(k.GetValue("MUIVerb") as string ?? k.GetValue("") as string) ?? verb;
+                        using var commandKey = k.OpenSubKey("command");
+                        var command = commandKey?.GetValue("") as string ?? "";
+                        if (command.Contains(@"\Windows\", StringComparison.OrdinalIgnoreCase) && !command.Contains("Program", StringComparison.OrdinalIgnoreCase)) continue;
+                        entries.Add(new ContextMenuEntry
+                        {
+                            Name = name.Replace("&", ""), Where = label, Source = ProgramOf(command) ?? verb, IsHandler = false,
+                            RegistryPath = $@"{root}\shell\{verb}", Hive = hive, Enabled = k.GetValue("LegacyDisable") is null,
+                        });
+                    }
+                }
+
+                using var handlers = classes.OpenSubKey($@"{root}\shellex\ContextMenuHandlers");
+                if (handlers is null) continue;
+                foreach (var h in handlers.GetSubKeyNames())
+                {
+                    using var hk = handlers.OpenSubKey(h);
+                    var clsid = (h.StartsWith('{') ? h : hk?.GetValue("") as string)?.Trim();
+                    if (string.IsNullOrEmpty(clsid) || !clsid.StartsWith('{')) continue;
+                    var (clsName, dll) = DescribeClsid(clsid);
+                    if (dll.Length == 0 || dll.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.Windows), StringComparison.OrdinalIgnoreCase)) continue;
                     entries.Add(new ContextMenuEntry
                     {
-                        Name = name.Replace("&", ""), Where = label, Source = ProgramOf(command) ?? verb, IsHandler = false,
-                        RegistryPath = $@"{root}\shell\{verb}", Enabled = k.GetValue("LegacyDisable") is null,
+                        Name = clsName is { Length: > 0 } n ? n : h, Where = label, Source = ProgramOf(dll) ?? Path.GetFileName(dll),
+                        IsHandler = true, RegistryPath = $@"{root}\shellex\ContextMenuHandlers\{h}", Hive = hive, Clsid = clsid,
+                        Enabled = !blocked.Contains(clsid),
                     });
                 }
             }
-
-            using var handlers = Registry.ClassesRoot.OpenSubKey($@"{root}\shellex\ContextMenuHandlers");
-            if (handlers is null) continue;
-            foreach (var h in handlers.GetSubKeyNames())
-            {
-                using var hk = handlers.OpenSubKey(h);
-                var clsid = (h.StartsWith('{') ? h : hk?.GetValue("") as string)?.Trim();
-                if (string.IsNullOrEmpty(clsid) || !clsid.StartsWith('{')) continue;
-                using var cls = Registry.ClassesRoot.OpenSubKey($@"CLSID\{clsid}");
-                var dll = cls?.OpenSubKey("InprocServer32")?.GetValue("") as string ?? "";
-                dll = Environment.ExpandEnvironmentVariables(dll);
-                if (dll.Length == 0 || dll.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.Windows), StringComparison.OrdinalIgnoreCase)) continue;
-                entries.Add(new ContextMenuEntry
-                {
-                    Name = (cls?.GetValue("") as string) is { Length: > 0 } n ? n : h, Where = label, Source = ProgramOf(dll) ?? Path.GetFileName(dll),
-                    IsHandler = true, RegistryPath = $@"{root}\shellex\ContextMenuHandlers\{h}", Clsid = clsid,
-                    Enabled = !blocked.Contains(clsid),
-                });
-            }
         }
-        return entries.DistinctBy(e => e.Clsid ?? e.RegistryPath).OrderBy(e => e.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        return entries.DistinctBy(e => e.Clsid ?? e.Hive + e.RegistryPath).OrderBy(e => e.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
+    /// <summary>Name and DLL of a shell extension; the user's registration wins, like in Windows.</summary>
+    private static (string? Name, string Dll) DescribeClsid(string clsid)
+    {
+        foreach (var hive in Hives)
+        {
+            using var classes = OpenClasses(hive);
+            using var cls = classes?.OpenSubKey($@"CLSID\{clsid}");
+            if (cls is null) continue;
+            using var server = cls.OpenSubKey("InprocServer32");
+            var dll = Environment.ExpandEnvironmentVariables(server?.GetValue("") as string ?? "");
+            return (cls.GetValue("") as string, dll);
+        }
+        return (null, "");
     }
 
     public static void SetEnabled(ContextMenuEntry e, bool enabled)
@@ -600,7 +662,8 @@ public static class ContextMenuItems
         }
         else
         {
-            using var key = Registry.ClassesRoot.OpenSubKey(e.RegistryPath, writable: true) ?? throw new InvalidOperationException("The entry no longer exists.");
+            using var classes = OpenClasses(e.Hive, writable: true);
+            using var key = classes?.OpenSubKey(e.RegistryPath, writable: true) ?? throw new InvalidOperationException("The entry no longer exists.");
             if (enabled) key.DeleteValue("LegacyDisable", throwOnMissingValue: false);
             else key.SetValue("LegacyDisable", "", RegistryValueKind.String);
         }

@@ -136,7 +136,7 @@ public sealed class SettingsPage : Page
                     try
                     {
                         // The default schedule is Off: remove the scheduled task too, not just the setting.
-                        if (AppSettings.Current.MaintenanceSchedule != "Off") await Maintenance.ApplyScheduleAsync("Off");
+                        if (AppSettings.Current.MaintenanceSchedule != "Off" && !Edition.IsPortable) await Maintenance.ApplyScheduleAsync("Off");
                         AppSettings.Reset();
                         ErrorMonitor.Instance.Apply();
                         if (!Main.Reload("settings")) Info(RestartToApply);
@@ -278,11 +278,13 @@ public sealed class SettingsPage : Page
         s.CloseToTray = _tray.Checked;
         s.Animations = _animations.Checked;
         s.CheckForUpdates = _updates.Checked || _autoUpdate.Checked;
-        s.AutoInstallUpdates = _autoUpdate.Checked;
+        // The portable build shares settings.json with an installed copy on the same PC: it never
+        // touches the installed copy's scheduled task or automatic updates.
+        if (!Edition.IsPortable) s.AutoInstallUpdates = _autoUpdate.Checked;
         var languageChanged = s.Language != (_language.SelectedIndex == 1 ? "es" : "en");
         s.Language = _language.SelectedIndex == 1 ? "es" : "en";
         var schedule = _schedule.SelectedItem as string ?? "Off";
-        if (schedule != s.MaintenanceSchedule)
+        if (!Edition.IsPortable && schedule != s.MaintenanceSchedule)
         {
             if (await Maintenance.ApplyScheduleAsync(schedule)) s.MaintenanceSchedule = schedule;
             else

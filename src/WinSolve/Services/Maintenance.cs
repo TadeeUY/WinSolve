@@ -91,7 +91,7 @@ public static class Maintenance
     public static async Task UpgradeTaskAsync()
     {
         var s = AppSettings.Current;
-        if (s.MaintenanceSchedule == "Off" || s.MaintenanceTaskFormat >= CurrentTaskFormat || !Admin.IsElevated) return;
+        if (Edition.IsPortable || s.MaintenanceSchedule == "Off" || s.MaintenanceTaskFormat >= CurrentTaskFormat || !Admin.IsElevated) return;
         if (!await ApplyScheduleAsync(s.MaintenanceSchedule))
             Logger.Write("Could not update the scheduled maintenance task.");
     }

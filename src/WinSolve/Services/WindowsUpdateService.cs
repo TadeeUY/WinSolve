@@ -164,7 +164,7 @@ public static class WindowsUpdateService
 
     private const uint ROLLBACK_FLAG_NO_UI = 0x1;
     private const int ERROR_FILE_NOT_FOUND = 2, ERROR_NO_MORE_ITEMS = 259;
-    private const int ERROR_NO_DRIVER_SELECTED = unchecked((int)0xE0000203), ERROR_NO_BACKUP = unchecked((int)0xE0000215);
+    private const int ERROR_NO_DRIVER_SELECTED = unchecked((int)0xE0000203), ERROR_NO_BACKUP = unchecked((int)0xE0000103);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct SP_DEVINFO_DATA

@@ -1216,7 +1216,7 @@ public static class Spanish
         ["{0} freed. Files in use were skipped."] = "Se liberaron {0}. Se saltearon los archivos en uso.",
         ["There was nothing left to clean."] = "No quedaba nada para limpiar.",
         ["Memory freed"] = "Memoria liberada",
-        ["{0} released from the cache. {1} of {2} is now available."] = "Se liberaron {0} de la caché. Ahora hay {1} disponibles de {2}.",
+        ["{0} released from the cache. {1} of {2} is now free."] = "Se liberaron {0} de la caché. Ahora hay {1} libres de {2}.",
         ["ipconfig couldn't flush the DNS cache."] = "ipconfig no pudo vaciar la caché DNS.",
         ["DNS cache flushed"] = "Caché DNS vaciada",
         ["Websites will be looked up again from scratch."] = "Los sitios web se van a buscar de nuevo desde cero.",
@@ -1340,5 +1340,7 @@ public static class Spanish
         ["Capacity over time"] = "Capacidad a lo largo del tiempo",
         ["Windows hasn't recorded enough history yet."] = "Windows todavía no guardó suficiente historial.",
         ["Windows could not create the battery report."] = "Windows no pudo crear el informe de batería.",
+        ["This is a Windows service, often sharing its process with other services, so WinSolve won't close it. Use 'Delete at next restart' instead."] = "Es un servicio de Windows, que suele compartir su proceso con otros servicios, así que WinSolve no lo cierra. Usa 'Borrar al reiniciar' en su lugar.",
+        ["Kept {0}: some files in it could not be shredded."] = "Se conservó {0}: algunos archivos no se pudieron triturar.",
     };
 }
