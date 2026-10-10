@@ -24,6 +24,9 @@ namespace WinSolve.Setup
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            var langIndex = Array.IndexOf(args, "--lang");
+            if (langIndex >= 0 && langIndex + 1 < args.Length) Lang.Spanish = args[langIndex + 1] == "es";
+
             if (args.Contains("--uninstall"))
             {
                 Uninstall(args);
@@ -55,15 +58,15 @@ namespace WinSolve.Setup
             if (!quiet)
             {
                 var answer = MessageBox.Show(
-                    "Remove WinSolve from this PC?\n\nSelect Yes to also delete WinSolve's settings and logs, or No to keep them.",
-                    "Uninstall WinSolve", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                    Lang.T("Remove WinSolve from this PC?\n\nSelect Yes to also delete WinSolve's settings and logs, or No to keep them."),
+                    Lang.T("Uninstall WinSolve"), MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
                 if (answer == DialogResult.Cancel) return;
                 removeData = answer == DialogResult.Yes;
             }
 
             Installer.Uninstall(allUsers, removeData, _ => { });
             if (!quiet)
-                MessageBox.Show("WinSolve was removed.", "Uninstall WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(Lang.T("WinSolve was removed."), Lang.T("Uninstall WinSolve"), MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 }

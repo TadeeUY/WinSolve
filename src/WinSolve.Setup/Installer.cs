@@ -21,11 +21,14 @@ namespace WinSolve.Setup
         public string UpdateDir;
         /// <summary>Process id of the WinSolve that started the update; setup waits for it to exit.</summary>
         public int WaitPid;
+        /// <summary>"es" or "en" picked in the installer; WinSolve opens in it. Null keeps WinSolve's own setting.</summary>
+        public string Language;
 
         public string ToArgs() =>
             "--install" + (AllUsers ? " --allusers" : "") + (Clean ? " --clean" : "") +
             (DesktopShortcut ? " --desktop" : "") + (Launch ? " --launch" : "") +
-            (UpdateDir != null ? " --update-dir \"" + UpdateDir + "\"" : "") + (WaitPid > 0 ? " --wait " + WaitPid : "");
+            (UpdateDir != null ? " --update-dir \"" + UpdateDir + "\"" : "") + (WaitPid > 0 ? " --wait " + WaitPid : "") +
+            (Language != null ? " --lang " + Language : "");
 
         public static InstallOptions FromArgs(string[] args)
         {
@@ -43,6 +46,7 @@ namespace WinSolve.Setup
                 Launch = args.Contains("--launch"),
                 UpdateDir = Value("--update-dir"),
                 WaitPid = pid,
+                Language = Value("--lang") is string l && (l == "es" || l == "en") ? l : null,
             };
         }
     }
@@ -103,7 +107,7 @@ namespace WinSolve.Setup
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | (SecurityProtocolType)12288 /* TLS 1.3 */;
             // Unpredictable name, created fresh, so nothing can be planted in its place.
             var file = Path.Combine(Path.GetTempPath(), "WinSolve-dotnet-" + Guid.NewGuid().ToString("N") + ".exe");
-            status("Downloading the .NET 8 Desktop Runtime from Microsoft...");
+            status(Lang.T("Downloading the .NET 8 Desktop Runtime from Microsoft..."));
             using (var wc = new WebClient())
             {
                 wc.DownloadProgressChanged += (s, e) => progress(e.ProgressPercentage);
@@ -118,7 +122,7 @@ namespace WinSolve.Setup
                 if (!Signature.IsSignedBy(file, "Microsoft Corporation"))
                     throw new InvalidOperationException("The downloaded .NET runtime is not signed by Microsoft. Installation stopped.");
 
-                status("Installing the .NET 8 Desktop Runtime...");
+                status(Lang.T("Installing the .NET 8 Desktop Runtime..."));
                 var psi = new ProcessStartInfo(file, "/install /quiet /norestart") { UseShellExecute = true };
                 if (!IsElevated) psi.Verb = "runas";
                 using (var p = Process.Start(psi))
@@ -141,7 +145,7 @@ namespace WinSolve.Setup
                 InstallRuntime(status, p => progress(5 + p * 60 / 100), ct);
             progress(65);
 
-            status("Closing WinSolve if it is running...");
+            status(Lang.T("Closing WinSolve if it is running..."));
             // The updater passes its own process id: let it exit by itself (tray icon, settings).
             if (o.WaitPid > 0)
             {
@@ -152,7 +156,7 @@ namespace WinSolve.Setup
 
             if (o.Clean)
             {
-                status("Removing the previous installation and settings...");
+                status(Lang.T("Removing the previous installation and settings..."));
                 RemoveInstallation(allUsers: false, removeData: true, status);
                 if (IsElevated) RemoveInstallation(allUsers: true, removeData: true, status);
             }
@@ -163,7 +167,7 @@ namespace WinSolve.Setup
             // profile, so the per-user folder computed here would be the wrong account's.
             var updateDir = ValidUpdateDir(o.UpdateDir);
             var dir = updateDir ?? InstallDir(o.AllUsers);
-            status($"Copying files to {dir}...");
+            status(Lang.F("Copying files to {0}...", dir));
             Directory.CreateDirectory(dir);
             var exe = Path.Combine(dir, ExeName);
             // Write next to the old file, then swap: a failure (disk full, file locked) leaves the
@@ -187,16 +191,16 @@ namespace WinSolve.Setup
             {
                 // Shortcuts and the uninstall entry already exist for the right account.
                 progress(100);
-                status("WinSolve was updated successfully.");
+                status(Lang.T("WinSolve was updated successfully."));
                 return;
             }
 
-            status("Creating shortcuts...");
+            status(Lang.T("Creating shortcuts..."));
             Shortcuts.Create(Path.Combine(StartMenuDir(o.AllUsers), AppName + ".lnk"), exe, dir, "Windows diagnostics, repair and optimization");
             if (o.DesktopShortcut)
                 Shortcuts.Create(Path.Combine(DesktopDir(o.AllUsers), AppName + ".lnk"), exe, dir, "Windows diagnostics, repair and optimization");
 
-            status("Registering the uninstaller...");
+            status(Lang.T("Registering the uninstaller..."));
             using (var root = Hive(o.AllUsers))
             using (var key = root.CreateSubKey(UninstallKey))
             {
@@ -213,13 +217,13 @@ namespace WinSolve.Setup
                 key.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
             }
             progress(100);
-            status("WinSolve was installed successfully.");
+            status(Lang.T("WinSolve was installed successfully."));
         }
 
         public static void LaunchApp(InstallOptions o)
         {
             var exe = Path.Combine(ValidUpdateDir(o.UpdateDir) ?? InstallDir(o.AllUsers), ExeName);
-            try { Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true }); } catch { /* UAC declined */ }
+            try { Process.Start(new ProcessStartInfo(exe, o.Language != null ? "--lang " + o.Language : "") { UseShellExecute = true }); } catch { /* UAC declined */ }
         }
 
         // ═══════════════════ Uninstall ═══════════════════
@@ -258,7 +262,7 @@ namespace WinSolve.Setup
             if (self.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase))
             {
                 // We are running from the folder being removed: delete it after this process exits.
-                status("Files will be removed when the uninstaller closes.");
+                status(Lang.T("Files will be removed when the uninstaller closes."));
                 // Wait for this process to really exit (the user may leave the final message open),
                 // then remove the folder.
                 var pid = Process.GetCurrentProcess().Id;

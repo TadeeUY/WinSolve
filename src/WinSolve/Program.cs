@@ -53,6 +53,14 @@ internal static class Program
             return;
         }
 
+        // Language picked in the installer ("--lang es").
+        var langIndex = Array.FindIndex(args, a => a.Equals("--lang", StringComparison.OrdinalIgnoreCase));
+        if (langIndex >= 0 && langIndex + 1 < args.Length && args[langIndex + 1] is "es" or "en" && AppSettings.Current.Language != args[langIndex + 1])
+        {
+            AppSettings.Current.Language = args[langIndex + 1];
+            AppSettings.Current.Save();
+        }
+
         var startHidden = args.Any(a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
         if (!startHidden) SplashScreen.Show("Starting...");
         Application.Run(new MainForm(startHidden));

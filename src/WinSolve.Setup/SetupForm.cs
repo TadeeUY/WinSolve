@@ -25,6 +25,8 @@ namespace WinSolve.Setup
         private readonly Label _status;
         private readonly ProgressBar _progress;
         private readonly Panel _options;
+        private readonly Label _title, _subtitle, _scopeLabel, _meDetail, _allDetail, _languageLabel;
+        private readonly ComboBox _language;
         private readonly bool _autoStart;
         private CancellationTokenSource _cts;
         private bool _done;
@@ -35,7 +37,7 @@ namespace WinSolve.Setup
         {
             _preset = preset;
             _autoStart = autoStart;
-            Text = "WinSolve Setup";
+            if (preset.Language != null) Lang.Spanish = preset.Language == "es";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -55,34 +57,37 @@ namespace WinSolve.Setup
                 BackColor = Color.Transparent,
             };
             try { logo.Image = new Icon(Icon.ExtractAssociatedIcon(Application.ExecutablePath), 48, 48).ToBitmap(); } catch { }
-            var title = new Label
+            _title = new Label { Font = new Font("Segoe UI", 18f, FontStyle.Bold), AutoSize = true, Location = new Point(76, 20) };
+            _subtitle = new Label { ForeColor = Muted, AutoSize = true, Location = new Point(78, 60) };
+
+            // Language of the installer, and of WinSolve when it opens.
+            _languageLabel = new Label { ForeColor = Muted, AutoSize = true, Location = new Point(392, 10), Font = new Font("Segoe UI", 8.5f) };
+            _language = new ComboBox
             {
-                Text = autoStart && preset.Launch ? "Updating WinSolve" : "Install WinSolve",
-                Font = new Font("Segoe UI", 18f, FontStyle.Bold), AutoSize = true, Location = new Point(76, 20),
+                DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(392, 28), Width = 100,
+                FlatStyle = FlatStyle.Flat, BackColor = Card, ForeColor = TextColor,
             };
-            var subtitle = new Label
-            {
-                Text = $"Version {Installer.Version}  ·  Windows diagnostics, repair and optimization",
-                ForeColor = Muted, AutoSize = true, Location = new Point(78, 60),
-            };
+            _language.Items.AddRange(new object[] { "English", "Español" });
+            _language.SelectedIndex = Lang.Spanish ? 1 : 0;
+            _language.SelectedIndexChanged += (s, e) => { Lang.Spanish = _language.SelectedIndex == 1; ApplyTexts(); };
 
             _options = new Panel { Location = new Point(28, 96), Size = new Size(464, 228), BackColor = Card };
             _options.Paint += (s, e) => PaintCard(e.Graphics, _options.ClientRectangle);
 
-            var scopeLabel = new Label { Text = "Install for", Font = new Font("Segoe UI", 9.5f, FontStyle.Bold), AutoSize = true, Location = new Point(16, 12), BackColor = Card };
-            _me = Radio("Only me", "Installs in your user folder  ·  " + Shorten(Installer.PerUserDir), 36);
-            _all = Radio("All users of this PC (recommended)", "Protected from tampering, requires administrator  ·  " + Installer.AllUsersDir, 84);
+            _scopeLabel = new Label { Font = new Font("Segoe UI", 9.5f, FontStyle.Bold), AutoSize = true, Location = new Point(16, 12), BackColor = Card };
+            _me = Radio(36, out _meDetail);
+            _all = Radio(84, out _allDetail);
             _me.Checked = !preset.AllUsers;
             _all.Checked = preset.AllUsers;
 
-            _clean = Check("Clean install (remove any previous version, settings and logs)", preset.Clean, 140);
-            _desktop = Check("Create a desktop shortcut", preset.DesktopShortcut, 166);
-            _launch = Check("Open WinSolve when setup finishes", preset.Launch, 192);
+            _clean = Check(preset.Clean, 140);
+            _desktop = Check(preset.DesktopShortcut, 166);
+            _launch = Check(preset.Launch, 192);
 
-            _options.Controls.AddRange(new Control[] { scopeLabel, _me, _all, _clean, _desktop, _launch });
+            _options.Controls.AddRange(new Control[] { _scopeLabel, _me, _all, _clean, _desktop, _launch });
 
-            _status = new Label { Text = Installer.IsRuntimeInstalled() ? "Ready to install." : "The .NET 8 Desktop Runtime will be downloaded from Microsoft (about 55 MB).", ForeColor = Muted, AutoSize = false, Location = new Point(28, 334), Size = new Size(464, 20) };
-            _progress = new ProgressBar { Location = new Point(28, 356), Size = new Size(464, 4), Style = ProgressBarStyle.Continuous, Visible = false };
+            _status = new Label { ForeColor = Muted, AutoSize = false, Location = new Point(28, 330), Size = new Size(464, 36) };
+            _progress = new ProgressBar { Location = new Point(28, 364), Size = new Size(464, 4), Style = ProgressBarStyle.Continuous, Visible = false };
 
             _install = FlatButton("Install", primary: true);
             _install.Location = new Point(392, 372);
@@ -91,26 +96,49 @@ namespace WinSolve.Setup
             _cancel.Location = new Point(284, 372);
             _cancel.Click += (s, e) => { if (_cts != null) _cts.Cancel(); else Close(); };
 
-            Controls.AddRange(new Control[] { logo, title, subtitle, _options, _status, _progress, _install, _cancel });
+            Controls.AddRange(new Control[] { logo, _title, _subtitle, _languageLabel, _language, _options, _status, _progress, _install, _cancel });
+            // While updating, the window just shows progress: no language choice.
+            _language.Visible = _languageLabel.Visible = !autoStart;
+            ApplyTexts();
             AcceptButton = _install;
 
             HandleCreated += (s, e) => DarkTitleBar(Handle);
             Shown += async (s, e) => { if (_autoStart) await RunInstall(); };
         }
 
+        private void ApplyTexts()
+        {
+            Text = Lang.T("WinSolve Setup");
+            _title.Text = Lang.T(_autoStart && _preset.Launch ? "Updating WinSolve" : "Install WinSolve");
+            _subtitle.Text = Lang.F("Version {0}  ·  The multitool for Windows", Installer.Version);
+            _languageLabel.Text = Lang.T("Language");
+            _scopeLabel.Text = Lang.T("Install for");
+            _me.Text = Lang.T("Only me");
+            _meDetail.Text = Lang.F("Installs in your user folder  ·  {0}", Shorten(Installer.PerUserDir));
+            _all.Text = Lang.T("All users of this PC (recommended)");
+            _allDetail.Text = Lang.F("Protected from tampering, requires administrator  ·  {0}", Installer.AllUsersDir);
+            _clean.Text = Lang.T("Clean install (remove any previous version, settings and logs)");
+            _desktop.Text = Lang.T("Create a desktop shortcut");
+            _launch.Text = Lang.T("Open WinSolve when setup finishes");
+            if (_cts == null && !_done)
+                _status.Text = Lang.T(Installer.IsRuntimeInstalled() ? "Ready to install." : "The .NET 8 Desktop Runtime will be downloaded from Microsoft (about 55 MB).");
+            _install.Text = Lang.T(_done ? "Finish" : "Install");
+            _cancel.Text = Lang.T("Cancel");
+        }
+
         private static string Shorten(string path)
             => path.Replace(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "%USERPROFILE%");
 
-        private RadioButton Radio(string text, string detail, int top)
+        private RadioButton Radio(int top, out Label detail)
         {
-            var rb = new RadioButton { Text = text, AutoSize = true, Location = new Point(18, top), BackColor = Card, ForeColor = TextColor };
-            var d = new Label { Text = detail, AutoSize = true, ForeColor = Muted, Location = new Point(36, top + 22), BackColor = Card, Font = new Font("Segoe UI", 8.5f) };
-            _options.Controls.Add(d);
+            var rb = new RadioButton { AutoSize = true, Location = new Point(18, top), BackColor = Card, ForeColor = TextColor };
+            detail = new Label { AutoSize = true, ForeColor = Muted, Location = new Point(36, top + 22), BackColor = Card, Font = new Font("Segoe UI", 8.5f) };
+            _options.Controls.Add(detail);
             return rb;
         }
 
-        private static CheckBox Check(string text, bool value, int top)
-            => new CheckBox { Text = text, Checked = value, AutoSize = true, Location = new Point(18, top), BackColor = Card, ForeColor = TextColor };
+        private static CheckBox Check(bool value, int top)
+            => new CheckBox { Checked = value, AutoSize = true, Location = new Point(18, top), BackColor = Card, ForeColor = TextColor };
 
         private static Button FlatButton(string text, bool primary)
         {
@@ -141,6 +169,8 @@ namespace WinSolve.Setup
             Launch = _launch.Checked,
             UpdateDir = _preset.UpdateDir,
             WaitPid = _preset.WaitPid,
+            // An automatic update keeps WinSolve's own language setting.
+            Language = _autoStart ? _preset.Language : Lang.Code,
         };
 
         private async Task RunInstall()
@@ -157,12 +187,13 @@ namespace WinSolve.Setup
                 }
                 catch (System.ComponentModel.Win32Exception)
                 {
-                    _status.Text = "Administrator permission is required to install for all users.";
+                    _status.Text = Lang.T("Administrator permission is required to install for all users.");
                 }
                 return;
             }
 
             _options.Enabled = false;
+            _language.Enabled = false;
             _install.Enabled = false;
             _progress.Visible = true;
             _cts = new CancellationTokenSource();
@@ -177,11 +208,12 @@ namespace WinSolve.Setup
             }
             catch (Exception ex)
             {
-                _status.Text = "Setup failed: " + ex.Message;
+                _status.Text = Lang.F("Setup failed: {0}", ex.Message);
                 _status.ForeColor = Color.FromArgb(255, 99, 97);
                 // An automatic update that failed: the previous version is still intact, reopen it.
                 if (_autoStart && o.Launch && o.UpdateDir != null) Installer.LaunchApp(o);
                 _options.Enabled = true;
+                _language.Enabled = true;
                 _install.Enabled = true;
             }
             finally
@@ -193,7 +225,7 @@ namespace WinSolve.Setup
             if (ok)
             {
                 _status.ForeColor = Color.FromArgb(108, 203, 95);
-                _install.Text = "Finish";
+                _install.Text = Lang.T("Finish");
                 _install.Enabled = true;
                 _done = true;
                 _cancel.Visible = false;
