@@ -34,7 +34,6 @@ The installer lets you choose **Only for me** or **For all users**, offers a cle
 
 **Portable:** `WinSolve-Portable.exe` runs without installing anything, for example from a USB stick. It carries its own .NET runtime (bigger download) and leaves nothing scheduled on the PC: no Start with Windows, no scheduled maintenance and no self-installing updates.
 
-`WinSolve.exe` alone is a ~2 MB single file that needs the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0).
 
 ## Build
 

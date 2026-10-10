@@ -23,7 +23,7 @@ jobs:
       - name: Run tests
         run: dotnet test tests/WinSolve.Tests/WinSolve.Tests.csproj -c Release --logger "console;verbosity=normal"
 
-      - name: Publish WinSolve.exe
+      - name: Publish WinSolve.exe (embedded in the installer)
         run: dotnet publish src/WinSolve/WinSolve.csproj -c Release -o out/app
 
       - name: Publish WinSolve-Portable.exe
@@ -49,7 +49,6 @@ jobs:
         with:
           name: WinSolve
           path: |
-            out/app/WinSolve.exe
             out/portable/WinSolve-Portable.exe
             out/setup/WinSolveSetup.exe
             out/setup/WinSolveSetup.exe.sha256
@@ -74,9 +73,12 @@ jobs:
           gh release view $tag --repo ${{ github.repository }} *> $null
           if ($LASTEXITCODE -eq 0) {
             Write-Host "Release $tag exists; updating its files."
-            gh release upload $tag out/setup/WinSolveSetup.exe out/setup/WinSolveSetup.exe.sha256 out/app/WinSolve.exe out/portable/WinSolve-Portable.exe --clobber --repo ${{ github.repository }}
+            gh release upload $tag out/setup/WinSolveSetup.exe out/setup/WinSolveSetup.exe.sha256 out/portable/WinSolve-Portable.exe --clobber --repo ${{ github.repository }}
+            # Only two downloads: the installer and the portable app.
+            gh release delete-asset $tag WinSolve.exe --yes --repo ${{ github.repository }} 2>$null
+            $global:LASTEXITCODE = 0
           } else {
-            gh release create $tag out/setup/WinSolveSetup.exe out/setup/WinSolveSetup.exe.sha256 out/app/WinSolve.exe out/portable/WinSolve-Portable.exe `
+            gh release create $tag out/setup/WinSolveSetup.exe out/setup/WinSolveSetup.exe.sha256 out/portable/WinSolve-Portable.exe `
               --repo ${{ github.repository }} --target ${{ github.sha }} --title "WinSolve $tag" `
-              --notes "Download **WinSolveSetup.exe** and run it. Choose *Only me* or *All users (recommended)*. It installs the .NET 8 Desktop Runtime automatically if needed.`n`n**WinSolve-Portable.exe** runs without installing (for example from a USB stick) and needs nothing else.`n`nWinSolve.exe is the app alone (requires the .NET 8 Desktop Runtime)."
+              --notes "Download **WinSolveSetup.exe** and run it. Choose *Only me* or *All users (recommended)*. It installs the .NET 8 Desktop Runtime automatically if needed.`n`n**WinSolve-Portable.exe** runs without installing (for example from a USB stick) and needs nothing else."
           }
