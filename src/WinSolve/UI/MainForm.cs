@@ -259,6 +259,24 @@ public sealed class MainForm : Form
         }
     }
 
+    /// <summary>Starts a new WinSolve (it waits for this one to close) and exits.</summary>
+    public void RestartApp()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath ?? Application.ExecutablePath, "--restarted")
+            {
+                UseShellExecute = false,
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.Write($"Restart failed: {ex.Message}");
+            return;
+        }
+        ExitApp();
+    }
+
     public void ExitApp()
     {
         _exiting = true;
@@ -550,7 +568,7 @@ public sealed class MainForm : Form
         footer.Controls.Add(_versionLabel = new Localization.LocLabel
         {
             Text = VersionText,
-            ForeColor = Color.FromArgb(120, 120, 120),
+            ForeColor = Theme.Faint,
             Font = Theme.Small,
             AutoSize = true,
             Margin = new Padding(18, 6, 0, 0),

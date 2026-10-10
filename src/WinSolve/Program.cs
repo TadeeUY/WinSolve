@@ -40,6 +40,12 @@ internal static class Program
 
         // Single instance: if WinSolve is already running (e.g. in the notification area), don't start another.
         using var mutex = new Mutex(true, @"Local\WinSolve.SingleInstance", out var isNew);
+        if (!isNew && args.Any(a => a.Equals("--restarted", StringComparison.OrdinalIgnoreCase)))
+        {
+            // Restarting (e.g. to apply the theme): give the previous instance time to close.
+            try { isNew = mutex.WaitOne(TimeSpan.FromSeconds(15)); }
+            catch (AbandonedMutexException) { isNew = true; }
+        }
         if (!isNew)
         {
             Localization.Loc.Show(null, "WinSolve is already running. Look for its icon in the notification area next to the clock.", "WinSolve",

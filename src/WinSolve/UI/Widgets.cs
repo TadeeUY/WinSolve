@@ -13,7 +13,7 @@ public sealed class InfoBar : Card
 
     public InfoBar()
     {
-        Fill = Color.FromArgb(28, 45, 66);
+        Fill = Theme.IconTileFill;
         Padding = new Padding(48, 10, 10, 10);
         Margin = new Padding(0);
         Height = 56;
@@ -187,11 +187,11 @@ public sealed class ActionTile : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Theme.SurfaceColor(this));
 
-        var fill = _pressed ? Color.FromArgb(40, 40, 40) : Animator.Blend(Theme.Card, Theme.CardHover, _hoverT);
+        var fill = _pressed ? Theme.Inset : Animator.Blend(Theme.Card, Theme.CardHover, _hoverT);
         using (var path = Theme.RoundedRect(new Rectangle(0, 0, Width - 1, Height - 1), 6))
         {
             using (var b = new SolidBrush(fill)) g.FillPath(b, path);
-            using var pen = new Pen(Animator.Blend(Theme.Border, Color.FromArgb(72, 72, 72), _hoverT));
+            using var pen = new Pen(Animator.Blend(Theme.Border, Theme.BorderHover, _hoverT));
             g.DrawPath(pen, path);
         }
 
@@ -230,7 +230,7 @@ public sealed class NavHeader : Control
     {
         e.Graphics.Clear(Theme.Sidebar);
         TextRenderer.DrawText(e.Graphics, Loc.T(Text).ToUpperInvariant(), Theme.Small, new Rectangle(18, 8, Width - 20, Height - 8),
-            Color.FromArgb(130, 130, 130), TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.NoPrefix);
+            Theme.Faint, TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.NoPrefix);
     }
 }
 
@@ -336,8 +336,8 @@ public sealed class OptionCard : Control
         var r = new Rectangle(0, 0, Width - 1, Height - 1);
         using (var path = Theme.RoundedRect(r, 8))
         {
-            using (var b = new SolidBrush(_selected ? Color.FromArgb(36, 52, 72) : Animator.Blend(Color.FromArgb(38, 38, 38), Theme.CardHover, _hoverT))) g.FillPath(b, path);
-            using var pen = new Pen(_selected ? Theme.Accent : Animator.Blend(Theme.Border, Color.FromArgb(80, 80, 80), _hoverT), _selected ? 2f : 1f);
+            using (var b = new SolidBrush(_selected ? Theme.SelectedFill : Animator.Blend(Theme.IsLight ? Theme.Card : Theme.Inset, Theme.CardHover, _hoverT))) g.FillPath(b, path);
+            using var pen = new Pen(_selected ? Theme.Accent : Animator.Blend(Theme.Border, Theme.BorderHover, _hoverT), _selected ? 2f : 1f);
             g.DrawPath(pen, path);
         }
 
@@ -469,7 +469,7 @@ public sealed class SearchPill : Control
             TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         var keys = new Rectangle(Width - 62, 7, 50, Height - 14);
         using (var kp = Theme.RoundedRect(keys, 4))
-        using (var kb = new SolidBrush(Color.FromArgb(30, 30, 30)))
+        using (var kb = new SolidBrush(Theme.IsLight ? Theme.Track : Theme.Sidebar))
             g.FillPath(kb, kp);
         TextRenderer.DrawText(g, "Ctrl+K", Theme.Small, keys, Theme.Muted,
             TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);

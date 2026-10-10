@@ -87,9 +87,9 @@ public static class SplashScreen
         private bool _closing;
         private long _closeStart;
 
-        private static readonly Color Background = Color.FromArgb(28, 28, 28);
-        private static readonly Color Foreground = Color.FromArgb(240, 240, 240);
-        private static readonly Color Muted = Color.FromArgb(160, 160, 160);
+        private static readonly Color Background = Theme.Sidebar;
+        private static readonly Color Foreground = Theme.Text;
+        private static readonly Color Muted = Theme.Muted;
 
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
@@ -221,7 +221,7 @@ public static class SplashScreen
             // Windows 11 style indeterminate progress bar.
             var barW = S(240);
             var bar = new Rectangle(w / 2 - barW / 2, S(236), barW, Math.Max(3, S(3)));
-            using (var track = new SolidBrush(Color.FromArgb(50, 50, 50))) g.FillRectangle(track, bar);
+            using (var track = new SolidBrush(Theme.Track)) g.FillRectangle(track, bar);
             const double segLen = 0.38;
             var p = Ease.InOut(elapsed % 1.5 / 1.5) * (1 + segLen) - segLen;
             var x1 = bar.X + (int)(barW * Math.Clamp(p, 0, 1));
@@ -240,10 +240,10 @@ public static class SplashScreen
                 TextRenderer.DrawText(g, _previousStatus, _smallFont, statusRect, Blend(Background, Muted, 1 - st), center);
             TextRenderer.DrawText(g, _status, _smallFont, statusRect, Blend(Background, Muted, st * intro), center);
 
-            TextRenderer.DrawText(g, _version, _smallFont, new Rectangle(S(16), h - S(28), w / 2, S(18)), Color.FromArgb(110, 110, 110),
+            TextRenderer.DrawText(g, _version, _smallFont, new Rectangle(S(16), h - S(28), w / 2, S(18)), Theme.Faint,
                 TextFormatFlags.NoPrefix);
 
-            using var border = new Pen(Color.FromArgb(56, 56, 56));
+            using var border = new Pen(Theme.Border);
             g.DrawRectangle(border, 0, 0, w - 1, h - 1);
         }
 

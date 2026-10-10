@@ -23,7 +23,9 @@ public static class BatteryReport
         var file = Path.Combine(folder, "battery.xml");
         try
         {
-            var r = await ProcessRunner.RunAsync("powercfg.exe", $"/batteryreport /xml /output \"{file}\"", null, ct);
+            ProcessResult r;
+            try { r = await ProcessRunner.RunAsync("powercfg.exe", $"/batteryreport /xml /output \"{file}\"", null, ct); }
+            catch (System.ComponentModel.Win32Exception) { throw new InvalidOperationException("Windows could not create the battery report."); }
             if (!File.Exists(file))
                 throw new InvalidOperationException(r.Output.Trim().Length > 0 ? r.Output.Trim() : "Windows could not create the battery report.");
             return Parse(XDocument.Load(file));

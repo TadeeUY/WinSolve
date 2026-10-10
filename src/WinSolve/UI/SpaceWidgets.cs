@@ -48,9 +48,9 @@ public sealed class DriveCard : Control
         var r = new Rectangle(0, 0, Width - 1, Height - 1);
         using (var path = Theme.RoundedRect(r, 8))
         {
-            var fill = _selected ? Color.FromArgb(36, 52, 72) : Animator.Blend(Theme.Card, Theme.CardHover, _hoverT);
+            var fill = _selected ? Theme.SelectedFill : Animator.Blend(Theme.Card, Theme.CardHover, _hoverT);
             using (var b = new SolidBrush(fill)) g.FillPath(b, path);
-            using var pen = new Pen(_selected ? Theme.Accent : Animator.Blend(Theme.Border, Color.FromArgb(80, 80, 80), _hoverT), _selected ? 2f : 1f);
+            using var pen = new Pen(_selected ? Theme.Accent : Animator.Blend(Theme.Border, Theme.BorderHover, _hoverT), _selected ? 2f : 1f);
             g.DrawPath(pen, path);
         }
 
@@ -71,7 +71,7 @@ public sealed class DriveCard : Control
         {
             var bar = new Rectangle(x, 37, w, 6);
             using (var bp = Theme.RoundedRect(bar, 3))
-            using (var bb = new SolidBrush(Color.FromArgb(58, 58, 58)))
+            using (var bb = new SolidBrush(Theme.Track))
                 g.FillPath(bb, bp);
             var fw = (int)(w * Math.Clamp(Used, 0, 1));
             if (fw > 3)
@@ -162,7 +162,7 @@ public sealed class SpaceTree : TreeView
         var bar = new Rectangle(right - SizeColumn - BarWidth - 6, row.Y + row.Height / 2 - 3, BarWidth, 6);
         g.SmoothingMode = SmoothingMode.AntiAlias;
         using (var bp = Theme.RoundedRect(bar, 3))
-        using (var bb = new SolidBrush(Color.FromArgb(58, 58, 58)))
+        using (var bb = new SolidBrush(Theme.Track))
             g.FillPath(bb, bp);
         var fw = (int)Math.Round(BarWidth * Math.Clamp(share, 0, 1));
         if (fw >= 2)

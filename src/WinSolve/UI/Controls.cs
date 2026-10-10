@@ -125,7 +125,7 @@ public sealed class LogBox : RichTextBox
     public LogBox()
     {
         ReadOnly = true;
-        BackColor = Color.FromArgb(24, 24, 24);
+        BackColor = Theme.LogBackground;
         ForeColor = Theme.Muted;
         BorderStyle = BorderStyle.None;
         Font = Theme.Mono;
@@ -184,7 +184,7 @@ public sealed class ProgressLine : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
-        g.Clear(Parent?.BackColor ?? Theme.Background);
+        g.Clear(Theme.SurfaceColor(this));
         using (var bg = new SolidBrush(Theme.Border)) g.FillRectangle(bg, 0, Height / 2 - 1, Width, 2);
 
         using var fg = new SolidBrush(Theme.Accent);
@@ -254,7 +254,7 @@ public sealed class NavButton : Control
         if (bg > 0.01)
         {
             using var path = Theme.RoundedRect(rect, 4);
-            using var b = new SolidBrush(Animator.Blend(Theme.Sidebar, Color.FromArgb(45, 45, 45), bg));
+            using var b = new SolidBrush(Animator.Blend(Theme.Sidebar, Theme.NavHover, bg));
             g.FillPath(b, path);
         }
         if (_selectT > 0.01)
@@ -268,7 +268,7 @@ public sealed class NavButton : Control
 
         TextRenderer.DrawText(g, Glyph, Theme.Icons, new Rectangle(18, 0, 24, Height), Theme.Text,
             TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
-        TextRenderer.DrawText(g, Loc.T(Text), Theme.Body, new Rectangle(52, 0, Width - 56, Height), _selected ? Theme.Text : Color.FromArgb(220, 220, 220),
+        TextRenderer.DrawText(g, Loc.T(Text), Theme.Body, new Rectangle(52, 0, Width - 56, Height), _selected ? Theme.Text : Theme.NavText,
             TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
 }
@@ -306,7 +306,7 @@ public sealed class TaskRunnerView : TableLayoutPanel
         Controls.Add(_cancel, 1, 0);
         Controls.Add(_progress, 0, 1);
         SetColumnSpan(_progress, 2);
-        var logCard = new Card { Dock = DockStyle.Fill, Fill = Color.FromArgb(24, 24, 24), Padding = new Padding(10, 8, 6, 8), Margin = new Padding(0) };
+        var logCard = new Card { Dock = DockStyle.Fill, Fill = Theme.LogBackground, Padding = new Padding(10, 8, 6, 8), Margin = new Padding(0) };
         logCard.Controls.Add(_log);
         Controls.Add(logCard, 0, 2);
         SetColumnSpan(logCard, 2);

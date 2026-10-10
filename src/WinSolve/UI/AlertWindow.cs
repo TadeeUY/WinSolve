@@ -53,8 +53,8 @@ public sealed class Toast : Form
         }
     }
 
-    private static readonly Color Surface = Color.FromArgb(44, 44, 44);
-    private static readonly Color Edge = Color.FromArgb(70, 70, 70);
+    private static readonly Color Surface = Theme.IsLight ? Color.FromArgb(252, 252, 252) : Color.FromArgb(44, 44, 44);
+    private static readonly Color Edge = Theme.IsLight ? Color.FromArgb(214, 214, 214) : Color.FromArgb(70, 70, 70);
 
     private Toast(ToastOptions o)
     {
@@ -120,7 +120,7 @@ public sealed class Toast : Form
         {
             Text = Localization.Loc.T(o.Detail),
             Font = Theme.Body,
-            ForeColor = Color.FromArgb(200, 200, 200),
+            ForeColor = Theme.IsLight ? Color.FromArgb(60, 60, 60) : Color.FromArgb(200, 200, 200),
             UseMnemonic = false,
             BackColor = Surface,
             AutoSize = false,
@@ -330,7 +330,7 @@ public sealed class Toast : Form
             if (_hoverT > 0.01)
             {
                 using var path = Theme.RoundedRect(new Rectangle(0, 0, Width - 1, Height - 1), 4);
-                using var b = new SolidBrush(Animator.Blend(_surface, Color.FromArgb(62, 62, 62), _hoverT));
+                using var b = new SolidBrush(Animator.Blend(_surface, Theme.IsLight ? Color.FromArgb(234, 234, 234) : Color.FromArgb(62, 62, 62), _hoverT));
                 g.FillPath(b, path);
             }
             TextRenderer.DrawText(g, _glyph, Theme.IconsSmall, ClientRectangle, Animator.Blend(Theme.Muted, Theme.Text, _hoverT),

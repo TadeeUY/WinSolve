@@ -88,7 +88,7 @@ public sealed class DuplicatesDialog : Form
             {
                 var i = _grid.Rows.Add(false, set, f.Path, Format.Bytes(f.Size), f.Modified == DateTime.MinValue ? "" : f.Modified.ToString("g"));
                 _grid.Rows[i].Tag = f;
-                if (set % 2 == 0) _grid.Rows[i].DefaultCellStyle.BackColor = Color.FromArgb(48, 48, 48);
+                if (set % 2 == 0) _grid.Rows[i].DefaultCellStyle.BackColor = Theme.RowHover;
             }
         }
         _status.Text = _groups.Count == 0

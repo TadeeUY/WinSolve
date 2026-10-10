@@ -14,6 +14,7 @@ public sealed class SettingsPage : Page
     private readonly CheckBox _restorePoint, _confirm, _scanOnStartup, _alerts, _tray, _animations, _autoStart, _updates, _autoUpdate;
     private readonly ComboBox _schedule = Theme.Combo(Maintenance.Schedules);
     private readonly ComboBox _language = Theme.Combo("English", "Español");
+    private readonly ComboBox _themeMode = Theme.Combo("Same as Windows", "Dark mode", "Light mode");
     private readonly Label _autoStartDescription = Theme.Label("Starts hidden in the notification area.", Theme.Small, Theme.Muted);
     private string _accent = AppSettings.Current.AccentColor;
 
@@ -33,7 +34,8 @@ public sealed class SettingsPage : Page
         _autoUpdate = Theme.Toggle("", s.AutoInstallUpdates);
         _schedule.SelectedItem = Maintenance.Schedules.Contains(s.MaintenanceSchedule) ? s.MaintenanceSchedule : "Off";
         _language.SelectedIndex = s.Language == "es" ? 1 : 0;
-        _schedule.Width = _language.Width = 170;
+        _schedule.Width = _language.Width = _themeMode.Width = 170;
+        _themeMode.SelectedIndex = s.ThemeMode switch { "Dark" => 1, "Light" => 2, _ => 0 };
         if (Edition.IsPortable)
         {
             // The portable build leaves nothing behind on the PC.
@@ -45,6 +47,8 @@ public sealed class SettingsPage : Page
         var general = new StackCard().Add(
             Theme.SectionHeader("\uE713", "General", "Language, safety and behavior."),
             Theme.SettingRow("Language", "English or Spanish.", _language),
+            new Divider(),
+            Theme.SettingRow("Theme", "Light or dark. WinSolve restarts to apply it.", _themeMode),
             new Divider(),
             Theme.SettingRow("Create a restore point before making changes", "Lets you undo optimizations and tweaks with System Restore.", _restorePoint),
             new Divider(),
@@ -295,6 +299,9 @@ public sealed class SettingsPage : Page
         }
         s.OneClickTasks = _tasks.Where(p => p.Value.Checked).Select(p => p.Key.Id).ToList();
         s.OneClickTweaks = _tweaks.Where(p => p.Value.Checked).Select(p => p.Key.Id).ToList();
+        var themeMode = _themeMode.SelectedIndex switch { 1 => "Dark", 2 => "Light", _ => "System" };
+        var themeChanged = themeMode != s.ThemeMode;
+        s.ThemeMode = themeMode;
         var accentChanged = !string.Equals(s.AccentColor, _accent, StringComparison.OrdinalIgnoreCase);
         s.AccentColor = _accent;
         if (!s.Save())
@@ -309,7 +316,13 @@ public sealed class SettingsPage : Page
 
         ErrorMonitor.Instance.Apply();
 
-        if (accentChanged || languageChanged)
+        if (themeChanged)
+        {
+            if (Main.IsBusy) Info("Settings saved. The new theme will apply the next time WinSolve starts.");
+            else if (Confirm("Restart WinSolve now to apply the new theme?")) Main.RestartApp();
+            else Info("Settings saved. The new theme will apply the next time WinSolve starts.");
+        }
+        else if (accentChanged || languageChanged)
         {
             if (!Main.Reload("settings")) Info(RestartToApply);
         }

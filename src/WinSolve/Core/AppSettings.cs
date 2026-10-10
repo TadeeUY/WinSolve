@@ -67,6 +67,9 @@ public sealed class AppSettings
     /// <summary>UI language: "en" or "es".</summary>
     public string Language { get; set; } = "en";
 
+    /// <summary>Color theme: System (follows Windows), Dark or Light.</summary>
+    public string ThemeMode { get; set; } = "System";
+
     /// <summary>Accent color as #RRGGBB.</summary>
     public string AccentColor { get; set; } = "#0067C0";
 

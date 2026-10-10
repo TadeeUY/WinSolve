@@ -27,7 +27,7 @@ public sealed class CommandPalette : Form
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
-        BackColor = Color.FromArgb(40, 40, 40);
+        BackColor = Theme.IsLight ? Theme.Card : Theme.Inset;
         ForeColor = Theme.Text;
         Font = Theme.Body;
         KeyPreview = true;
@@ -175,7 +175,7 @@ public sealed class CommandPalette : Form
         public ResultList()
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-            BackColor = Color.FromArgb(40, 40, 40);
+            BackColor = Theme.IsLight ? Theme.Card : Theme.Inset;
         }
 
         public PaletteItem? Current => _index >= 0 && _index < _items.Count ? _items[_index] : null;
@@ -233,9 +233,9 @@ public sealed class CommandPalette : Form
                 }
                 var tile = new Rectangle(row.X + 8, row.Y + 8, 32, 32);
                 using (var tp = Theme.RoundedRect(tile, 6))
-                using (var tb = new SolidBrush(Color.FromArgb(55, 55, 55)))
+                using (var tb = new SolidBrush(Theme.Control == Theme.Card ? Theme.Inset : Theme.Control))
                     g.FillPath(tb, tp);
-                TextRenderer.DrawText(g, it.Glyph, Theme.Icons, tile, ControlPaint.Light(Theme.Accent, 0.6f),
+                TextRenderer.DrawText(g, it.Glyph, Theme.Icons, tile, Theme.IsLight ? Theme.Accent : ControlPaint.Light(Theme.Accent, 0.6f),
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
                 var kind = Loc.T(it.Kind);

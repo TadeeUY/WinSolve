@@ -6,23 +6,64 @@ using WinSolve.Services;
 
 namespace WinSolve.UI;
 
-/// <summary>Colors and fonts. Neutral dark palette modeled on Windows 11.</summary>
+/// <summary>Colors and fonts. Neutral dark and light palettes modeled on Windows 11.</summary>
 public static class Theme
 {
-    public static readonly Color Background = Color.FromArgb(32, 32, 32);
-    public static readonly Color Sidebar = Color.FromArgb(28, 28, 28);
-    public static readonly Color Card = Color.FromArgb(43, 43, 43);
-    public static readonly Color CardHover = Color.FromArgb(50, 50, 50);
-    public static readonly Color Control = Color.FromArgb(55, 55, 55);
-    public static readonly Color ControlHover = Color.FromArgb(62, 62, 62);
-    public static readonly Color Border = Color.FromArgb(58, 58, 58);
-    public static readonly Color Divider = Color.FromArgb(50, 50, 50);
-    public static readonly Color Text = Color.FromArgb(242, 242, 242);
-    public static readonly Color Muted = Color.FromArgb(160, 160, 160);
-    public static readonly Color Good = Color.FromArgb(108, 203, 95);
-    public static readonly Color Warn = Color.FromArgb(252, 225, 0);
-    public static readonly Color Bad = Color.FromArgb(255, 99, 97);
-    public static readonly Color Info = Color.FromArgb(96, 205, 255);
+    /// <summary>Light or dark, from Settings ("System" follows Windows). Applies on the next start.</summary>
+    public static readonly bool IsLight = DetectLight();
+
+    private static bool DetectLight()
+    {
+        switch (AppSettings.Current.ThemeMode)
+        {
+            case "Light": return true;
+            case "Dark": return false;
+        }
+        try
+        {
+            return Reg.Get(Microsoft.Win32.RegistryHive.CurrentUser,
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "AppsUseLightTheme") is int v && v == 1;
+        }
+        catch { return false; }
+    }
+
+    private static Color Pick(int dark, int light) => IsLight ? Color.FromArgb(light, light, light) : Color.FromArgb(dark, dark, dark);
+    private static Color Pick(Color dark, Color light) => IsLight ? light : dark;
+
+    public static readonly Color Background = Pick(32, 243);
+    public static readonly Color Sidebar = Pick(28, 235);
+    public static readonly Color Card = Pick(43, 251);
+    public static readonly Color CardHover = Pick(50, 245);
+    public static readonly Color Control = Pick(55, 253);
+    public static readonly Color ControlHover = Pick(62, 243);
+    public static readonly Color Border = Pick(58, 222);
+    public static readonly Color Divider = Pick(50, 233);
+    public static readonly Color Text = Pick(242, 27);
+    public static readonly Color Muted = Pick(160, 96);
+    public static readonly Color Good = Pick(Color.FromArgb(108, 203, 95), Color.FromArgb(15, 123, 15));
+    public static readonly Color Warn = Pick(Color.FromArgb(252, 225, 0), Color.FromArgb(157, 93, 0));
+    public static readonly Color Bad = Pick(Color.FromArgb(255, 99, 97), Color.FromArgb(196, 43, 28));
+    public static readonly Color Info = Pick(Color.FromArgb(96, 205, 255), Color.FromArgb(0, 95, 184));
+
+    /// <summary>Recessed surfaces: unchecked boxes, the command palette, pressed cards.</summary>
+    public static readonly Color Inset = Pick(40, 249);
+    public static readonly Color InsetHover = Pick(52, 238);
+    public static readonly Color RowHover = Pick(48, 241);
+    /// <summary>Empty part of bars and meters.</summary>
+    public static readonly Color Track = Pick(58, 224);
+    public static readonly Color DisabledFill = Pick(80, 204);
+    public static readonly Color DisabledText = Pick(120, 160);
+    public static readonly Color BorderHover = Pick(80, 190);
+    /// <summary>Background of a selected card (blue-tinted).</summary>
+    public static readonly Color SelectedFill = Pick(Color.FromArgb(36, 52, 72), Color.FromArgb(222, 235, 250));
+    /// <summary>Behind page icons.</summary>
+    public static readonly Color IconTileFill = Pick(Color.FromArgb(28, 45, 66), Color.FromArgb(223, 234, 247));
+    public static readonly Color NavHover = Pick(45, 226);
+    public static readonly Color NavText = Pick(220, 50);
+    public static readonly Color LogBackground = Pick(24, 255);
+    public static readonly Color Faint = Pick(120, 130);
+    /// <summary>Unchecked check box mark and switch knob.</summary>
+    public static readonly Color Knob = Pick(200, 90);
 
     public static Color Accent
     {
@@ -110,7 +151,7 @@ public static class Theme
     {
         try
         {
-            int on = 1;
+            int on = IsLight ? 0 : 1;
             DwmSetWindowAttribute(form.Handle, 20, ref on, sizeof(int)); // DWMWA_USE_IMMERSIVE_DARK_MODE
             int round = 2;
             DwmSetWindowAttribute(form.Handle, 33, ref round, sizeof(int)); // DWMWA_WINDOW_CORNER_PREFERENCE = round
@@ -209,7 +250,7 @@ public static class Theme
         };
 
         // Subtle row highlight under the mouse.
-        g.CellMouseEnter += (_, e) => { if (e.RowIndex >= 0 && !g.Rows[e.RowIndex].Selected) g.Rows[e.RowIndex].DefaultCellStyle.BackColor = Color.FromArgb(48, 48, 48); };
+        g.CellMouseEnter += (_, e) => { if (e.RowIndex >= 0 && !g.Rows[e.RowIndex].Selected) g.Rows[e.RowIndex].DefaultCellStyle.BackColor = RowHover; };
         g.CellMouseLeave += (_, e) => { if (e.RowIndex >= 0 && e.RowIndex < g.Rows.Count) g.Rows[e.RowIndex].DefaultCellStyle.BackColor = Color.Empty; };
         g.CellFormatting += (_, e) => { if (e.Value is string s && s.Length > 0) { e.Value = Loc.T(s); e.FormattingApplied = true; } };
         typeof(DataGridView).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
@@ -289,15 +330,15 @@ public static class Theme
         using var path = RoundedRect(box, 4);
         if (isChecked)
         {
-            using (var b = new SolidBrush(enabled ? (hover ? ControlPaint.Light(Accent, 0.1f) : Accent) : Color.FromArgb(80, 80, 80))) g.FillPath(b, path);
+            using (var b = new SolidBrush(enabled ? (hover ? ControlPaint.Light(Accent, 0.1f) : Accent) : DisabledFill)) g.FillPath(b, path);
             using var pen = new Pen(Color.White, 1.8f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
             var x = box.X; var y = box.Y; var w = box.Width;
             g.DrawLines(pen, [new PointF(x + w * 0.24f, y + w * 0.52f), new PointF(x + w * 0.43f, y + w * 0.70f), new PointF(x + w * 0.76f, y + w * 0.32f)]);
         }
         else
         {
-            using (var b = new SolidBrush(hover ? Color.FromArgb(52, 52, 52) : Color.FromArgb(40, 40, 40))) g.FillPath(b, path);
-            using var pen = new Pen(Color.FromArgb(enabled ? 150 : 90, 150, 150, 150));
+            using (var b = new SolidBrush(hover ? InsetHover : Inset)) g.FillPath(b, path);
+            using var pen = new Pen(Color.FromArgb(enabled ? 150 : 90, Knob));
             g.DrawPath(pen, path);
         }
     }
@@ -312,18 +353,18 @@ public static class Theme
         g.SmoothingMode = SmoothingMode.AntiAlias;
         using var path = RoundedRect(r, r.Height / 2);
         var t = Math.Clamp(position, 0, 1);
-        var onFill = enabled ? (hover ? ControlPaint.Light(Accent, 0.1f) : Accent) : Color.FromArgb(80, 80, 80);
-        var offFill = hover ? Color.FromArgb(52, 52, 52) : Color.FromArgb(40, 40, 40);
+        var onFill = enabled ? (hover ? ControlPaint.Light(Accent, 0.1f) : Accent) : DisabledFill;
+        var offFill = hover ? InsetHover : Inset;
         using (var b = new SolidBrush(Animator.Blend(offFill, onFill, t))) g.FillPath(b, path);
         if (t < 1)
         {
-            using var pen = new Pen(Color.FromArgb((int)(255 * (1 - t)), 160, 160, 160));
+            using var pen = new Pen(Color.FromArgb((int)(255 * (1 - t)), Knob));
             g.DrawPath(pen, path);
         }
         // The knob grows a little and slides from left to right.
         var size = r.Height - 10 + 2 * t + (hover ? 1 : 0);
         var left = r.X + 5 + (r.Width - 10 - size) * t;
-        using var k = new SolidBrush(Animator.Blend(Color.FromArgb(200, 200, 200), Color.White, t));
+        using var k = new SolidBrush(Animator.Blend(Knob, Color.White, t));
         g.FillEllipse(k, (float)left, (float)(r.Y + (r.Height - size) / 2), (float)size, (float)size);
     }
 
@@ -467,7 +508,7 @@ public sealed class FlatBtn : Button
             ? Animator.Blend(Theme.Accent, ControlPaint.Light(Theme.Accent, 0.12f), _hoverT)
             : Animator.Blend(Theme.Control, Theme.ControlHover, _hoverT);
         if (_pressed) fill = ControlPaint.Dark(fill, 0.08f);
-        if (!Enabled) fill = Color.FromArgb(48, 48, 48);
+        if (!Enabled) fill = Theme.Inset;
 
         using var path = Theme.RoundedRect(new Rectangle(0, 0, Width - 1, Height - 1), 4);
         using (var brush = new SolidBrush(fill)) g.FillPath(brush, path);
@@ -477,7 +518,7 @@ public sealed class FlatBtn : Button
             g.DrawPath(pen, path);
         }
 
-        var color = Enabled ? ForeColor : Color.FromArgb(120, 120, 120);
+        var color = Enabled ? ForeColor : Theme.DisabledText;
         var textRect = ClientRectangle;
         if (_glyph is not null)
         {
@@ -508,7 +549,7 @@ public class Card : Panel
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(Parent?.BackColor ?? Theme.Background);
+        g.Clear(Theme.SurfaceColor(this));
         using var path = Theme.RoundedRect(new Rectangle(0, 0, Width - 1, Height - 1), 6);
         using (var brush = new SolidBrush(Fill)) g.FillPath(brush, path);
         if (Bordered)

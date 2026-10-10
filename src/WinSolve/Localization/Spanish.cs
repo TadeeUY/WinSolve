@@ -1342,5 +1342,11 @@ public static class Spanish
         ["Windows could not create the battery report."] = "Windows no pudo crear el informe de batería.",
         ["This is a Windows service, often sharing its process with other services, so WinSolve won't close it. Use 'Delete at next restart' instead."] = "Es un servicio de Windows, que suele compartir su proceso con otros servicios, así que WinSolve no lo cierra. Usa 'Borrar al reiniciar' en su lugar.",
         ["Kept {0}: some files in it could not be shredded."] = "Se conservó {0}: algunos archivos no se pudieron triturar.",
+        ["Same as Windows"] = "Igual que Windows",
+        ["Light mode"] = "Modo claro",
+        ["Theme"] = "Tema",
+        ["Light or dark. WinSolve restarts to apply it."] = "Claro u oscuro. WinSolve se reinicia para aplicarlo.",
+        ["Restart WinSolve now to apply the new theme?"] = "¿Reiniciar WinSolve ahora para aplicar el tema nuevo?",
+        ["Settings saved. The new theme will apply the next time WinSolve starts."] = "Configuración guardada. El tema nuevo se aplica la próxima vez que abras WinSolve.",
     };
 }
