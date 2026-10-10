@@ -84,6 +84,7 @@ public sealed class MainForm : Form
             _loaded = true;
             // If WinSolve was closed during a driver install, put Windows Update's driver setting back.
             _ = Task.Run(() => DriverService.RestoreWindowsUpdateDrivers(Logger.Write));
+            _ = Task.Run(Maintenance.UpgradeTaskAsync);
             ErrorMonitor.Instance.AlertRaised += OnAlert;
             ErrorMonitor.Instance.Apply();
             _ = CheckForUpdateAsync();

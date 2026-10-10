@@ -54,7 +54,7 @@ public static class Maintenance
                 <CalendarTrigger><StartBoundary>{start}</StartBoundary><Enabled>true</Enabled>{trigger}</CalendarTrigger>
               </Triggers>
               <Principals>
-                <Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal>
+                <Principal id="Author"><UserId>S-1-5-18</UserId><RunLevel>HighestAvailable</RunLevel></Principal>
               </Principals>
               <Settings>
                 <StartWhenAvailable>true</StartWhenAvailable>
@@ -75,7 +75,25 @@ public static class Maintenance
         var r = await ProcessRunner.RunAsync("schtasks.exe", $"/create /f /tn \"{TaskName}\" /xml \"{file}\"");
         try { Directory.Delete(Path.GetDirectoryName(file)!, true); } catch { }
         Logger.Write($"Scheduled maintenance set to {schedule}: {r.Output.Trim()}");
+        if (r.Success)
+        {
+            AppSettings.Current.MaintenanceTaskFormat = CurrentTaskFormat;
+            AppSettings.Current.Save();
+        }
         return r.Success;
+    }
+
+    // 2: runs as SYSTEM. Before, the task ran as whoever turned it on and only while that account
+    // was signed in, so it never ran when WinSolve had been elevated with another admin account.
+    private const int CurrentTaskFormat = 2;
+
+    /// <summary>Re-creates a task made by an older version in the current format.</summary>
+    public static async Task UpgradeTaskAsync()
+    {
+        var s = AppSettings.Current;
+        if (s.MaintenanceSchedule == "Off" || s.MaintenanceTaskFormat >= CurrentTaskFormat || !Admin.IsElevated) return;
+        if (!await ApplyScheduleAsync(s.MaintenanceSchedule))
+            Logger.Write("Could not update the scheduled maintenance task.");
     }
 
     /// <summary>Entry point for "--maintenance": runs headless and writes everything to the log.</summary>

@@ -58,6 +58,9 @@ public sealed class AppSettings
     /// <summary>Automatic maintenance schedule: Off, Daily, Weekly or Monthly.</summary>
     public string MaintenanceSchedule { get; set; } = "Off";
 
+    /// <summary>Format of the scheduled task this install created (see Maintenance).</summary>
+    public int MaintenanceTaskFormat { get; set; }
+
     /// <summary>UI language: "en" or "es".</summary>
     public string Language { get; set; } = "en";
 

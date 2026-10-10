@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.IO.Enumeration;
+using WinSolve.Core;
 
 namespace WinSolve.Services;
 
@@ -95,10 +96,15 @@ public static class DiskScanner
             var root = new SpaceNode(path.TrimEnd('\\') + (path.Length <= 3 ? "\\" : ""), null, isFile: false);
             var ext = new ConcurrentDictionary<string, (long Size, long Count)>(StringComparer.OrdinalIgnoreCase);
             long inaccessible = 0;
+            var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            string? winSxS = windows.Length > 0 ? Path.Combine(windows, "WinSxS") : null;
 
             void ScanDir(SpaceNode node, string dirPath, int depth)
             {
                 ct.ThrowIfCancellationRequested();
+                // Most of WinSxS is the same files as System32 & co. (hard links): count them once,
+                // where Windows uses them, like "Analyze Component Store" does.
+                var sharedLinks = winSxS is not null && SafePath.IsSameOrInside(dirPath, winSxS);
                 var subdirs = new List<(SpaceNode Node, string Path)>();
                 long smallSize = 0, smallCount = 0;
 
@@ -119,8 +125,9 @@ public static class DiskScanner
                             ((int)e.Attributes & RecallOnDataAccess) != 0 && !e.IsDirectory ? 0 : e.Length,
                             e.IsDirectory, e.Attributes), options);
 
-                    foreach (var entry in enumerable)
+                    foreach (var item in enumerable)
                     {
+                        var entry = item;
                         var reparse = (entry.Attributes & FileAttributes.ReparsePoint) != 0;
                         var cloud = ((int)entry.Attributes & (RecallOnOpen | RecallOnDataAccess | Pinned | Unpinned)) != 0;
                         if (reparse && !cloud) continue; // junction, symlink, mount point
@@ -131,6 +138,9 @@ public static class DiskScanner
                             subdirs.Add((child, Path.Combine(dirPath, entry.Name)));
                             continue;
                         }
+
+                        if (sharedLinks && entry.Length > 0 && LinkCount(Path.Combine(dirPath, entry.Name)) > 1)
+                            entry = entry with { Length = 0 };
 
                         node.Size += entry.Length;
                         node.FileCount++;
@@ -192,4 +202,30 @@ public static class DiskScanner
                 .OrderByDescending(s => s.Size).ToList();
             return new SpaceScanResult { Root = root, Extensions = stats, Elapsed = sw.Elapsed, Inaccessible = inaccessible };
         }, ct);
+
+    /// <summary>How many names (hard links) the file has; 1 when it can't be read.</summary>
+    private static uint LinkCount(string path)
+    {
+        using var h = CreateFile(path, 0, FileShare.ReadWrite | FileShare.Delete, IntPtr.Zero, FileMode.Open,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero);
+        if (h.IsInvalid) return 1;
+        return GetFileInformationByHandle(h, out var info) ? info.NumberOfLinks : 1;
+    }
+
+    private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000, FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct BY_HANDLE_FILE_INFORMATION
+    {
+        public uint FileAttributes;
+        public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime, LastAccessTime, LastWriteTime;
+        public uint VolumeSerialNumber, FileSizeHigh, FileSizeLow, NumberOfLinks, FileIndexHigh, FileIndexLow;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string name, uint access, FileShare share, IntPtr security,
+        FileMode mode, uint flags, IntPtr template);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle h, out BY_HANDLE_FILE_INFORMATION info);
 }
