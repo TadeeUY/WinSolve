@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using WinSolve.Core;
+using WinSolve.Localization;
 
 namespace WinSolve.Services;
 
@@ -10,27 +11,77 @@ namespace WinSolve.Services;
 /// </summary>
 public static class PcReport
 {
+    /// <summary>
+    /// Saves the report on the user's desktop as a PDF (printed by Microsoft Edge). Falls back to
+    /// the HTML page when Edge isn't available or can't print it.
+    /// </summary>
     public static async Task<string> CreateAsync(Action<string> log, CancellationToken ct)
     {
         log("Reading hardware information...");
         var disks = await DiskHealthService.ScanAsync();
-        var html = await Task.Run(() => Build(disks), ct);
         var folder = InteractiveUser.Desktop;
         Directory.CreateDirectory(folder);
-        var file = Path.Combine(folder, $"PC report - {Environment.MachineName} - {DateTime.Now:yyyy-MM-dd}.html");
-        await File.WriteAllTextAsync(file, html, Encoding.UTF8, ct);
+        var name = $"{Loc.T("PC report")} - {Environment.MachineName} - {DateTime.Now:yyyy-MM-dd}";
+
+        if (EdgePath() is { } edge)
+        {
+            var html = await Task.Run(() => Build(disks, pdf: true), ct);
+            var work = SafePath.CreateAdminOnlyFolder("Report");
+            var source = Path.Combine(work, "report.html");
+            var profile = Path.Combine(work, "edge-profile");
+            var pdf = Path.Combine(folder, name + ".pdf");
+            try
+            {
+                await File.WriteAllTextAsync(source, html, Encoding.UTF8, ct);
+                log("Creating the PDF...");
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(TimeSpan.FromSeconds(90));
+                File.Delete(pdf);
+                await ProcessRunner.RunAsync(edge,
+                    $"--headless --disable-gpu --no-first-run --disable-extensions --user-data-dir=\"{profile}\" " +
+                    $"--no-pdf-header-footer --print-to-pdf-no-header --print-to-pdf=\"{pdf}\" \"{new Uri(source).AbsoluteUri}\"",
+                    null, timeout.Token);
+                if (File.Exists(pdf) && new FileInfo(pdf).Length > 0)
+                {
+                    log($"Saved to {pdf}");
+                    return pdf;
+                }
+                log("Edge could not print the report; saving it as a web page instead.");
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                log("Edge took too long; saving the report as a web page instead.");
+            }
+            finally
+            {
+                try { Directory.Delete(work, recursive: true); } catch { }
+            }
+        }
+
+        var file = Path.Combine(folder, name + ".html");
+        await File.WriteAllTextAsync(file, await Task.Run(() => Build(disks, pdf: false), ct), Encoding.UTF8, ct);
         log($"Saved to {file}");
         return file;
     }
 
-    private static string Build(List<DiskInfo> disks)
+    private static string? EdgePath()
+    {
+        foreach (var root in new[] { Environment.SpecialFolder.ProgramFilesX86, Environment.SpecialFolder.ProgramFiles })
+        {
+            var path = Path.Combine(Environment.GetFolderPath(root), @"Microsoft\Edge\Application\msedge.exe");
+            if (File.Exists(path)) return path;
+        }
+        return null;
+    }
+
+    private static string Build(List<DiskInfo> disks, bool pdf)
     {
         string E(string? s) => WebUtility.HtmlEncode(s ?? "");
         var sb = new StringBuilder();
         void Section(string title, IEnumerable<(string Key, string Value)> rows)
         {
-            sb.Append($"<section><h2>{E(title)}</h2><table>");
-            foreach (var (k, v) in rows) sb.Append($"<tr><th>{E(k)}</th><td>{E(v)}</td></tr>");
+            sb.Append($"<section><h2>{E(Loc.T(title))}</h2><table>");
+            foreach (var (k, v) in rows) sb.Append($"<tr><th>{E(Loc.T(k))}</th><td>{E(v)}</td></tr>");
             sb.Append("</table></section>");
         }
 
@@ -47,8 +98,8 @@ public static class PcReport
         [
             ("Edition", os?.Str("Caption") ?? "—"),
             ("Version", $"{os?.Str("Version")} (build {os?.Str("BuildNumber")}, {os?.Str("OSArchitecture")})"),
-            ("Installed", os is null ? "—" : Date(os.Str("InstallDate"))),
-            ("Activation", ActivationService.GetStatus().IsActivated ? "Activated" : "Not activated"),
+            ("Installed on", os is null ? "—" : Date(os.Str("InstallDate"))),
+            ("Activation", Loc.T(ActivationService.GetStatus().IsActivated ? "Activated" : "Not activated")),
             ("Computer name", Environment.MachineName),
         ]);
         Section("System",
@@ -83,14 +134,14 @@ public static class PcReport
             [
                 ("Model", d.Model),
                 ("Type", $"{d.MediaType} / {d.BusType}  ·  {Format.Bytes(d.SizeBytes)}"),
-                ("Health", d.HealthText + (d.WearPercent is { } w ? $" ({100 - w}% life left)" : "")),
+                ("Health", Loc.T(d.HealthText) + (d.WearPercent is { } w ? " " + string.Format(Loc.T("({0}% life left)"), 100 - w) : "")),
                 ("Temperature", d.TemperatureC is { } tc ? $"{tc} °C" : "—"),
                 ("Power-on hours", d.PowerOnHours is { } h ? $"{h:N0}" : "—"),
             ]);
 
         foreach (var drive in DriveInfo.GetDrives().Where(x => x.DriveType == DriveType.Fixed))
         {
-            try { Section("Volume", [(drive.Name, $"{Format.Bytes(drive.AvailableFreeSpace)} free of {Format.Bytes(drive.TotalSize)} ({drive.DriveFormat})")]); }
+            try { Section("Volume", [(drive.Name, string.Format(Loc.T("{0} free of {1}"), Format.Bytes(drive.AvailableFreeSpace), Format.Bytes(drive.TotalSize)) + $" ({drive.DriveFormat})")]); }
             catch { }
         }
 
@@ -101,7 +152,7 @@ public static class PcReport
             Section("Battery", [("Model", b.Str("Name")), ("Charge", $"{b.Get<ushort>("EstimatedChargeRemaining")} %")]);
 
         return $$"""
-            <!doctype html><html><head><meta charset="utf-8"><title>PC report - {{E(Environment.MachineName)}}</title>
+            <!doctype html><html lang="{{(Loc.IsEnglish ? "en" : "es")}}"><head><meta charset="utf-8"><title>{{E(Loc.T("PC report"))}} - {{E(Environment.MachineName)}}</title>
             <style>
               body { font-family: "Segoe UI", system-ui, sans-serif; margin: 32px auto; max-width: 860px; color: #1b1b1b; }
               header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px solid #0067c0; padding-bottom: 8px; }
@@ -112,10 +163,12 @@ public static class PcReport
               th { text-align: left; width: 34%; font-weight: 600; color: #444; }
               th, td { padding: 6px 10px; border-bottom: 1px solid #e5e5e5; vertical-align: top; }
               footer { margin-top: 28px; color: #888; font-size: 12px; }
+              @page { margin: 14mm; }
+              @media print { body { margin: 0 auto; } }
             </style></head><body>
-            <header><h1>{{E(Environment.MachineName)}}</h1><span>{{DateTime.Now:f}}</span></header>
+            <header><h1>{{E(Environment.MachineName)}}</h1><span>{{E(DateTime.Now.ToString("f"))}}</span></header>
             {{sb}}
-            <footer>Created with WinSolve. Serial numbers and product keys are not included. Use the browser's Print &gt; Save as PDF to keep a PDF.</footer>
+            <footer>{{E(Loc.T("Created with WinSolve. Serial numbers and product keys are not included."))}}{{(pdf ? "" : " " + E(Loc.T("Use the browser's Print > Save as PDF to keep a PDF.")))}}</footer>
             </body></html>
             """;
     }

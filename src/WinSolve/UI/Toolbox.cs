@@ -36,7 +36,7 @@ public static class Toolbox
             "See, create and delete System Restore points.", "system restore restauracion",
             o => Show(o, new RestorePointsDialog())),
         new("pc-report", "Windows", "", "PC report",
-            "A shareable page with every spec of this PC (no serial numbers or keys).", "specs speccy informe especificaciones hardware",
+            "A PDF with every spec of this PC to share or print (no serial numbers or keys).", "specs speccy informe especificaciones hardware",
             CreateReport),
     ];
 
