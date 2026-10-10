@@ -47,6 +47,11 @@ namespace WinSolve.Setup
             ["Registering the uninstaller..."] = "Registrando el desinstalador...",
             ["WinSolve was installed successfully."] = "WinSolve se instaló correctamente.",
             ["Files will be removed when the uninstaller closes."] = "Los archivos se borrarán cuando se cierre el desinstalador.",
+            ["WinSolve is ready"] = "WinSolve está listo",
+            ["All users (recommended)"] = "Todos los usuarios (recomendado)",
+            ["Protected from changes. Needs administrator.\n{0}"] = "Protegido contra cambios. Pide administrador.\n{0}",
+            ["No administrator needed. Can't start with Windows.\n{0}"] = "Sin administrador. No inicia con Windows.\n{0}",
+            ["Clean install: remove the previous version and its settings"] = "Instalación limpia: borra la versión anterior y su configuración",
             ["Uninstall WinSolve"] = "Desinstalar WinSolve",
             ["Remove WinSolve from this PC?\n\nSelect Yes to also delete WinSolve's settings and logs, or No to keep them."] =
                 "¿Quitar WinSolve de este PC?\n\nElige Sí para borrar también la configuración y los registros de WinSolve, o No para conservarlos.",
