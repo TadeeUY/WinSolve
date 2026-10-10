@@ -10,11 +10,12 @@ namespace WinSolve.UI;
 public static class Theme
 {
     /// <summary>Light or dark, from Settings ("System" follows Windows). Applies on the next start.</summary>
-    public static readonly bool IsLight = DetectLight();
+    public static readonly bool IsLight = WouldBeLight(AppSettings.Current.ThemeMode);
 
-    private static bool DetectLight()
+    /// <summary>Whether a theme setting (System, Dark or Light) means the light palette.</summary>
+    public static bool WouldBeLight(string mode)
     {
-        switch (AppSettings.Current.ThemeMode)
+        switch (mode)
         {
             case "Light": return true;
             case "Dark": return false;

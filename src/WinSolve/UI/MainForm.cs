@@ -110,6 +110,7 @@ public sealed class MainForm : Form
             Activate();
             // When started in the tray, ShowFromTray runs the fade-in itself.
             if (!_startHidden) await AnimateInAsync();
+            if (!_startHidden && AppSettings.Current.IsFirstRun) BeginInvoke(ShowWelcome);
         };
         HandleCreated += (_, _) => Theme.StyleWindow(this);
         FormClosing += OnFormClosing;
@@ -257,6 +258,15 @@ public sealed class MainForm : Form
                 Sound = false,
             });
         }
+    }
+
+    private void ShowWelcome()
+    {
+        var language = AppSettings.Current.Language;
+        using var dlg = new WelcomeDialog();
+        var ok = dlg.ShowDialog(this) == DialogResult.OK;
+        if (ok && dlg.NeedsRestart) RestartApp();
+        else if (AppSettings.Current.Language != language || !ok) Reload(CurrentPage?.Key ?? "home");
     }
 
     /// <summary>Starts a new WinSolve (it waits for this one to close) and exits.</summary>

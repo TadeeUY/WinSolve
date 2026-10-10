@@ -67,6 +67,10 @@ public sealed class AppSettings
     /// <summary>UI language: "en" or "es".</summary>
     public string Language { get; set; } = "en";
 
+    /// <summary>No settings file yet: WinSolve's first start on this PC (shows the welcome screen).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsFirstRun { get; private set; }
+
     /// <summary>Color theme: System (follows Windows), Dark or Light.</summary>
     public string ThemeMode { get; set; } = "System";
 
@@ -86,8 +90,9 @@ public sealed class AppSettings
         catch (Exception ex)
         {
             Logger.Write($"Could not read settings, using defaults: {ex.Message}");
+            return new AppSettings();
         }
-        return new AppSettings();
+        return new AppSettings { IsFirstRun = true };
     }
 
     /// <summary>Saves atomically (temp file + rename), so a crash mid-write can't corrupt the settings.</summary>
