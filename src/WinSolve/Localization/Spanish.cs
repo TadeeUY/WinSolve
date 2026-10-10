@@ -1311,5 +1311,16 @@ public static class Spanish
         ["Creating the PDF..."] = "Creando el PDF...",
         ["Edge could not print the report; saving it as a web page instead."] = "Edge no pudo imprimir el informe; se guarda como página web.",
         ["Edge took too long; saving the report as a web page instead."] = "Edge tardó demasiado; se guarda el informe como página web.",
+        ["{0} may fail soon"] = "{0} podría fallar pronto",
+        ["{0} shows signs of wear"] = "{0} muestra señales de desgaste",
+        ["Its S.M.A.R.T. health got worse."] = "Su salud S.M.A.R.T. empeoró.",
+        ["Back up your important files."] = "Haz una copia de seguridad de tus archivos importantes.",
+        ["{0}: {1}% life left"] = "{0}: le queda {1}% de vida",
+        ["The SSD is close to the end of its rated writes. Back up your files and plan to replace it."] = "El SSD está cerca del límite de escrituras para el que fue diseñado. Haz una copia de tus archivos y planea reemplazarlo.",
+        ["{0} is wearing out fast"] = "{0} se está desgastando rápido",
+        ["It used {0}% of its life in {1} days. Something may be writing to it constantly (a swap file, a download or a backup loop)."] = "Gastó {0}% de su vida en {1} días. Puede que algo esté escribiendo en él todo el tiempo (el archivo de paginación, una descarga o una copia de seguridad en bucle).",
+        ["{0} is running hot ({1} °C)"] = "{0} está muy caliente ({1} °C)",
+        ["High temperatures shorten a drive's life and slow it down. Check the airflow around it, or add a heatsink to an NVMe SSD."] = "Las temperaturas altas acortan la vida del disco y lo hacen más lento. Revisa la ventilación o ponle un disipador si es un SSD NVMe.",
+        ["A drive"] = "Un disco",
     };
 }

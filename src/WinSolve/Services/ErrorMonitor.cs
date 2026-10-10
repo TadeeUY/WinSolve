@@ -25,7 +25,7 @@ public sealed class Alert
 /// Watches the event log and devices in the background and raises an alert
 /// whenever Windows reports an error.
 /// </summary>
-public sealed class ErrorMonitor : IDisposable
+public sealed partial class ErrorMonitor : IDisposable
 {
     public static ErrorMonitor Instance { get; } = new();
 
@@ -74,6 +74,8 @@ public sealed class ErrorMonitor : IDisposable
             catch { }
         });
         _deviceTimer = new System.Threading.Timer(_ => CheckDevices(), null, TimeSpan.FromMinutes(3), TimeSpan.FromMinutes(3));
+        // Drive health (S.M.A.R.T.): every hour, first a few minutes after start.
+        _diskTimer = new System.Threading.Timer(_ => _ = CheckDisksAsync(), null, TimeSpan.FromMinutes(5), TimeSpan.FromHours(1));
         Logger.Write("Error monitoring enabled.");
     }
 
@@ -87,6 +89,8 @@ public sealed class ErrorMonitor : IDisposable
         _watchers.Clear();
         _deviceTimer?.Dispose();
         _deviceTimer = null;
+        _diskTimer?.Dispose();
+        _diskTimer = null;
         Logger.Write("Error monitoring disabled.");
     }
 

@@ -61,6 +61,9 @@ public sealed class AppSettings
     /// <summary>Format of the scheduled task this install created (see Maintenance).</summary>
     public int MaintenanceTaskFormat { get; set; }
 
+    /// <summary>Last drive health readings, to alert when a drive gets worse (key: model + serial).</summary>
+    public Dictionary<string, Services.DiskBaseline> DiskBaselines { get; set; } = [];
+
     /// <summary>UI language: "en" or "es".</summary>
     public string Language { get; set; } = "en";
 
