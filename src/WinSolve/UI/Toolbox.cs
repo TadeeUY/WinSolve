@@ -29,6 +29,9 @@ public static class Toolbox
         new("hosts", "Network", "", "Hosts file editor",
             "Edit the hosts file or block a website, with an automatic backup.", "hosts block site bloquear sitio",
             o => Show(o, new HostsDialog())),
+        new("battery", "Windows", "\uEBA7", "Battery report",
+            "How much capacity the battery has lost, charge cycles and how long it lasts now.", "battery bateria salud powercfg notebook laptop",
+            o => Show(o, new BatteryDialog())),
         new("context-menu", "Windows", "", "Right-click menu cleanup",
             "Turn off entries that programs added to the right-click menu.", "context menu shell extension menu contextual clic derecho",
             o => Show(o, new ContextMenuDialog())),
@@ -643,5 +646,129 @@ internal sealed class RestorePointsDialog : ToolDialog
         if (!Ask($"Delete the restore point from {p.Created:g}?\n\n{p.Description}", danger: true)) return;
         if (!RestorePoints.Delete(p.Sequence)) Tell("Windows could not delete it.", warning: true);
         Fill();
+    }
+}
+
+// ═══════════════════════ Battery ═══════════════════════
+
+internal sealed class BatteryDialog : ToolDialog
+{
+    private readonly FlowLayoutPanel _tiles = new() { AutoSize = true, WrapContents = true, BackColor = Color.Transparent, Margin = new Padding(0) };
+    private readonly CapacityChart _chart = new() { Height = 170, Margin = new Padding(0, 10, 0, 0) };
+    private static readonly Font ValueFont = new("Segoe UI Semibold", 20f);
+
+    public BatteryDialog() : base("\uEBA7", "Battery report",
+        "Battery wear compared with when it was new, from Windows' own battery report.", new Size(760, 520))
+    {
+        Buttons.Controls.Add(Theme.Button("Full Windows report", async (_, _) => await OpenFullAsync(), glyph: "\uE8A5"));
+        AddRow(_tiles);
+        AddRow(_chart, fill: true);
+        Shown += async (_, _) => await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Status.Text = Loc.T("Reading the battery report...");
+        try
+        {
+            var batteries = await BatteryReport.ReadAsync();
+            if (batteries.Count == 0)
+            {
+                Status.Text = Loc.T("This PC has no battery.");
+                return;
+            }
+            var b = batteries[0];
+            Tile("Health", $"{b.HealthPercent:0}%", string.Format(Loc.T("{0} of {1} mWh"), b.FullChargeCapacity.ToString("N0"), b.DesignCapacity.ToString("N0")),
+                b.HealthPercent >= 80 ? Theme.Good : b.HealthPercent >= 60 ? Theme.Warn : Theme.Bad);
+            Tile("Charge cycles", b.CycleCount?.ToString("N0") ?? "—", Loc.T("Most batteries are rated for 300-1000"), null);
+            Tile("Lasts now", Runtime(b.RuntimeNow), Loc.T("Estimated at full charge"), null);
+            Tile("When new", Runtime(b.RuntimeWhenNew), b.Chemistry, null);
+            _chart.SetHistory(b.History);
+            Status.Text = Loc.T(b.HealthPercent >= 80 ? "The battery is in good shape."
+                : b.HealthPercent >= 60 ? "The battery has lost a noticeable part of its capacity."
+                : "The battery is worn out. Consider replacing it.");
+        }
+        catch (Exception ex)
+        {
+            Status.Text = ex.Message;
+        }
+    }
+
+    private static string Runtime(TimeSpan? t) => t is { } v && v > TimeSpan.Zero ? $"{(int)v.TotalHours} h {v.Minutes:00} min" : "—";
+
+    private void Tile(string title, string value, string detail, Color? color)
+    {
+        var card = new Card { Width = 168, Height = 112, Margin = new Padding(0, 0, 10, 0), Padding = new Padding(14, 10, 14, 10) };
+        var stack = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.Transparent };
+        stack.Controls.Add(Theme.Label(title, Theme.Small, Theme.Muted));
+        stack.Controls.Add(Theme.Label(value, ValueFont, color ?? Theme.Text));
+        var d = Theme.Label(detail, Theme.Small, Theme.Muted);
+        d.MaximumSize = new Size(140, 0);
+        stack.Controls.Add(d);
+        card.Controls.Add(stack);
+        _tiles.Controls.Add(card);
+        Loc.Apply(card);
+    }
+
+    private async Task OpenFullAsync()
+    {
+        try { ProcessRunner.ShellOpen(await BatteryReport.SaveHtmlAsync()); }
+        catch (Exception ex) { Tell(ex.Message, warning: true); }
+    }
+
+    /// <summary>Full-charge capacity over time, as a share of the design capacity.</summary>
+    private sealed class CapacityChart : Control
+    {
+        private List<BatteryCapacityPoint> _points = [];
+
+        public CapacityChart()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        }
+
+        public void SetHistory(List<BatteryCapacityPoint> points)
+        {
+            _points = points.Where(p => p.Design > 0).OrderBy(p => p.Date).ToList();
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.Clear(Theme.Background);
+            using (var path = Theme.RoundedRect(new Rectangle(0, 0, Width - 1, Height - 1), 8))
+            {
+                using var b = new SolidBrush(Theme.Card);
+                g.FillPath(b, path);
+            }
+            TextRenderer.DrawText(g, Loc.T("Capacity over time"), Theme.BodyBold, new Point(14, 10), Theme.Text);
+            if (_points.Count < 2)
+            {
+                TextRenderer.DrawText(g, Loc.T("Windows hasn't recorded enough history yet."), Theme.Small, new Rectangle(0, 0, Width, Height), Theme.Muted,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                return;
+            }
+            var area = new Rectangle(48, 40, Width - 64, Height - 66);
+            const double min = 40, max = 110;
+            float Y(double pct) => area.Bottom - (float)((Math.Clamp(pct, min, max) - min) / (max - min) * area.Height);
+            using (var grid = new Pen(Theme.Divider))
+            {
+                foreach (var pct in new[] { 60, 80, 100 })
+                {
+                    g.DrawLine(grid, area.Left, Y(pct), area.Right, Y(pct));
+                    TextRenderer.DrawText(g, $"{pct}%", Theme.Small, new Rectangle(4, (int)Y(pct) - 8, 40, 16), Theme.Muted, TextFormatFlags.Right);
+                }
+            }
+            var t0 = _points[0].Date.Ticks;
+            var span = Math.Max(1, _points[^1].Date.Ticks - t0);
+            var pts = _points.Select(p => new PointF(area.Left + (float)((p.Date.Ticks - t0) / (double)span * area.Width),
+                Y(p.FullCharge * 100.0 / p.Design))).ToArray();
+            using (var pen = new Pen(Theme.Accent, 2f)) g.DrawLines(pen, pts);
+            TextRenderer.DrawText(g, _points[0].Date.ToString("d"), Theme.Small, new Point(area.Left, area.Bottom + 6), Theme.Muted);
+            var last = _points[^1].Date.ToString("d");
+            var w = TextRenderer.MeasureText(last, Theme.Small).Width;
+            TextRenderer.DrawText(g, last, Theme.Small, new Point(area.Right - w, area.Bottom + 6), Theme.Muted);
+        }
     }
 }
