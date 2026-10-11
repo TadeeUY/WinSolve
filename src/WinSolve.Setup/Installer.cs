@@ -399,15 +399,9 @@ namespace WinSolve.Setup
                 catch { }
             }
 
+            // Updates only ever go to the all-users install: its entry is machine-wide.
+            // (Other users' registry is never touched.)
             using (var hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64)) Update(hklm, UninstallKey);
-            using (var users = RegistryKey.OpenBaseKey(RegistryHive.Users, RegistryView.Registry64))
-            {
-                foreach (var sid in users.GetSubKeyNames())
-                {
-                    if (sid.EndsWith("_Classes", StringComparison.OrdinalIgnoreCase)) continue;
-                    Update(users, sid + "\\" + UninstallKey);
-                }
-            }
             return found;
         }
 

@@ -78,7 +78,8 @@ public sealed class TweaksPage : Page
             badge.Anchor = AnchorStyles.Right;
             badge.Margin = new Padding(6, 4, 6, 0);
             var info = new Label { Text = "", Font = Theme.IconsSmall, ForeColor = Theme.Muted, AutoSize = true, Cursor = Cursors.Help, Margin = new Padding(0, 6, 0, 0) };
-            var tip = Loc.T(t.Description) + (t.Warning is null ? "" : "\n\n" + Loc.T(t.Warning)) + (t.NeedsReboot ? "\n\n" + Loc.T("Requires a restart.") : "");
+            var tip = Loc.T(t.Description) + (t.Warning is null ? "" : "\n\n" + Loc.T(t.Warning)) + (t.NeedsReboot ? "\n\n" + Loc.T("Requires a restart.") : "")
+                      + (t.AllUsers ? "\n\n" + Loc.T("Applies to all users of this PC.") : "");
             _tips.SetToolTip(info, tip);
             _tips.SetToolTip(box, tip);
 
@@ -200,7 +201,7 @@ public sealed class TweaksPage : Page
             label.Anchor = AnchorStyles.Left;
             var toggle = Theme.Toggle("", false);
             toggle.Anchor = AnchorStyles.Right;
-            _tips.SetToolTip(label, Loc.T(t.Description));
+            _tips.SetToolTip(label, Loc.T(t.Description) + (t.AllUsers ? "\n\n" + Loc.T("Applies to all users of this PC.") : ""));
             toggle.CheckedChanged += async (_, _) =>
             {
                 if (_loading) return;

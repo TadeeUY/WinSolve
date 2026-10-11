@@ -444,11 +444,13 @@ public static class AppsService
         // Inno/NSIS uninstallers copy themselves to %TEMP% and keep running after the parent exits.
         await Task.Delay(3000, ct);
 
-        // 2) Close processes running from the folders.
+        // 2) Close processes running from the folders, in this session only (not other signed-in users').
+        var session = Process.GetCurrentProcess().SessionId;
         foreach (var proc in Process.GetProcesses())
         {
             try
             {
+                if (proc.SessionId != session) continue;
                 var path = proc.MainModule?.FileName;
                 if (path is not null && folders.Any(f => SafePath.IsSameOrInside(path, f)))
                 {

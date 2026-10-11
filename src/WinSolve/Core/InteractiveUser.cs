@@ -28,6 +28,16 @@ public static class InteractiveUser
 
     public static bool IsDifferent => Other is not null;
 
+    /// <summary>
+    /// Someone else is signed in but their account couldn't be read. Per-user actions then fail
+    /// instead of falling back to the administrator's own profile.
+    /// </summary>
+    public static bool IsUnresolved { get { _ = Detected.Value; return _unresolved; } }
+    private static bool _unresolved;
+
+    private static InvalidOperationException Unresolved() =>
+        new(Localization.Loc.T("WinSolve couldn't access the signed-in user's account, so it won't change per-user settings or files. Sign out and in again, or run WinSolve from that account."));
+
     private static Account? Detect()
     {
         try
@@ -39,6 +49,8 @@ public static class InteractiveUser
 
             var sid = (SecurityIdentifier)new NTAccount(domain ?? "", user).Translate(typeof(SecurityIdentifier));
             if (sid == WindowsIdentity.GetCurrent().User) return null;
+            // From here on someone else is signed in: any failure must not fall back to our own profile.
+            _unresolved = true;
 
             var profile = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\" + sid.Value)
                 ?.GetValue("ProfileImagePath") as string;
@@ -51,11 +63,19 @@ public static class InteractiveUser
             if (hive is null) return null;
 
             Logger.Write($"Signed-in user {domain}\\{user} differs from the elevated account {WindowsIdentity.GetCurrent().Name}; acting on {domain}\\{user}'s profile.");
+            _unresolved = false;
             return new Account(sid, $"{domain}\\{user}", profile);
         }
         catch (Exception ex)
         {
             Logger.Write($"Could not identify the signed-in user: {ex.Message}");
+            // If the session's user name isn't ours, someone else is signed in: fail closed.
+            try
+            {
+                var name = QuerySession(Process.GetCurrentProcess().SessionId, WTSUserName);
+                if (!string.IsNullOrEmpty(name) && !name.Equals(Environment.UserName, StringComparison.OrdinalIgnoreCase)) _unresolved = true;
+            }
+            catch { }
             return null;
         }
     }
@@ -82,6 +102,21 @@ public static class InteractiveUser
         catch (Exception ex) { Logger.Write($"Could not read the list of user profiles: {ex.Message}"); }
         return list.ToArray();
     });
+
+    /// <summary>Hides other users' file paths and account names in text (logs in a bug report).</summary>
+    public static string RedactOtherUsers(string text)
+    {
+        foreach (var profile in OtherProfileFolders.Value)
+        {
+            text = System.Text.RegularExpressions.Regex.Replace(text, System.Text.RegularExpressions.Regex.Escape(profile) + @"[^\r\n""'|]*",
+                "[another user's file]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var name = Path.GetFileName(profile);
+            if (name.Length > 2)
+                text = System.Text.RegularExpressions.Regex.Replace(text, @"\b" + System.Text.RegularExpressions.Regex.Escape(name) + @"\b", "[another user]",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
+        return text;
+    }
 
     /// <summary>
     /// True for anything that belongs to another Windows user of this PC: their profile folder or
@@ -111,13 +146,14 @@ public static class InteractiveUser
     /// <summary>Opens a registry root; CurrentUser is the signed-in user's hive.</summary>
     public static RegistryKey OpenBase(RegistryHive hive, RegistryView view)
     {
+        if (hive == RegistryHive.CurrentUser && IsUnresolved) throw Unresolved();
         if (hive == RegistryHive.CurrentUser && Other is { } o)
         {
             var users = RegistryKey.OpenBaseKey(RegistryHive.Users, view);
             try
             {
-                var key = users.OpenSubKey(o.Sid.Value, writable: true);
-                if (key is not null) return key;
+                // Never fall back to our own HKCU: that's another account.
+                return users.OpenSubKey(o.Sid.Value, writable: true) ?? throw Unresolved();
             }
             finally
             {
@@ -129,7 +165,7 @@ public static class InteractiveUser
 
     // ───────────── Folders ─────────────
 
-    public static string Profile => Other?.ProfilePath ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    public static string Profile => IsUnresolved ? throw Unresolved() : Other?.ProfilePath ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     public static string LocalAppData => Folder("Local AppData", @"AppData\Local", () => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
     public static string RoamingAppData => Folder("AppData", @"AppData\Roaming", () => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
@@ -145,6 +181,7 @@ public static class InteractiveUser
     {
         get
         {
+            if (IsUnresolved) throw Unresolved();
             if (Other is not { } o) return Path.GetTempPath();
             var value = ReadUserValue(@"Environment", "TEMP");
             return value is not null && Expand(value, o) is { } expanded ? expanded : Path.Combine(LocalAppData, "Temp");
@@ -153,6 +190,7 @@ public static class InteractiveUser
 
     private static string Folder(string shellFolderName, string relative, Func<string> own)
     {
+        if (IsUnresolved) throw Unresolved();
         if (Other is not { } o) return own();
         var value = ReadUserValue(@"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders", shellFolderName);
         return value is not null && Expand(value, o) is { } expanded ? expanded : Path.Combine(o.ProfilePath, relative);

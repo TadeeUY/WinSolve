@@ -109,6 +109,22 @@ public static class StartupService
         public string? TaskPath { get; set; }
         public string? State { get; set; }
         public string? Command { get; set; }
+        public string? UserId { get; set; }
+    }
+
+    /// <summary>A task that runs as another specific person (not a group, service or this user).</summary>
+    private static bool BelongsToAnotherUser(string? userId)
+    {
+        if (string.IsNullOrWhiteSpace(userId)) return false;
+        try
+        {
+            var sid = userId.StartsWith("S-1-", StringComparison.OrdinalIgnoreCase)
+                ? new System.Security.Principal.SecurityIdentifier(userId)
+                : (System.Security.Principal.SecurityIdentifier)new System.Security.Principal.NTAccount(userId).Translate(typeof(System.Security.Principal.SecurityIdentifier));
+            var person = sid.Value.StartsWith("S-1-5-21-", StringComparison.Ordinal) || sid.Value.StartsWith("S-1-12-1-", StringComparison.Ordinal);
+            return person && sid != InteractiveUser.Sid;
+        }
+        catch { return false; }
     }
 
     /// <summary>Third-party scheduled tasks that run at logon or boot (a common hiding place for updaters).</summary>
@@ -118,7 +134,7 @@ public static class StartupService
             $tasks = Get-ScheduledTask | Where-Object {
                 $_.TaskPath -notlike '\Microsoft\*' -and ($_.Triggers | Where-Object { $_.CimClass.CimClassName -in 'MSFT_TaskLogonTrigger','MSFT_TaskBootTrigger' })
             } | ForEach-Object {
-                [pscustomobject]@{ TaskName = $_.TaskName; TaskPath = $_.TaskPath; State = "$($_.State)";
+                [pscustomobject]@{ TaskName = $_.TaskName; TaskPath = $_.TaskPath; State = "$($_.State)"; UserId = "$($_.Principal.UserId)";
                     Command = (($_.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)".Trim() }) -join ' ; ') }
             }
             ConvertTo-Json -InputObject @($tasks) -Compress
@@ -129,7 +145,8 @@ public static class StartupService
             var start = r.Output.IndexOf('[');
             if (start < 0) return [];
             var tasks = JsonSerializer.Deserialize<List<PsTask>>(r.Output[start..], new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
-            return tasks.Where(t => !string.IsNullOrEmpty(t.TaskName)).Select(t => new StartupItem
+            // Tasks that run as another user of this PC are theirs: not listed, never changed.
+            return tasks.Where(t => !string.IsNullOrEmpty(t.TaskName) && !BelongsToAnotherUser(t.UserId)).Select(t => new StartupItem
             {
                 Name = t.TaskName!,
                 Command = t.Command ?? "",

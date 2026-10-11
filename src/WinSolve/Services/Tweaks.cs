@@ -37,6 +37,9 @@ public sealed class Tweak
 
     public bool NeedsReboot { get; init; }
 
+    /// <summary>Changes a machine-wide setting: every user of this PC gets it (shown in its tooltip).</summary>
+    public bool AllUsers { get; init; }
+
     /// <summary>Whether Undo has something to restore (default: the tweak is applied).</summary>
     public Func<bool>? CanUndo { get; init; }
 
@@ -85,6 +88,7 @@ public static partial class TweakCatalog
     {
         Id = id, Category = category, Title = title, Description = description,
         Recommended = recommended, NeedsExplorerRestart = explorer, NeedsReboot = reboot,
+        AllUsers = values.Any(v => v.Hive is RegistryHive.LocalMachine or RegistryHive.Users),
         IsApplied = () => values.All(v => Reg.ValueEquals(Reg.Get(v.Hive, v.Path, v.Name), v.On)),
         Apply = () =>
         {
@@ -205,8 +209,8 @@ public static partial class TweakCatalog
             RegTweak("priv-copilot", "Privacy", "Disable Copilot",
                 "Hides and disables Windows Copilot.",
                 [
+                    // Per user only: the machine-wide policy would turn it off for every account.
                     D(HKCU, @"Software\Policies\Microsoft\Windows\WindowsCopilot", "TurnOffWindowsCopilot", 1, null),
-                    D(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot", "TurnOffWindowsCopilot", 1, null),
                 ], explorer: true),
             RegTweak("priv-recall", "Privacy", "Disable Recall",
                 "Prevents Windows from saving screen snapshots for Recall.",

@@ -12,6 +12,7 @@ public static partial class TweakCatalog
 {
     private const string EdgePolicy = @"SOFTWARE\Policies\Microsoft\Edge";
     private const string HomeNamespace = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace\{f874310e-b6b7-47dc-bc84-b9e6b38f5903}";
+    private const string HomeClsid = @"Software\Classes\CLSID\{f874310e-b6b7-47dc-bc84-b9e6b38f5903}";
     private const string GalleryClsid = @"Software\Classes\CLSID\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}";
 
     /// <summary>WinUtil-like "Standard" preset: safe, reversible essentials.</summary>
@@ -112,12 +113,8 @@ public static partial class TweakCatalog
                 [S(HKCU, @"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\Bags\AllFolders\Shell", "FolderType", "NotSpecified", null)],
                 explorer: true),
             RegTweak("ess-location", "Privacy", "Disable location tracking",
-                "Turns off the location service and stops apps from reading your location.",
-                [
-                    S(HKLM, @"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location", "Value", "Deny", "Allow"),
-                    D(HKLM, @"SYSTEM\CurrentControlSet\Services\lfsvc\Service\Configuration", "Status", 0, 1),
-                    D(HKLM, @"SYSTEM\Maps", "AutoUpdateEnabled", 0, 1),
-                ]),
+                "Stops apps from reading your location (your account only; other users keep their own setting).",
+                [S(HKCU, @"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location", "Value", "Deny", "Allow")]),
             RegTweak("ess-storage-sense", "System", "Disable Storage Sense",
                 "Stops Windows from deleting files automatically (Downloads, Recycle Bin) when space runs low.",
                 [D(HKCU, @"Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy", "01", 0, null)]),
@@ -132,17 +129,17 @@ public static partial class TweakCatalog
                 [S(HKLM, @"SYSTEM\CurrentControlSet\Control\Session Manager\Environment", "POWERSHELL_TELEMETRY_OPTOUT", "1", null)]),
             RegTweak("ess-edge-debloat", "Privacy", "Debloat Microsoft Edge",
                 "Turns off Edge's sidebar, shopping assistant, startup boost, first-run screens, recommendations and diagnostic data (Edge stays installed).",
+                // User policies (HKCU): only this account's Edge changes.
                 [
-                    D(HKLM, EdgePolicy, "HubsSidebarEnabled", 0, null),
-                    D(HKLM, EdgePolicy, "EdgeShoppingAssistantEnabled", 0, null),
-                    D(HKLM, EdgePolicy, "StartupBoostEnabled", 0, null),
-                    D(HKLM, EdgePolicy, "HideFirstRunExperience", 1, null),
-                    D(HKLM, EdgePolicy, "ShowRecommendationsEnabled", 0, null),
-                    D(HKLM, EdgePolicy, "PersonalizationReportingEnabled", 0, null),
-                    D(HKLM, EdgePolicy, "UserFeedbackAllowed", 0, null),
-                    D(HKLM, EdgePolicy, "DiagnosticData", 0, null),
-                    D(HKLM, EdgePolicy, "EdgeCollectionsEnabled", 0, null),
-                    D(HKLM, @"SOFTWARE\Policies\Microsoft\EdgeUpdate", "CreateDesktopShortcutDefault", 0, null),
+                    D(HKCU, EdgePolicy, "HubsSidebarEnabled", 0, null),
+                    D(HKCU, EdgePolicy, "EdgeShoppingAssistantEnabled", 0, null),
+                    D(HKCU, EdgePolicy, "StartupBoostEnabled", 0, null),
+                    D(HKCU, EdgePolicy, "HideFirstRunExperience", 1, null),
+                    D(HKCU, EdgePolicy, "ShowRecommendationsEnabled", 0, null),
+                    D(HKCU, EdgePolicy, "PersonalizationReportingEnabled", 0, null),
+                    D(HKCU, EdgePolicy, "UserFeedbackAllowed", 0, null),
+                    D(HKCU, EdgePolicy, "DiagnosticData", 0, null),
+                    D(HKCU, EdgePolicy, "EdgeCollectionsEnabled", 0, null),
                 ]),
             ServicesManualTweak(),
 
@@ -182,17 +179,21 @@ public static partial class TweakCatalog
                 Title = "Remove Home and Gallery from File Explorer",
                 Description = "Hides the Home and Gallery entries in the File Explorer navigation pane (Windows 11).",
                 NeedsExplorerRestart = true,
-                IsApplied = () => !Reg.KeyExists(HKLM, HomeNamespace)
+                // Unpinned for this user only (older versions deleted Home for everyone).
+                IsApplied = () => Reg.ValueEquals(Reg.Get(HKCU, HomeClsid, "System.IsPinnedToNameSpaceTree"), 0)
                                   && Reg.ValueEquals(Reg.Get(HKCU, GalleryClsid, "System.IsPinnedToNameSpaceTree"), 0),
                 Apply = () =>
                 {
-                    Reg.DeleteKeyTree(HKLM, HomeNamespace);
+                    Reg.Set(HKCU, HomeClsid, "System.IsPinnedToNameSpaceTree", 0, RegistryValueKind.DWord);
                     Reg.Set(HKCU, GalleryClsid, "System.IsPinnedToNameSpaceTree", 0, RegistryValueKind.DWord);
                 },
                 Revert = () =>
                 {
-                    Reg.Set(HKLM, HomeNamespace, "", "CLSID_MSGraphHomeFolder", RegistryValueKind.String);
+                    Reg.Delete(HKCU, HomeClsid, "System.IsPinnedToNameSpaceTree");
                     Reg.Delete(HKCU, GalleryClsid, "System.IsPinnedToNameSpaceTree");
+                    // Put back Home for everyone if an older version removed it.
+                    if (!Reg.KeyExists(HKLM, HomeNamespace))
+                        Reg.Set(HKLM, HomeNamespace, "", "CLSID_MSGraphHomeFolder", RegistryValueKind.String);
                 },
             });
             list.Add(RegTweak("pref-hide-recommended", "Interface", "Hide the Recommended section in Start",
@@ -329,7 +330,8 @@ public static partial class TweakCatalog
         IsApplied = () => !OneDriveInstalled(),
         Apply = () =>
         {
-            foreach (var p in Process.GetProcessesByName("OneDrive")) { try { p.Kill(); } catch { } finally { p.Dispose(); } }
+            var session = Process.GetCurrentProcess().SessionId;
+            foreach (var p in Process.GetProcessesByName("OneDrive")) { try { if (p.SessionId == session) p.Kill(); } catch { } finally { p.Dispose(); } }
             // OneDrive is installed per user: uninstall it for the person signed in.
             if (OneDriveSetup() is { } setup) InteractiveUser.Run(setup, "/uninstall", 120000);
             Reg.Delete(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Run", "OneDrive");

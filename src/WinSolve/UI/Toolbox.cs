@@ -298,6 +298,11 @@ internal sealed class LockedFileDialog : ToolDialog
         try
         {
             using var proc = System.Diagnostics.Process.GetProcessById(p.Pid);
+            if (proc.SessionId != System.Diagnostics.Process.GetCurrentProcess().SessionId)
+            {
+                Tell("That program belongs to another user signed in to this PC, so WinSolve won't close it.", warning: true);
+                return;
+            }
             proc.Kill(entireProcessTree: false);
             proc.WaitForExit(5000);
         }
@@ -491,7 +496,19 @@ internal sealed class WifiDialog : ToolDialog
         AddRow(Theme.InCard(_grid), fill: true);
         Shown += (_, _) =>
         {
-            try { _profiles = WifiPasswords.Read(); Fill(); Status.Text = Loc.T($"{_profiles.Count} saved network(s)."); }
+            try
+            {
+                _profiles = WifiPasswords.Read();
+                Fill();
+                Status.Text = Loc.T($"{_profiles.Count} saved network(s).");
+                // Windows only shows these keys to administrators: don't reveal them to the
+                // standard user signed in while WinSolve runs with another admin's rights.
+                if (InteractiveUser.IsDifferent)
+                {
+                    _show.Enabled = false;
+                    Status.Text = Loc.T("Passwords are only shown when the signed-in user is an administrator.");
+                }
+            }
             catch (Exception ex) { Status.Text = ex.Message; }
         };
     }
@@ -501,7 +518,7 @@ internal sealed class WifiDialog : ToolDialog
         _grid.Rows.Clear();
         foreach (var p in _profiles)
         {
-            var pass = p.Password is null ? "—" : _show.Checked ? p.Password : new string('•', 10);
+            var pass = p.Password is null ? "—" : _show.Checked && !InteractiveUser.IsDifferent ? p.Password : new string('•', 10);
             var i = _grid.Rows.Add(p.Name, p.Security, pass);
             _grid.Rows[i].Tag = p;
         }
@@ -509,7 +526,7 @@ internal sealed class WifiDialog : ToolDialog
 
     private void Copy()
     {
-        if (_grid.CurrentRow?.Tag is WifiProfile { Password: { Length: > 0 } pw } p)
+        if (!InteractiveUser.IsDifferent && _grid.CurrentRow?.Tag is WifiProfile { Password: { Length: > 0 } pw } p)
         {
             Clipboard.SetText(pw);
             Status.Text = Loc.T($"Password of {p.Name} copied.");

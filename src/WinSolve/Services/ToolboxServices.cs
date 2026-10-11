@@ -608,7 +608,7 @@ public static class ContextMenuItems
                     {
                         if (BuiltInVerbs.Contains(verb)) continue;
                         using var k = shell.OpenSubKey(verb);
-                        if (k is null) continue;
+                        if (k is null || k.GetValue(OverrideMarker) is not null) continue; // our per-user "off" switch for a machine entry
                         var name = ResolveName(k.GetValue("MUIVerb") as string ?? k.GetValue("") as string) ?? verb;
                         using var commandKey = k.OpenSubKey("command");
                         var command = commandKey?.GetValue("") as string ?? "";
@@ -616,7 +616,8 @@ public static class ContextMenuItems
                         entries.Add(new ContextMenuEntry
                         {
                             Name = name.Replace("&", ""), Where = label, Source = ProgramOf(command) ?? verb, IsHandler = false,
-                            RegistryPath = $@"{root}\shell\{verb}", Hive = hive, Enabled = k.GetValue("LegacyDisable") is null,
+                            RegistryPath = $@"{root}\shell\{verb}", Hive = hive,
+                            Enabled = k.GetValue("LegacyDisable") is null && !(hive == RegistryHive.LocalMachine && HasUserOverride($@"{root}\shell\{verb}")),
                         });
                     }
                 }
@@ -657,28 +658,67 @@ public static class ContextMenuItems
         return (null, "");
     }
 
+    private const string OverrideMarker = "WinSolveOverride";
+
+    private static bool HasUserOverride(string path)
+    {
+        using var classes = OpenClasses(RegistryHive.CurrentUser);
+        using var key = classes?.OpenSubKey(path);
+        return key?.GetValue(OverrideMarker) is not null;
+    }
+
+    /// <summary>Turns an entry on or off for the signed-in user only; other users' menus don't change.</summary>
     public static void SetEnabled(ContextMenuEntry e, bool enabled)
     {
         if (e.IsHandler && e.Clsid is { } clsid)
         {
-            using var key = Registry.LocalMachine.CreateSubKey(BlockedKey);
-            if (enabled) key.DeleteValue(clsid, throwOnMissingValue: false);
-            else key.SetValue(clsid, "WinSolve", RegistryValueKind.String);
+            // The per-user block list (HKCU); older versions used the machine-wide one.
+            using (var user = Reg.Root(RegistryHive.CurrentUser))
+            using (var key = user.CreateSubKey(BlockedKey))
+            {
+                if (enabled) key.DeleteValue(clsid, throwOnMissingValue: false);
+                else key.SetValue(clsid, "WinSolve", RegistryValueKind.String);
+            }
+            if (enabled)
+                using (var machine = Registry.LocalMachine.OpenSubKey(BlockedKey, writable: true))
+                    if (machine?.GetValue(clsid) as string == "WinSolve") machine.DeleteValue(clsid, throwOnMissingValue: false);
         }
-        else
+        else if (e.Hive == RegistryHive.CurrentUser)
         {
-            using var classes = OpenClasses(e.Hive, writable: true);
+            using var classes = OpenClasses(RegistryHive.CurrentUser, writable: true);
             using var key = classes?.OpenSubKey(e.RegistryPath, writable: true) ?? throw new InvalidOperationException("The entry no longer exists.");
             if (enabled) key.DeleteValue("LegacyDisable", throwOnMissingValue: false);
             else key.SetValue("LegacyDisable", "", RegistryValueKind.String);
+        }
+        else
+        {
+            // A machine-wide entry: hide it with a key in the user's own classes, which Windows
+            // reads before the machine's. Turning it back on removes that key.
+            using var classes = OpenClasses(RegistryHive.CurrentUser, writable: true) ?? throw new InvalidOperationException("The user's settings are not available.");
+            if (enabled)
+            {
+                if (HasUserOverride(e.RegistryPath)) classes.DeleteSubKeyTree(e.RegistryPath, throwOnMissingSubKey: false);
+                using var machine = OpenClasses(RegistryHive.LocalMachine, writable: true);
+                using var legacy = machine?.OpenSubKey(e.RegistryPath, writable: true);
+                legacy?.DeleteValue("LegacyDisable", throwOnMissingValue: false); // set by older versions
+            }
+            else
+            {
+                using var key = classes.CreateSubKey(e.RegistryPath, writable: true);
+                key.SetValue("LegacyDisable", "", RegistryValueKind.String);
+                key.SetValue(OverrideMarker, 1, RegistryValueKind.DWord);
+            }
         }
         e.Enabled = enabled;
     }
 
     private static HashSet<string> BlockedSet()
     {
-        using var key = Registry.LocalMachine.OpenSubKey(BlockedKey);
-        return new HashSet<string>(key?.GetValueNames() ?? [], StringComparer.OrdinalIgnoreCase);
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var machine = Registry.LocalMachine.OpenSubKey(BlockedKey)) set.UnionWith(machine?.GetValueNames() ?? []);
+        using (var user = Reg.Root(RegistryHive.CurrentUser))
+        using (var key = user.OpenSubKey(BlockedKey)) set.UnionWith(key?.GetValueNames() ?? []);
+        return set;
     }
 
     private static string? ProgramOf(string commandOrPath)

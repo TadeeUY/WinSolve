@@ -1368,5 +1368,10 @@ public static class Spanish
         ["This folder belongs to another user of this PC."] = "Esta carpeta pertenece a otro usuario de este PC.",
         ["This belongs to another user of this PC. WinSolve only changes your own files."] = "Esto pertenece a otro usuario de este PC. WinSolve solo cambia tus propios archivos.",
         ["This file is in a folder a standard user can change, so WinSolve won't schedule it as administrator. Delete it after restarting, or sign in as an administrator."] = "Este archivo está en una carpeta que un usuario estándar puede modificar, así que WinSolve no lo programa como administrador. Bórralo después de reiniciar o inicia sesión como administrador.",
+        ["WinSolve couldn't access the signed-in user's account, so it won't change per-user settings or files. Sign out and in again, or run WinSolve from that account."] = "WinSolve no pudo acceder a la cuenta del usuario que inició sesión, así que no cambia configuraciones ni archivos de usuario. Cierra sesión y vuelve a entrar, o abre WinSolve desde esa cuenta.",
+        ["That program belongs to another user signed in to this PC, so WinSolve won't close it."] = "Ese programa pertenece a otro usuario conectado a este PC, así que WinSolve no lo cierra.",
+        ["Passwords are only shown when the signed-in user is an administrator."] = "Las contraseñas solo se muestran si el usuario que inició sesión es administrador.",
+        ["Applies to all users of this PC."] = "Se aplica a todos los usuarios de este PC.",
+        ["Stops apps from reading your location (your account only; other users keep their own setting)."] = "Evita que las apps lean tu ubicación (solo en tu cuenta; los demás usuarios mantienen su configuración).",
     };
 }

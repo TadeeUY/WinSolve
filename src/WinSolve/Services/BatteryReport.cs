@@ -39,6 +39,7 @@ public static class BatteryReport
     /// <summary>Windows' full HTML battery report, saved on the desktop.</summary>
     public static async Task<string> SaveHtmlAsync(CancellationToken ct = default)
     {
+        if (SafePath.HasReparsePoint(InteractiveUser.Desktop)) throw new InvalidOperationException("The desktop folder is a link; refusing to write there.");
         var file = Path.Combine(InteractiveUser.Desktop, $"Battery report - {DateTime.Now:yyyy-MM-dd}.html");
         var r = await ProcessRunner.RunAsync("powercfg.exe", $"/batteryreport /output \"{file}\"", null, ct);
         if (!File.Exists(file)) throw new InvalidOperationException(r.Output.Trim());

@@ -111,8 +111,9 @@ public static class TaskCatalog
             Description = "Removes queued and archived error reports.",
             Run = ctx =>
             {
-                FileCleaner.DeleteContents(Path.Combine(ProgramData, "Microsoft", "Windows", "WER", "ReportArchive"), ctx);
-                FileCleaner.DeleteContents(Path.Combine(ProgramData, "Microsoft", "Windows", "WER", "ReportQueue"), ctx);
+                // Shared queues: Windows' own reports and this user's; reports of other users' apps stay.
+                DeleteReports(Path.Combine(ProgramData, "Microsoft", "Windows", "WER", "ReportArchive"), ctx);
+                DeleteReports(Path.Combine(ProgramData, "Microsoft", "Windows", "WER", "ReportQueue"), ctx);
                 FileCleaner.DeleteContents(Path.Combine(LocalAppData, "Microsoft", "Windows", "WER"), ctx);
                 return Task.CompletedTask;
             },
@@ -338,10 +339,10 @@ public static class TaskCatalog
             Id = "repair-start-menu", Category = TaskCategory.Repair,
             Title = "Repair Start menu and Search",
             Description = "Re-registers the shell components (Start, Search, Action Center).",
-            Run = ctx => Ps(ctx, """
+            Run = ctx => ForThisUser(ctx, """
                 $names = 'Microsoft.Windows.ShellExperienceHost','Microsoft.Windows.StartMenuExperienceHost','MicrosoftWindows.Client.CBS','Microsoft.Windows.Search'
                 foreach ($n in $names) {
-                    Get-AppxPackage -AllUsers -Name $n | ForEach-Object {
+                    Get-AppxPackage -Name $n | ForEach-Object {
                         try { Add-AppxPackage -DisableDevelopmentMode -Register "$($_.InstallLocation)\AppXManifest.xml" -ErrorAction Stop; "Registered: $($_.Name)" }
                         catch { "Could not register $($_.Name): $($_.Exception.Message)" }
                     }
@@ -353,7 +354,7 @@ public static class TaskCatalog
             Id = "repair-store", Category = TaskCategory.Repair,
             Title = "Reset Microsoft Store",
             Description = "Clears the Store cache and resets the app. Use it when the Store won't open or download.",
-            Run = ctx => Ps(ctx, """
+            Run = ctx => ForThisUser(ctx, """
                 $s = Get-AppxPackage Microsoft.WindowsStore
                 if ($s -and (Get-Command Reset-AppxPackage -ErrorAction SilentlyContinue)) { $s | Reset-AppxPackage; 'Microsoft Store reset.' }
                 else { Start-Process wsreset.exe -Wait; 'wsreset completed.' }
@@ -461,6 +462,46 @@ public static class TaskCatalog
             Run = ctx => Ps(ctx, "Start-MpScan -ScanType QuickScan; $t = Get-MpThreatDetection; if ($t) { \"Threats detected: $($t.Count). Open Windows Security for details.\" } else { 'No threats found.' }"),
         },
     ];
+
+    /// <summary>
+    /// Per-user app repairs: run as the signed-in user (with their own apps), not as the
+    /// administrator whose password elevated WinSolve.
+    /// </summary>
+    private static Task ForThisUser(TaskContext ctx, string script)
+    {
+        if (!InteractiveUser.IsDifferent) return Ps(ctx, script);
+        ctx.Log("> Running as the signed-in user...");
+        return Task.Run(() =>
+        {
+            if (!InteractiveUser.RunPowerShellAsUser(script, 10 * 60 * 1000))
+            {
+                ctx.Log("  Could not run it as the signed-in user.");
+                ctx.CommandErrors++;
+            }
+            else ctx.Log("  Done.");
+        });
+    }
+
+    /// <summary>Deletes error report folders, except reports about programs in another user's profile.</summary>
+    private static void DeleteReports(string queue, TaskContext ctx)
+    {
+        if (!Directory.Exists(queue) || SafePath.HasReparsePoint(queue)) return;
+        foreach (var report in Directory.EnumerateDirectories(queue, "*", SafePath.NoLinks(recursive: false)))
+        {
+            try
+            {
+                var wer = Path.Combine(report, "Report.wer");
+                if (File.Exists(wer))
+                {
+                    var appPath = File.ReadLines(wer).FirstOrDefault(l => l.StartsWith("AppPath=", StringComparison.OrdinalIgnoreCase))?[8..];
+                    if (appPath is not null && InteractiveUser.IsOtherUsersData(appPath)) continue;
+                }
+                FileCleaner.DeleteContents(report, ctx);
+                try { Directory.Delete(report); } catch { /* files in use */ }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+    }
 
     public static async Task ExplorerRestart(TaskContext ctx)
     {

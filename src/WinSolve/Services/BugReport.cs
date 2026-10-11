@@ -13,7 +13,8 @@ public static class BugReport
 {
     public static async Task<string> CreateAsync(Action<string> log, CancellationToken ct = default)
     {
-        var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        // The desktop of the person at the keyboard (not the administrator's under over-the-shoulder elevation).
+        var desktop = InteractiveUser.Desktop;
         var zipPath = Path.Combine(desktop, $"WinSolve-report-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
         if (SafePath.HasReparsePoint(desktop)) throw new InvalidOperationException("The desktop folder is a link; refusing to write there.");
 
@@ -42,7 +43,7 @@ public static class BugReport
             {
                 using var src = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 using var reader = new StreamReader(src);
-                AddText("logs/" + Path.GetFileName(file), Logger.MaskSecrets(reader.ReadToEnd()));
+                AddText("logs/" + Path.GetFileName(file), InteractiveUser.RedactOtherUsers(Logger.MaskSecrets(reader.ReadToEnd())));
             }
         }
 

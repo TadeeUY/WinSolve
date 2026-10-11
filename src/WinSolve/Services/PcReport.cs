@@ -21,6 +21,7 @@ public static class PcReport
         var disks = await DiskHealthService.ScanAsync();
         var folder = InteractiveUser.Desktop;
         Directory.CreateDirectory(folder);
+        if (SafePath.HasReparsePoint(folder)) throw new InvalidOperationException("The desktop folder is a link; refusing to write there.");
         var name = $"{Loc.T("PC report")} - {Environment.MachineName} - {DateTime.Now:yyyy-MM-dd}";
 
         if (EdgePath() is { } edge)
