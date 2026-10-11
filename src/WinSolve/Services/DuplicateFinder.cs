@@ -37,6 +37,7 @@ public static class DuplicateFinder
     private static List<DuplicateGroup> Find(SpaceNode root, long minSize, Action<string> status, CancellationToken ct)
     {
         var excluded = ExcludedRoots().Where(e => e.Length > 0).ToArray();
+        // (Other users' folders never get into the scan tree; see DiskScanner.)
         var files = new List<(string Path, long Size)>();
 
         void Walk(SpaceNode n, string path)

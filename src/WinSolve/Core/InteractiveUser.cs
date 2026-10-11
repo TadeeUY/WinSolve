@@ -60,6 +60,52 @@ public static class InteractiveUser
         }
     }
 
+    /// <summary>The account of the person at the keyboard (signed-in user, or WinSolve's own account).</summary>
+    public static SecurityIdentifier Sid => Other?.Sid ?? WindowsIdentity.GetCurrent().User!;
+
+    private static readonly Lazy<string[]> OtherProfileFolders = new(() =>
+    {
+        var list = new List<string>();
+        try
+        {
+            using var profiles = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList");
+            foreach (var sid in profiles?.GetSubKeyNames() ?? [])
+            {
+                // Local (S-1-5-21) and Microsoft Entra ID (S-1-12-1) people; not system/service profiles.
+                if (!(sid.StartsWith("S-1-5-21-", StringComparison.Ordinal) || sid.StartsWith("S-1-12-1-", StringComparison.Ordinal))) continue;
+                if (sid.Equals(Sid.Value, StringComparison.OrdinalIgnoreCase)) continue;
+                using var key = profiles!.OpenSubKey(sid);
+                if (key?.GetValue("ProfileImagePath") is string p && p.Length > 0)
+                    list.Add(Path.GetFullPath(Environment.ExpandEnvironmentVariables(p)).TrimEnd('\\'));
+            }
+        }
+        catch (Exception ex) { Logger.Write($"Could not read the list of user profiles: {ex.Message}"); }
+        return list.ToArray();
+    });
+
+    /// <summary>
+    /// True for anything that belongs to another Windows user of this PC: their profile folder or
+    /// their Recycle Bin folder on any drive. WinSolve only works on the person at the keyboard.
+    /// </summary>
+    public static bool IsOtherUsersData(string path)
+    {
+        string full;
+        try { full = Path.GetFullPath(path).TrimEnd('\\'); }
+        catch { return false; }
+        foreach (var profile in OtherProfileFolders.Value)
+            if (SafePath.IsSameOrInside(full, profile)) return true;
+
+        var root = Path.GetPathRoot(full);
+        if (string.IsNullOrEmpty(root)) return false;
+        var bin = Path.Combine(root, "$Recycle.Bin");
+        if (full.Length > bin.Length && full.StartsWith(bin + "\\", StringComparison.OrdinalIgnoreCase))
+        {
+            var owner = full[(bin.Length + 1)..].Split('\\')[0];
+            return owner.StartsWith("S-1-", StringComparison.OrdinalIgnoreCase) && !owner.Equals(Sid.Value, StringComparison.OrdinalIgnoreCase);
+        }
+        return false;
+    }
+
     // ───────────── Registry ─────────────
 
     /// <summary>Opens a registry root; CurrentUser is the signed-in user's hive.</summary>
@@ -139,7 +185,7 @@ public static class InteractiveUser
     /// Starts a program as the signed-in user (used for Explorer and per-user uninstallers).
     /// Returns false if WinSolve already runs as that user, or the user's token isn't available.
     /// </summary>
-    public static Process? StartAsUser(string file, string arguments, string? workingDirectory = null)
+    public static Process? StartAsUser(string file, string arguments, string? workingDirectory = null, bool noWindow = false)
     {
         if (Other is not { } o) return null;
         using var token = FindUserToken(o.Sid);
@@ -147,7 +193,7 @@ public static class InteractiveUser
 
         var si = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>(), lpDesktop = @"winsta0\default" };
         var commandLine = $"\"{file}\" {arguments}";
-        if (!CreateProcessWithTokenW(token, LOGON_WITH_PROFILE, file, commandLine, 0, IntPtr.Zero,
+        if (!CreateProcessWithTokenW(token, LOGON_WITH_PROFILE, file, commandLine, noWindow ? CREATE_NO_WINDOW : 0, IntPtr.Zero,
                 workingDirectory ?? Environment.SystemDirectory, ref si, out var pi))
         {
             Logger.Write($"Could not start {file} as {o.Name}: {new Win32Exception(Marshal.GetLastWin32Error()).Message}");
@@ -258,6 +304,22 @@ public static class InteractiveUser
     private const uint TOKEN_QUERY = 0x0008, TOKEN_DUPLICATE = 0x0002, MAXIMUM_ALLOWED = 0x02000000;
     private const int SecurityImpersonation = 2, TokenPrimary = 1;
     private const uint LOGON_WITH_PROFILE = 1;
+    private const uint CREATE_NO_WINDOW = 0x08000000;
+
+    /// <summary>
+    /// Runs a PowerShell script as the signed-in user, unelevated and without a window, and waits.
+    /// For actions that must happen with their own rights (their Recycle Bin, their Store apps).
+    /// False when their token isn't available.
+    /// </summary>
+    public static bool RunPowerShellAsUser(string script, int timeoutMs)
+    {
+        var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
+        var ps = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+        using var p = StartAsUser(ps, $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encoded}", noWindow: true);
+        if (p is null) return false;
+        p.WaitForExit(timeoutMs);
+        return true;
+    }
 
     private static string? QuerySession(int session, int infoClass)
     {

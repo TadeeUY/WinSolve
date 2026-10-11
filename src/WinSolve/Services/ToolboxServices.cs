@@ -206,6 +206,11 @@ public static class SecureDelete
         foreach (var p in paths)
         {
             var full = Path.GetFullPath(p);
+            if (InteractiveUser.IsOtherUsersData(full))
+            {
+                log($"Skipped {full}: it belongs to another user of this PC.");
+                continue;
+            }
             if (Directory.Exists(full))
             {
                 if (SafePath.IsProtectedFolder(full) || InsideProgramOrSystemFolder(full) || SafePath.HasReparsePoint(full))
@@ -219,7 +224,7 @@ public static class SecureDelete
             else if (File.Exists(full))
             {
                 var parent = Path.GetDirectoryName(full)!;
-                if ((SafePath.IsProtectedFolder(parent) && !SafePath.IsSameOrInside(parent, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)))
+                if ((SafePath.IsProtectedFolder(parent) && !SafePath.IsSameOrInside(parent, InteractiveUser.Profile))
                     || InsideProgramOrSystemFolder(full))
                 {
                     log($"Skipped {full}: inside a system or program folder.");

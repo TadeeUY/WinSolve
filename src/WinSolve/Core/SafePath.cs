@@ -125,7 +125,7 @@ public static class SafePath
 
     /// <summary>
     /// %ProgramData%\WinSolve: settings and logs. WinSolve always runs elevated, so its own
-    /// files live where only Administrators and SYSTEM can write (users can read). Writing
+    /// files live where only Administrators and SYSTEM can read and write. Writing
     /// them under the user profile would let a non-elevated process redirect those writes
     /// with links to any file on the system.
     /// </summary>

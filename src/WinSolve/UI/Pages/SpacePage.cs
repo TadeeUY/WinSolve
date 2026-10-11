@@ -411,6 +411,11 @@ public sealed class SpacePage : Page
         var path = n.FullPath;
         var name = n.Name.ToLowerInvariant();
 
+        if (InteractiveUser.IsOtherUsersData(path))
+        {
+            Info("This belongs to another user of this PC. WinSolve only changes your own files.");
+            return;
+        }
         if (name is "pagefile.sys" or "swapfile.sys")
         {
             Info("This is the Windows page file (virtual memory). It cannot be deleted; its size is set under System > Advanced system settings > Performance.");

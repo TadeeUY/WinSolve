@@ -71,12 +71,27 @@ public static class FileCleaner
 
     public static long RecycleBinSize()
     {
+        if (InteractiveUser.IsDifferent) return RecycleBin.UserBinSize();
         var info = new SHQUERYRBINFO { cbSize = Marshal.SizeOf<SHQUERYRBINFO>() };
         return SHQueryRecycleBin(null, ref info) == 0 ? info.i64Size : 0;
     }
 
     public static void EmptyRecycleBin(TaskContext ctx)
     {
+        if (InteractiveUser.IsDifferent)
+        {
+            // The signed-in user's bin, emptied with their own rights (not the administrator's bin).
+            var before = RecycleBin.UserBinSize();
+            if (!InteractiveUser.RunPowerShellAsUser("Clear-RecycleBin -Force -ErrorAction SilentlyContinue", 5 * 60 * 1000))
+            {
+                ctx.Log("  Could not empty the Recycle Bin as the signed-in user.");
+                return;
+            }
+            var freed = Math.Max(0, before - RecycleBin.UserBinSize());
+            ctx.FreedBytes += freed;
+            ctx.Log($"  Recycle Bin emptied: {Format.Bytes(freed)}");
+            return;
+        }
         var size = RecycleBinSize();
         var hr = SHEmptyRecycleBin(IntPtr.Zero, null, SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND);
         // S_OK, or an error because the bin was already empty

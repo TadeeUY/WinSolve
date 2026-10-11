@@ -82,12 +82,15 @@ public static class AppsService
         ? $"$user = @{{ User = {Quote(o.Sid.Value)} }}"
         : "$user = @{}";
 
+    /// <summary>Always names the person at the keyboard, so lists never show other accounts' apps.</summary>
+    private static string ThisUserParam() => $"$me = @{{ User = {Quote(InteractiveUser.Sid.Value)} }}";
+
     // ═══════════════════ Store apps ═══════════════════
 
     public static async Task<List<StoreApp>> GetStoreAppsAsync(CancellationToken ct = default)
     {
-        const string script = """
-            $apps = Get-AppxPackage -AllUsers | Where-Object { -not $_.IsFramework -and -not $_.NonRemovable -and $_.SignatureKind -ne 'System' } |
+        var script = ThisUserParam() + "\n" + """
+            $apps = Get-AppxPackage @me | Where-Object { -not $_.IsFramework -and -not $_.NonRemovable -and $_.SignatureKind -ne 'System' } |
                 Sort-Object Name -Unique | Select-Object Name, PackageFullName, Publisher
             ConvertTo-Json -InputObject @($apps) -Compress
             """;
@@ -112,11 +115,7 @@ public static class AppsService
         }
     }
 
-    /// <summary>
-    /// Removes a Store app for every user and deprovisions it so Windows does not
-    /// reinstall it for new accounts or after feature updates.
-    /// </summary>
-    /// <summary>Normal uninstall: removes the app for the current user only (it stays available to others).</summary>
+    /// <summary>Uninstall for the person at the keyboard only (other accounts keep the app).</summary>
     public static Task<ProcessResult> RemoveStoreAppAsync(StoreApp app, Action<string> log, CancellationToken ct = default)
         => ProcessRunner.PowerShellAsync($$"""
             $name = {{Quote(app.Name)}}
@@ -127,23 +126,25 @@ public static class AppsService
                 try { Remove-AppxPackage -Package $_.PackageFullName @user -ErrorAction Stop; "Removed: $($_.PackageFullName)" }
                 catch { "Error: $($_.Exception.Message)" }
             }
-            if (-not $found) { 'Not installed for the current user. Use Force uninstall to remove it for all users.' }
+            if (-not $found) { 'Not installed for the current user.' }
             """, log, ct);
 
+    /// <summary>
+    /// Force uninstall, still for this user only: every version of the package (including ones
+    /// left staged after a failed removal) and the app's data. Other accounts and new accounts
+    /// keep their copy; WinSolve doesn't touch them.
+    /// </summary>
     public static Task<ProcessResult> ForceRemoveStoreAppAsync(StoreApp app, Action<string> log, CancellationToken ct = default)
         => ProcessRunner.PowerShellAsync($$"""
             $name = {{Quote(app.Name)}}
-            Get-AppxPackage -AllUsers -Name $name | ForEach-Object {
-                try { Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction Stop; "Removed for all users: $($_.PackageFullName)" }
-                catch {
-                    try { Remove-AppxPackage -Package $_.PackageFullName -ErrorAction Stop; "Removed for the current user: $($_.PackageFullName)" }
-                    catch { "Error: $($_.Exception.Message)" }
-                }
+            {{ThisUserParam()}}
+            $found = $false
+            Get-AppxPackage -Name $name @me -PackageTypeFilter Main,Bundle | ForEach-Object {
+                $found = $true
+                try { Remove-AppxPackage -Package $_.PackageFullName @me -ErrorAction Stop; "Removed: $($_.PackageFullName)" }
+                catch { "Error: $($_.Exception.Message)" }
             }
-            Get-AppxProvisionedPackage -Online | Where-Object DisplayName -eq $name | ForEach-Object {
-                try { Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction Stop | Out-Null; "Deprovisioned (won't come back): $($_.PackageName)" }
-                catch { "Could not deprovision: $($_.Exception.Message)" }
-            }
+            if (-not $found) { 'Not installed for the current user.' }
             """, log, ct);
 
     // ═══════════════════ Desktop programs ═══════════════════

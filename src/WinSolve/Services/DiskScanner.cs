@@ -92,6 +92,8 @@ public static class DiskScanner
     public static Task<SpaceScanResult> ScanAsync(string path, Progress progress, CancellationToken ct)
         => Task.Run(() =>
         {
+            if (InteractiveUser.IsOtherUsersData(path))
+                throw new UnauthorizedAccessException(Localization.Loc.T("This folder belongs to another user of this PC."));
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var root = new SpaceNode(path.TrimEnd('\\') + (path.Length <= 3 ? "\\" : ""), null, isFile: false);
             var ext = new ConcurrentDictionary<string, (long Size, long Count)>(StringComparer.OrdinalIgnoreCase);
@@ -133,6 +135,8 @@ public static class DiskScanner
                         if (reparse && !cloud) continue; // junction, symlink, mount point
                         if (entry.IsDirectory)
                         {
+                            // Other Windows users' folders stay private.
+                            if (InteractiveUser.IsOtherUsersData(Path.Combine(dirPath, entry.Name))) continue;
                             var child = new SpaceNode(entry.Name, node, isFile: false);
                             lock (node.Children) node.Children.Add(child);
                             subdirs.Add((child, Path.Combine(dirPath, entry.Name)));

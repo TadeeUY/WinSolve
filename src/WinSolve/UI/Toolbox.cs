@@ -312,10 +312,22 @@ internal sealed class LockedFileDialog : ToolDialog
             Tell("Choose a single file first (folders are deleted file by file).");
             return;
         }
+        if (InteractiveUser.IsOtherUsersData(_chosen))
+        {
+            Tell("This belongs to another user of this PC. WinSolve only changes your own files.", warning: true);
+            return;
+        }
         if (SafePath.IsProtectedFolder(Path.GetDirectoryName(_chosen)!) &&
-            !SafePath.IsSameOrInside(_chosen, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)))
+            !SafePath.IsSameOrInside(_chosen, InteractiveUser.Profile))
         {
             Tell("This file is in a system or program folder; WinSolve won't delete it.", warning: true);
+            return;
+        }
+        // The deletion runs at boot as SYSTEM and follows links in the path. In a folder the
+        // signed-in (standard) user can change, they could redirect it to a system file.
+        if (InteractiveUser.IsDifferent && SafePath.IsUserWritableLocation(_chosen))
+        {
+            Tell("This file is in a folder a standard user can change, so WinSolve won't schedule it as administrator. Delete it after restarting, or sign in as an administrator.", warning: true);
             return;
         }
         if (!Ask($"Delete this file the next time Windows starts?\n\n{_chosen}", danger: true)) return;

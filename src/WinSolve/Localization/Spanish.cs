@@ -860,7 +860,7 @@ public static class Spanish
         ["Reading Microsoft Store apps..."] = "Leyendo apps de Microsoft Store...",
         ["{0} Store apps, {1} of them commonly removed bloatware."] = "{0} apps de la Store, {1} son bloatware que se suele quitar.",
         ["Select one or more apps first (Ctrl+click to select several)."] = "Primero elige una o más aplicaciones (Ctrl+clic para varias).",
-        ["They are removed for all users and deprovisioned so Windows won't reinstall them."] = "Se quitan para todos los usuarios y se desaprovisionan para que Windows no las reinstale.",
+        ["They are removed for your account only, with all their versions and data. Other users of this PC keep them."] = "Se quitan solo de tu cuenta, con todas sus versiones y datos. Los demás usuarios de este PC las conservan.",
         ["The uninstaller runs silently, then the app's processes are closed and its folders, shortcuts and registry entry are deleted. This cannot be undone."] = "El desinstalador se ejecuta en silencio; luego se cierran sus procesos y se borran sus carpetas, accesos directos y entrada del registro. No se puede deshacer.",
         ["(none found)"] = "(no se encontró ninguna)",
         ["Creating restore point"] = "Creando punto de restauración",
@@ -1365,5 +1365,8 @@ public static class Spanish
         ["WinSolve can keep an eye on your PC in the background."] = "WinSolve puede vigilar tu PC en segundo plano.",
         ["Blue screens, crashes, failing drives and drivers."] = "Pantallazos azules, cierres, discos que fallan y drivers.",
         ["Needed for the alerts and the quick actions in the tray."] = "Necesario para las alertas y las acciones rápidas de la bandeja.",
+        ["This folder belongs to another user of this PC."] = "Esta carpeta pertenece a otro usuario de este PC.",
+        ["This belongs to another user of this PC. WinSolve only changes your own files."] = "Esto pertenece a otro usuario de este PC. WinSolve solo cambia tus propios archivos.",
+        ["This file is in a folder a standard user can change, so WinSolve won't schedule it as administrator. Delete it after restarting, or sign in as an administrator."] = "Este archivo está en una carpeta que un usuario estándar puede modificar, así que WinSolve no lo programa como administrador. Bórralo después de reiniciar o inicia sesión como administrador.",
     };
 }

@@ -151,7 +151,7 @@ public sealed class AppsPage : Page
         var message = force
             ? $"Force-remove {selected.Count} app(s)?\n\n- {string.Join("\n- ", names)}\n\n" +
               (_showStore
-                  ? "They are removed for all users and deprovisioned so Windows won't reinstall them."
+                  ? "They are removed for your account only, with all their versions and data. Other users of this PC keep them."
                   : "The uninstaller runs silently, then the app's processes are closed and its folders, shortcuts and registry entry are deleted. This cannot be undone.")
               + folderText
             : $"Uninstall {selected.Count} app(s)?\n\n- {string.Join("\n- ", names)}";
