@@ -24,7 +24,9 @@ public sealed class DriversPage : Page
                 {
                     if (!Confirm("Download and install every pending driver update from Windows Update?")) return;
                     await Run("Installing driver updates", DriverService.InstallWindowsUpdateDriversAsync);
+                    await OldDriversDialog.OfferAfterUpdateAsync(this);
                 }),
+                Theme.Button("Clean up old drivers", (_, _) => { using var d = new OldDriversDialog(); d.ShowDialog(this); }, glyph: "\uE74D"),
                 Theme.Button("Repair devices with errors", async (_, _) => await Run("Repairing devices", DriverService.RepairProblemDevicesAsync)),
                 Theme.Button("Back up drivers", async (_, _) => await Run("Backing up drivers", async (log, ct) =>
                 {
@@ -175,16 +177,18 @@ public sealed class DriversPage : Page
         _gpus = DriverService.GetGpus();
         _latest.Clear();
         Render();
-        ShowOutcome(ok, outcome);
+        await ShowOutcome(ok, outcome);
     }
 
     /// <summary>Says whether the driver really ended up installed, then offers the restart.</summary>
-    private void ShowOutcome(bool ran, DriverService.InstallOutcome? outcome)
+    private async Task ShowOutcome(bool ran, DriverService.InstallOutcome? outcome)
     {
         // Only when the install actually ran (not cancelled, failed or refused because busy).
         if (!ran || outcome is null) return;
         Localization.Loc.Show(this, outcome.Message, "WinSolve", MessageBoxButtons.OK,
             outcome.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        // The new driver is in use now: offer to remove the copies of older versions.
+        if (outcome.Success) await OldDriversDialog.OfferAfterUpdateAsync(this);
         AskReboot(this, "Restart now to finish the driver installation?");
     }
 
@@ -214,6 +218,6 @@ public sealed class DriversPage : Page
             outcome = await DriverService.CleanInstallAsync(gpu.Vendor, dlg.FileName, requireVendorSignature: signed, expectedVersion: null, log, ct));
         _gpus = DriverService.GetGpus();
         Render();
-        ShowOutcome(ok, outcome);
+        await ShowOutcome(ok, outcome);
     }
 }

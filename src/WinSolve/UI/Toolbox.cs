@@ -35,6 +35,9 @@ public static class Toolbox
         new("battery", "Windows", "\uEBA7", "Battery report",
             "How much capacity the battery has lost, charge cycles and how long it lasts now.", "battery bateria salud powercfg notebook laptop",
             o => Show(o, new BatteryDialog())),
+        new("old-drivers", "Windows", "\uE772", "Old drivers",
+            "Removes old copies of drivers left after updates. The drivers in use are never touched.", "driver store pnputil viejos drivers limpiar",
+            o => Show(o, new OldDriversDialog())),
         new("context-menu", "Windows", "", "Right-click menu cleanup",
             "Turn off entries that programs added to the right-click menu.", "context menu shell extension menu contextual clic derecho",
             o => Show(o, new ContextMenuDialog())),
@@ -935,5 +938,94 @@ internal sealed class ForgottenDialog : ToolDialog
         var removed = ForgottenFiles.DeleteEmptyFolders(folders);
         foreach (var r in rows) if (r.Tag is string d && !Directory.Exists(d)) _empty.Rows.Remove(r);
         Status.Text = string.Format(Loc.T("{0} empty folder(s) deleted."), removed);
+    }
+}
+
+// ═══════════════════════ Old drivers ═══════════════════════
+
+internal sealed class OldDriversDialog : ToolDialog
+{
+    private readonly DataGridView _grid = Grid(("driver", "Driver", 220), ("type", "Type", 110), ("version", "Old version", 120), ("newer", "In use / newer", 120), ("size", "Size", 90));
+    private readonly ProgressLine _progress = new() { Height = 4, Margin = new Padding(0, 6, 0, 6) };
+    private readonly FlatBtn _delete;
+    private List<OldDriver> _drivers = [];
+    private bool _busy;
+
+    public OldDriversDialog() : base("\uE772", "Old drivers",
+        "Each driver update leaves the previous version in Windows' driver store. Only copies that no device uses and that have a newer version installed are listed; Windows refuses to delete anything still needed.", new Size(860, 560))
+    {
+        _grid.MultiSelect = true;
+        _delete = Theme.Button("Delete selected", async (_, _) => await DeleteAsync(), primary: true, glyph: "\uE74D");
+        AddRow(Theme.Row(_delete, Theme.Button("Select all", (_, _) => _grid.SelectAll()), Theme.Button("Refresh", async (_, _) => await LoadAsync(), glyph: "\uE72C")));
+        AddRow(_progress);
+        Theme.EmptyState(_grid, "No old drivers to remove.");
+        AddRow(Theme.InCard(_grid), fill: true);
+        Shown += async (_, _) => await LoadAsync();
+        FormClosing += (_, e) => { if (_busy) e.Cancel = true; };
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _progress.Value = -1;
+        Status.Text = Loc.T("Reading the driver store...");
+        _grid.Rows.Clear();
+        try
+        {
+            _drivers = await DriverStoreCleaner.FindAsync();
+            foreach (var d in _drivers)
+                _grid.Rows[_grid.Rows.Add($"{d.Provider}  ·  {d.OriginalName}", d.Class, d.Version.ToString(), d.NewerVersion, Format.Bytes(d.Size))].Tag = d;
+            _grid.SelectAll();
+            Status.Text = _drivers.Count == 0 ? Loc.T("Nothing to clean: only the drivers in use are installed.")
+                : string.Format(Loc.T("{0} old driver(s) using {1}."), _drivers.Count, Format.Bytes(_drivers.Sum(d => d.Size)));
+        }
+        catch (Exception ex) { Status.Text = ex.Message; }
+        finally
+        {
+            _busy = false;
+            _progress.Value = 0;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        var selected = _grid.SelectedRows.Cast<DataGridViewRow>().Select(r => r.Tag).OfType<OldDriver>().ToList();
+        if (selected.Count == 0 || _busy) return;
+        if (!Ask(string.Format(Loc.T("Delete {0} old driver(s) ({1})? The drivers your devices use now stay installed."), selected.Count, Format.Bytes(selected.Sum(d => d.Size))))) return;
+        _busy = true;
+        _delete.Enabled = false;
+        _progress.Value = -1;
+        try
+        {
+            Status.Text = Loc.T("Deleting old drivers...");
+            var freed = await DriverStoreCleaner.DeleteAsync(selected, Logger.Write, CancellationToken.None);
+            _busy = false;
+            await LoadAsync();
+            Status.Text = string.Format(Loc.T("{0} freed."), Format.Bytes(freed)) + "  " + Status.Text;
+        }
+        catch (Exception ex) { Status.Text = ex.Message; }
+        finally
+        {
+            _busy = false;
+            _delete.Enabled = true;
+            _progress.Value = 0;
+        }
+    }
+
+    /// <summary>After a driver update: offers the cleanup when there's something worth removing.</summary>
+    public static async Task OfferAfterUpdateAsync(IWin32Window owner)
+    {
+        try
+        {
+            var old = await DriverStoreCleaner.FindAsync();
+            var size = old.Sum(d => d.Size);
+            if (old.Count == 0 || size < 50L << 20) return;
+            if (Loc.Show(owner, string.Format(Loc.T("The previous versions of your drivers are still stored and take {0}. Remove them? The drivers in use are not touched."), Format.Bytes(size)),
+                    "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            using var dlg = new OldDriversDialog();
+            dlg.ShowDialog(owner);
+        }
+        catch (Exception ex) { Logger.Write($"Old driver check failed: {ex.Message}"); }
     }
 }
