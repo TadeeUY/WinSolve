@@ -10,6 +10,13 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 13, 2),
+        [
+            new("\uE713", "Tweaks have three levels: Minimal, Standard (selected by default) and Maximum. You can still tick tweaks one by one.",
+                "Los tweaks tienen tres niveles: Mínimo, Estándar (elegido por defecto) y Máximo. También puedes marcarlos uno por uno."),
+            new("\uE74E", "Nothing changes until you select Save: WinSolve shows the list of changes and asks if you're sure before applying them.",
+                "No se cambia nada hasta que pulses Guardar: WinSolve muestra la lista de cambios y te pregunta si estás seguro antes de aplicarlos."),
+        ]),
         new(new Version(0, 13, 1),
         [
             new("\uE945", "Much faster: switching pages is now instant (it could take 10-30 seconds before), and pages load in the background while WinSolve is idle.",

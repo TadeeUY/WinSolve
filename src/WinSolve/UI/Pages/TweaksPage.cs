@@ -6,7 +6,7 @@ namespace WinSolve.UI.Pages;
 
 /// <summary>
 /// Tweaks page laid out like Chris Titus Tech's WinUtil: Essential and Advanced tweaks with
-/// presets, Run / Undo, instant preference toggles, power plans, DNS, Windows Update policy
+/// Minimal / Standard / Maximum levels, Save (with confirmation) / Undo, preference toggles, power plans, DNS, Windows Update policy
 /// and optional Windows features.
 /// </summary>
 public sealed class TweaksPage : Page
@@ -20,23 +20,36 @@ public sealed class TweaksPage : Page
     private readonly FlatBtn _wuDefault, _wuSecurity;
     private readonly List<(WindowsFeature Feature, CheckBox Toggle)> _features = [];
     private readonly Label _featureStatus = Theme.Label("", Theme.Small, Theme.Muted);
-    private bool _loading;
+    private readonly Segmented _presets = new();
+    private readonly FlatBtn _save;
+    // Preference switches flipped by the user, waiting for Save (id -> wanted state).
+    private readonly Dictionary<string, bool> _pending = [];
+    private Dictionary<string, bool> _states = [];
+    private bool _loading, _selecting;
 
     public override string Key => "tweaks";
 
     public TweaksPage() : base("Tweaks",
-        "Select tweaks and run them, or use a preset. Everything except one-shot actions can be undone. Preferences apply instantly.")
+        "Pick a level or choose tweaks yourself, then select Save. Nothing changes until you confirm, and everything except one-shot actions can be undone.")
     {
         _wuDefault = Theme.Button("Default settings", (_, _) => SetUpdatePolicy(security: false));
         _wuSecurity = Theme.Button("Security settings (recommended)", (_, _) => SetUpdatePolicy(security: true));
         _dns.Width = 300;
 
+        _presets.Add("min", "Minimal").Add("std", "Standard").Add("max", "Maximum");
+        _presets.Margin = new Padding(0, 4, 2, 4); // line up with the buttons next to it
+        _presets.SelectedChanged += key => Select(key switch
+        {
+            "min" => TweakCatalog.MinimalPreset,
+            "max" => TweakCatalog.MaximumPreset,
+            _ => TweakCatalog.StandardPreset,
+        }, fromPreset: true);
+        _save = Theme.Button("Save", async (_, _) => await SaveAsync(), primary: true, glyph: "\uE74E");
         AddRow(Theme.Row(
-            Theme.Button("Standard", (_, _) => Select(TweakCatalog.StandardPreset), glyph: ""),
-            Theme.Button("Minimal", (_, _) => Select(TweakCatalog.MinimalPreset)),
+            _presets,
             Theme.Button("Clear", (_, _) => Select([])),
-            Theme.Button("Run tweaks", async (_, _) => await RunSelectedAsync(undo: false), primary: true, glyph: ""),
-            Theme.Button("Undo selected tweaks", async (_, _) => await RunSelectedAsync(undo: true), glyph: "")));
+            _save,
+            Theme.Button("Undo selected tweaks", async (_, _) => await RunSelectedAsync(undo: true), glyph: "\uE7A7")));
         AddRow(_selection);
 
         var columns = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0) };
@@ -56,7 +69,8 @@ public sealed class TweaksPage : Page
         left.Dock = right.Dock = DockStyle.Fill;
 
         AddRow(new Stack(scroll: true).Add(columns), fill: true);
-        UpdateSelectionLabel();
+        // "Standard" is the default level every time the page is opened.
+        _presets.Select("std");
     }
 
     // ───────────── Essential / Advanced lists ─────────────
@@ -73,7 +87,12 @@ public sealed class TweaksPage : Page
             row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             var box = Theme.Check(t.Title, false);
-            box.CheckedChanged += (_, _) => UpdateSelectionLabel();
+            box.CheckedChanged += (_, _) =>
+            {
+                // A manual change means the list no longer matches a level.
+                if (!_selecting) _presets.ClearSelection();
+                UpdateSelectionLabel();
+            };
             var badge = Theme.Label("", Theme.Small, Theme.Muted);
             badge.Anchor = AnchorStyles.Right;
             badge.Margin = new Padding(6, 4, 6, 0);
@@ -92,10 +111,14 @@ public sealed class TweaksPage : Page
         return card;
     }
 
-    private void Select(IEnumerable<string> ids)
+    private void Select(IEnumerable<string> ids, bool fromPreset = false)
     {
         var set = ids.ToHashSet();
-        foreach (var (id, row) in _rows) row.Box.Checked = set.Contains(id);
+        _selecting = true;
+        foreach (var (id, row) in _rows)
+            if (row.Box.Checked != set.Contains(id)) row.Box.Checked = set.Contains(id);
+        _selecting = false;
+        if (!fromPreset) _presets.ClearSelection();
         UpdateSelectionLabel();
     }
 
@@ -121,7 +144,8 @@ public sealed class TweaksPage : Page
     private void UpdateSelectionLabel()
     {
         var applied = TweakCatalog.All.Count(t => t.Group != TweakGroup.Preference && !t.IsAction && _rows.ContainsKey(t.Id) && _rows[t.Id].Badge.Tag is true);
-        _selection.Text = $"{Selected().Count} selected  ·  {applied} already applied";
+        var changes = Selected().Count(t => t.IsAction || _rows[t.Id].Badge.Tag is not true) + _pending.Count;
+        _selection.Text = $"{Selected().Count} selected  ·  {applied} already applied  ·  {changes} change(s) to save";
     }
 
     private void RefreshBadges(IReadOnlyDictionary<string, bool>? states = null)
@@ -138,6 +162,63 @@ public sealed class TweaksPage : Page
             if (row.Badge.ForeColor != color) row.Badge.ForeColor = color;
         }
         UpdateSelectionLabel();
+    }
+
+    /// <summary>Applies the selected tweaks and the changed preferences after one confirmation.</summary>
+    private async Task SaveAsync()
+    {
+        var work = Selected().Where(t => t.IsAction || !t.SafeIsApplied())
+            .Select(t => (Tweak: t, On: true))
+            .Concat(_pending.Select(p => (Tweak: TweakCatalog.Find(p.Key)!, On: p.Value)))
+            .ToList();
+        if (work.Count == 0)
+        {
+            Info("Nothing to save: the selected tweaks are already applied.");
+            return;
+        }
+
+        string Line(Tweak t, bool on) => t.Group == TweakGroup.Preference
+            ? $"{Loc.T(t.Title)}: {Loc.T(on ? "on" : "off")}"
+            : Loc.T(t.Title);
+        var warnings = work.Where(w => w.On && w.Tweak.Warning is not null).Select(w => $"{Loc.T(w.Tweak.Title)}: {Loc.T(w.Tweak.Warning)}").ToList();
+        var message = Loc.T($"Are you sure you want to apply these {work.Count} change(s)?")
+                      + "\n\n- " + string.Join("\n- ", work.Select(w => Line(w.Tweak, w.On)))
+                      + (warnings.Count > 0 ? "\n\n" + string.Join("\n", warnings) : "")
+                      + (AppSettings.Current.CreateRestorePoint ? "\n\n" + Loc.T("A restore point is created first, so you can go back.") : "");
+        // Always asked, even with "confirm actions" turned off: this is the Save step itself.
+        if (Loc.Show(this, message, "Save tweaks", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+        bool explorer = false, reboot = false;
+        RunDialog.Run(this, "Saving tweaks", async (log, progress, ct) =>
+        {
+            if (AppSettings.Current.CreateRestorePoint)
+                await TaskCatalog.CreateRestorePoint(new TaskContext(log, ct), "WinSolve - before tweaks");
+            for (int i = 0; i < work.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var (t, on) = work[i];
+                log($"> {t.Title}");
+                try
+                {
+                    await Task.Run(() => { if (on) t.Apply(); else t.Revert(); }, ct);
+                    log($"OK  {t.Title}");
+                    explorer |= t.NeedsExplorerRestart;
+                    reboot |= t.NeedsReboot;
+                }
+                catch (Exception ex)
+                {
+                    log($"ERROR  {t.Title}: {ex.Message}");
+                }
+                progress(i + 1, work.Count);
+            }
+            log("Done.");
+        });
+
+        _pending.Clear();
+        await RefreshStatesAsync(resetToggles: true);
+        if (explorer && Loc.Show(this, "Restart Explorer now to see the changes?", "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            await TaskCatalog.ExplorerRestart(new TaskContext(Logger.Write, default));
+        if (reboot) AskReboot(this);
     }
 
     private async Task RunSelectedAsync(bool undo)
@@ -189,12 +270,12 @@ public sealed class TweaksPage : Page
         if (reboot) AskReboot(this);
     }
 
-    // ───────────── Preferences (instant toggles) ─────────────
+    // ───────────── Preferences (applied on Save) ─────────────
 
     private Control PreferencesCard()
     {
         var card = new StackCard();
-        card.Add(Theme.Label("Customize preferences", Theme.H2), Theme.Paragraph("Applied as soon as you flip the switch."));
+        card.Add(Theme.Label("Customize preferences", Theme.H2), Theme.Paragraph("Applied when you select Save."));
         foreach (var t in TweakCatalog.All.Where(t => t.Group == TweakGroup.Preference))
         {
             var row = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 2) };
@@ -205,25 +286,13 @@ public sealed class TweaksPage : Page
             var toggle = Theme.Toggle("", false);
             toggle.Anchor = AnchorStyles.Right;
             _tips.SetToolTip(label, Loc.T(t.Description) + (t.AllUsers ? "\n\n" + Loc.T("Applies to all users of this PC.") : ""));
-            toggle.CheckedChanged += async (_, _) =>
+            toggle.CheckedChanged += (_, _) =>
             {
                 if (_loading) return;
-                var on = toggle.Checked;
-                try
-                {
-                    await Task.Run(() => { if (on) t.Apply(); else t.Revert(); });
-                    Logger.Write($"Preference '{t.Title}' -> {(on ? "on" : "off")}");
-                    if (t.NeedsExplorerRestart) _explorerHint.Visible = true;
-                }
-                catch (Exception ex)
-                {
-                    Info($"Could not change '{Loc.T(t.Title)}': {ex.Message}");
-                    // Show the real state again instead of leaving the switch flipped.
-                    var actual = await Task.Run(() => { try { return t.IsApplied(); } catch { return !on; } });
-                    _loading = true;
-                    toggle.Checked = actual;
-                    _loading = false;
-                }
+                // Flipping back to the current state cancels the pending change.
+                if (_states.TryGetValue(t.Id, out var current) && current == toggle.Checked) _pending.Remove(t.Id);
+                else _pending[t.Id] = toggle.Checked;
+                UpdateSelectionLabel();
             };
             row.Controls.Add(label, 0, 0);
             row.Controls.Add(toggle, 1, 0);
@@ -365,27 +434,40 @@ public sealed class TweaksPage : Page
 
     public override async void OnShown()
     {
-        _loading = true;
-        // Reading ~100 settings from the registry happens off the UI thread; the page is then
-        // updated in one batch (one layout instead of one per label).
+        await RefreshStatesAsync(resetToggles: false);
+        if (IsDisposed) return;
+        _ = LoadDnsAsync();
+        if (_features.All(f => f.Feature.Enabled is null)) _ = LoadFeaturesAsync();
+    }
+
+    /// <summary>
+    /// Reads every tweak's state off the UI thread, then updates badges and switches in one
+    /// batch. Unsaved switch changes are kept unless <paramref name="resetToggles"/> is set.
+    /// </summary>
+    private async Task RefreshStatesAsync(bool resetToggles)
+    {
         var ids = _rows.Keys.Concat(_toggles.Keys).Distinct().ToList();
         var states = await Task.Run(() => ids.ToDictionary(id => id, id => TweakCatalog.Find(id) is { IsAction: false } t && t.SafeIsApplied()));
         var security = await Task.Run(UpdatePolicy.IsSecurityMode);
         if (IsDisposed) return;
+        _states = states;
+        if (resetToggles) _pending.Clear();
+        else foreach (var id in _pending.Where(p => states.GetValueOrDefault(p.Key) == p.Value).Select(p => p.Key).ToList()) _pending.Remove(id);
+        bool Wanted(string id) => _pending.TryGetValue(id, out var v) ? v : states.GetValueOrDefault(id);
+
+        _loading = true;
         var changed = _rows.Any(r => r.Value.Badge.Tag is not bool b || b != states.GetValueOrDefault(r.Key))
-                      || _toggles.Any(t => t.Value.Checked != states.GetValueOrDefault(t.Key));
+                      || _toggles.Any(t => t.Value.Checked != Wanted(t.Key));
         void Apply()
         {
             RefreshBadges(states);
             foreach (var (id, toggle) in _toggles)
-                if (toggle.Checked != states.GetValueOrDefault(id)) toggle.Checked = states.GetValueOrDefault(id);
+                if (toggle.Checked != Wanted(id)) toggle.Checked = Wanted(id);
         }
         if (changed) LayoutBatch.Run(this, Apply); else UpdateSelectionLabel();
+        _loading = false;
         _wuSecurity.Primary = security;
         _wuDefault.Primary = !security;
-        _loading = false;
-        _ = LoadDnsAsync();
-        if (_features.All(f => f.Feature.Enabled is null)) _ = LoadFeaturesAsync();
     }
 
     protected override void Dispose(bool disposing)

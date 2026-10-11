@@ -23,6 +23,18 @@ public static partial class TweakCatalog
         "ess-ps7-telemetry", "priv-advertising-id", "priv-tailored", "priv-suggestions",
     ];
 
+    /// <summary>
+    /// "Maximum": Standard plus every other low-risk privacy and performance tweak. Leaves out
+    /// the ones with real trade-offs (hibernation, fast startup, GPU scheduling, driver updates,
+    /// Storage Sense and the Advanced list).
+    /// </summary>
+    public static readonly string[] MaximumPreset =
+    [
+        .. StandardPreset,
+        "ess-edge-debloat", "perf-game-mode", "perf-menu-delay", "perf-startup-delay", "sys-long-paths", "sys-no-auto-reboot",
+        "priv-bing-search", "priv-copilot", "priv-recall", "perf-background-apps", "perf-visual-effects", "perf-network-throttling",
+    ];
+
     /// <summary>WinUtil-like "Minimal" preset.</summary>
     public static readonly string[] MinimalPreset =
     [

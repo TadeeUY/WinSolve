@@ -312,6 +312,13 @@ public sealed class Segmented : FlowLayoutPanel
         foreach (var (k, b) in _items) b.Primary = k == key;
         if (notify) SelectedChanged?.Invoke(key);
     }
+
+    /// <summary>No option highlighted (e.g. the user changed the selection by hand).</summary>
+    public void ClearSelection()
+    {
+        Selected = null;
+        foreach (var (_, b) in _items) b.Primary = false;
+    }
 }
 
 /// <summary>Large selectable card (icon, title, description), used like a radio button.</summary>

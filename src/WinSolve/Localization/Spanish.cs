@@ -1434,5 +1434,16 @@ public static class Spanish
         ["{0} of 100"] = "{0} de 100",
         ["What's new in WinSolve {0}"] = "Novedades de WinSolve {0}",
         ["Thanks for keeping WinSolve up to date."] = "Gracias por mantener WinSolve actualizado.",
+        ["Maximum"] = "Máximo",
+        ["on"] = "activado",
+        ["off"] = "desactivado",
+        ["Save tweaks"] = "Guardar tweaks",
+        ["Saving tweaks"] = "Guardando tweaks",
+        ["{0} selected  ·  {1} already applied  ·  {2} change(s) to save"] = "{0} seleccionados  ·  {1} ya aplicados  ·  {2} cambio(s) por guardar",
+        ["Are you sure you want to apply these {0} change(s)?"] = "¿Seguro que quieres aplicar estos {0} cambio(s)?",
+        ["A restore point is created first, so you can go back."] = "Primero se crea un punto de restauración, así puedes volver atrás.",
+        ["Nothing to save: the selected tweaks are already applied."] = "Nada que guardar: los tweaks seleccionados ya están aplicados.",
+        ["Applied when you select Save."] = "Se aplica al pulsar Guardar.",
+        ["Pick a level or choose tweaks yourself, then select Save. Nothing changes until you confirm, and everything except one-shot actions can be undone."] = "Elige un nivel o marca los tweaks a mano y pulsa Guardar. No se cambia nada hasta que confirmes, y todo salvo las acciones únicas se puede deshacer.",
     };
 }
