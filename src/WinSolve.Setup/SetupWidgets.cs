@@ -143,6 +143,8 @@ namespace WinSolve.Setup
         private bool _selected;
         public string Glyph { get; set; }
         public string Detail { get; set; } = "";
+        /// <summary>Radio mark in the corner (off for a card that is just information).</summary>
+        public bool ShowMark { get; set; } = true;
         public event EventHandler Selected;
 
         public bool Checked
@@ -178,7 +180,8 @@ namespace WinSolve.Setup
 
             // Radio mark in the corner.
             var mark = new Rectangle(Width - 30, 16, 16, 16);
-            if (_selected)
+            if (!ShowMark) { }
+            else if (_selected)
             {
                 using (var b = new SolidBrush(Ui.Accent)) g.FillEllipse(b, mark);
                 using (var b = new SolidBrush(Color.White)) g.FillEllipse(b, Rectangle.Inflate(mark, -5, -5));

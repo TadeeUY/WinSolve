@@ -234,7 +234,9 @@ public sealed class MainForm : Form
 
     private async void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
-        if (_exiting || e.CloseReason != CloseReason.UserClosing || !AppSettings.Current.CloseToTray) 
+        // Elevated with another administrator's password: never stay behind in the tray, where the
+        // signed-in (standard) user could keep using the administrator's rights.
+        if (_exiting || e.CloseReason != CloseReason.UserClosing || !AppSettings.Current.CloseToTray || InteractiveUser.IsDifferent)
         {
             _tray.Visible = false;
             return;

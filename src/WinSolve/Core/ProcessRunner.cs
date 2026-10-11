@@ -115,8 +115,23 @@ public static class ProcessRunner
     public static void Reboot() => _ = RunAsync("shutdown.exe", "/r /t 5 /c \"WinSolve: restarting to finish applying changes\"");
 
     /// <summary>Opens a document, folder, URL or ms-settings: URI through the shell.</summary>
+    /// <remarks>
+    /// Under over-the-shoulder elevation everything opens as the signed-in user, unelevated:
+    /// an elevated Task Manager, Explorer or browser would hand that user the administrator's
+    /// rights (Run new task, file dialogs...). Tools that need admin then ask with UAC.
+    /// </remarks>
     public static void ShellOpen(string target, string? arguments = null)
     {
+        if (InteractiveUser.IsDifferent)
+        {
+            var resolved = Resolve(target);
+            using var p = resolved.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(resolved)
+                ? InteractiveUser.StartAsUser(resolved, arguments ?? "")
+                : InteractiveUser.StartAsUser(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
+                    "\"" + resolved.Replace("\"", "") + "\"");
+            if (p is null) Logger.Write($"Could not open {target} as the signed-in user; not opening it elevated.");
+            return;
+        }
         try
         {
             Process.Start(new ProcessStartInfo(Resolve(target)) { UseShellExecute = true, Arguments = arguments ?? "" });

@@ -28,6 +28,8 @@ public sealed class SettingsPage : Page
         _scanOnStartup = Theme.Toggle("", s.ScanOnStartup);
         _alerts = Theme.Toggle("", s.ErrorAlerts);
         _tray = Theme.Toggle("", s.CloseToTray);
+        // Under another administrator's account WinSolve always exits when closed (see MainForm).
+        if (InteractiveUser.IsDifferent) _tray.Enabled = false;
         _animations = Theme.Toggle("", s.Animations);
         _autoStart = Theme.Toggle("", false);
         _updates = Theme.Toggle("", s.CheckForUpdates);

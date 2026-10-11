@@ -136,35 +136,20 @@ public static class SafePath
         var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSolve");
         try
         {
-            var security = new DirectorySecurity();
-            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-            var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
-            security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
-                FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-            security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
-                FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-            security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
-                FileSystemRights.ReadAndExecute, inherit, PropagationFlags.None, AccessControlType.Allow));
-            var info = new DirectoryInfo(dir);
-            if (!info.Exists) info.Create(security);
-            else if (Admin.IsElevated) info.SetAccessControl(security);
+            if (Admin.IsElevated) MakeTrusted(dir);
+            else Directory.CreateDirectory(dir);
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.WriteEarly($"Could not secure {dir}: {ex.Message}");
             Directory.CreateDirectory(dir);
         }
         return dir;
     });
 
-    /// <summary>
-    /// Creates a fresh, randomly named folder under %ProgramData%\WinSolve that only
-    /// Administrators and SYSTEM can write to. Used for files that are executed elevated.
-    /// </summary>
-    public static string CreateAdminOnlyFolder(string purpose)
+    /// <summary>Administrators and SYSTEM only: settings, logs and files run elevated live here.</summary>
+    private static DirectorySecurity AdminOnlySecurity()
     {
-        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSolve", purpose);
-        var dir = Path.Combine(root, Guid.NewGuid().ToString("N"));
-
         var security = new DirectorySecurity();
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
@@ -172,9 +157,53 @@ public static class SafePath
             FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
         security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
             FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+        return security;
+    }
 
+    /// <summary>
+    /// Any user can create folders in %ProgramData%. A WinSolve folder that is a link, or that a
+    /// non-administrator created (and so can still change), is moved aside and made again, so
+    /// nobody but administrators can plant settings or files that WinSolve uses elevated.
+    /// </summary>
+    internal static void MakeTrusted(string dir)
+    {
+        if (Directory.Exists(dir) || File.Exists(dir))
+        {
+            // Renaming works on the link itself and needs only our rights on ProgramData.
+            var attributes = File.GetAttributes(dir);
+            var untrusted = (attributes & FileAttributes.ReparsePoint) != 0 || (attributes & FileAttributes.Directory) == 0 || !OwnedByAdmins(dir);
+            if (untrusted)
+            {
+                var aside = dir + ".untrusted-" + Guid.NewGuid().ToString("N")[..8];
+                Directory.Move(dir, aside);
+                Logger.WriteEarly($"{dir} was not created by an administrator; moved it to {aside}.");
+            }
+        }
+        var info = new DirectoryInfo(dir);
+        if (!info.Exists) info.Create(AdminOnlySecurity());
+        else info.SetAccessControl(AdminOnlySecurity()); // also removes the read access older versions gave to Users
+    }
+
+    private static bool OwnedByAdmins(string dir)
+    {
+        var owner = new DirectoryInfo(dir).GetAccessControl(AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+        return owner is not null && (owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid) || owner.IsWellKnown(WellKnownSidType.LocalSystemSid)
+            || owner.Value.StartsWith("S-1-5-80-", StringComparison.Ordinal) /* TrustedInstaller and other services */
+            || owner == System.Security.Principal.WindowsIdentity.GetCurrent().User);
+    }
+
+    /// <summary>
+    /// Creates a fresh, randomly named folder under %ProgramData%\WinSolve that only
+    /// Administrators and SYSTEM can write to. Used for files that are executed elevated.
+    /// </summary>
+    public static string CreateAdminOnlyFolder(string purpose)
+    {
+        // Inside the trusted data folder, so the parent can't be swapped by a standard user.
+        var root = Path.Combine(DataFolder, purpose);
+        if (Directory.Exists(root) && HasReparsePoint(root)) throw new InvalidOperationException($"{root} is a link.");
+        var dir = Path.Combine(root, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        new DirectoryInfo(dir).Create(security);
+        new DirectoryInfo(dir).Create(AdminOnlySecurity());
         return dir;
     }
 }
