@@ -79,8 +79,18 @@ namespace WinSolve.Setup
             _cancel.Click += (s, e) => { if (_cts != null) _cts.Cancel(); else Close(); };
 
             Controls.AddRange(new Control[] { logo, _title, _subtitle, _language, _scopeLabel, _all, _me, _options, _status, _progress, _install, _cancel });
-            // While updating, the window just shows progress: no language choice.
+            // Automatic run (an update, or the elevated restart of an install): the choices were
+            // already made, so the window only shows what is happening.
             _language.Visible = !autoStart;
+            if (autoStart)
+            {
+                foreach (var c in new Control[] { _scopeLabel, _all, _me, _options }) c.Visible = false;
+                _status.Location = new Point(32, 112);
+                _progress.Location = new Point(32, 152);
+                _install.Location = new Point(412, 176);
+                _cancel.Location = new Point(288, 176);
+                ClientSize = new Size(560, 232);
+            }
             ApplyTexts();
 
             HandleCreated += (s, e) => { if (!Ui.Light) DarkTitleBar(Handle); };
@@ -92,7 +102,7 @@ namespace WinSolve.Setup
         private void ApplyTexts()
         {
             Text = Lang.T("WinSolve Setup");
-            _title.Text = Lang.T(_done ? "WinSolve is ready" : _autoStart && _preset.Launch ? "Updating WinSolve" : "Install WinSolve");
+            _title.Text = Lang.T(_done ? "WinSolve is ready" : _preset.UpdateDir != null ? "Updating WinSolve" : "Install WinSolve");
             _subtitle.Text = Lang.F("Version {0}  ·  The multitool for Windows", Installer.Version);
             _scopeLabel.Text = Lang.T("Install for");
             _all.Text = Lang.T("All users");
@@ -151,6 +161,7 @@ namespace WinSolve.Setup
 
             SetEditable(false);
             _install.Enabled = false;
+            _install.Visible = !_autoStart; // an automatic run only shows progress (and Cancel)
             _status.ForeColor = Ui.Muted;
             _progress.Value = -1;
             _progress.Visible = true;
@@ -173,6 +184,7 @@ namespace WinSolve.Setup
                 if (_autoStart && o.Launch && o.UpdateDir != null) Installer.LaunchApp(o);
                 SetEditable(true);
                 _install.Enabled = true;
+                _install.Visible = true;
             }
             finally
             {
@@ -187,6 +199,7 @@ namespace WinSolve.Setup
                 _done = true;
                 ApplyTexts();
                 _install.Enabled = true;
+                _install.Visible = true;
                 _cancel.Visible = false;
                 if (o.Launch)
                 {
