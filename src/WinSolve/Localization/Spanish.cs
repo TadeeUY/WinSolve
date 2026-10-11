@@ -1373,5 +1373,7 @@ public static class Spanish
         ["Passwords are only shown when the signed-in user is an administrator."] = "Las contraseñas solo se muestran si el usuario que inició sesión es administrador.",
         ["Applies to all users of this PC."] = "Se aplica a todos los usuarios de este PC.",
         ["Stops apps from reading your location (your account only; other users keep their own setting)."] = "Evita que las apps lean tu ubicación (solo en tu cuenta; los demás usuarios mantienen su configuración).",
+        ["This copy of WinSolve is in the signed-in user's own folders, where they can change it, so it won't run with another account's administrator rights."] = "Esta copia de WinSolve está en las carpetas del usuario que inició sesión, donde él puede modificarla, así que no se ejecuta con los permisos de administrador de otra cuenta.",
+        ["Install WinSolve for all users (in Program Files) to use it from this account."] = "Instala WinSolve para todos los usuarios (en Archivos de programa) para usarlo desde esta cuenta.",
     };
 }

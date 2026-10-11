@@ -12,7 +12,7 @@ namespace WinSolve.Setup
     /// <summary>Installer window: language, install scope and options, in WinSolve's style.</summary>
     public sealed class SetupForm : Form
     {
-        private readonly ChoiceCard _all;
+        private readonly ChoiceCard _me, _all;
         private readonly Toggle _clean, _desktop, _launch;
         private readonly FlatButton _install, _cancel;
         private readonly Label _status;
@@ -53,8 +53,10 @@ namespace WinSolve.Setup
             _language.Changed += (s, e) => { Lang.Spanish = _language.SelectedIndex == 1; ApplyTexts(); };
 
             _scopeLabel = new Label { Font = Ui.BodyBold, AutoSize = true, Location = new Point(32, 110), BackColor = Color.Transparent };
-            // Always for all users, in Program Files: only administrators can change the program there.
-            _all = new ChoiceCard { Glyph = "\uE716", Location = new Point(32, 136), Size = new Size(496, 118), Checked = true, ShowMark = false, Cursor = Cursors.Default };
+            _all = new ChoiceCard { Glyph = "\uE716", Location = new Point(32, 136), Size = new Size(242, 118), Checked = preset.AllUsers };
+            _me = new ChoiceCard { Glyph = "\uE77B", Location = new Point(286, 136), Size = new Size(242, 118), Checked = !preset.AllUsers };
+            _all.Selected += (s, e) => _me.Checked = false;
+            _me.Selected += (s, e) => _all.Checked = false;
 
             _options = new CardPanel { Location = new Point(32, 268), Size = new Size(496, 124), Padding = new Padding(16, 6, 12, 6) };
             _clean = new Toggle { Checked = preset.Clean };
@@ -76,7 +78,7 @@ namespace WinSolve.Setup
             _cancel = new FlatButton(primary: false) { Location = new Point(288, 452) };
             _cancel.Click += (s, e) => { if (_cts != null) _cts.Cancel(); else Close(); };
 
-            Controls.AddRange(new Control[] { logo, _title, _subtitle, _language, _scopeLabel, _all, _options, _status, _progress, _install, _cancel });
+            Controls.AddRange(new Control[] { logo, _title, _subtitle, _language, _scopeLabel, _all, _me, _options, _status, _progress, _install, _cancel });
             // While updating, the window just shows progress: no language choice.
             _language.Visible = !autoStart;
             ApplyTexts();
@@ -92,9 +94,11 @@ namespace WinSolve.Setup
             Text = Lang.T("WinSolve Setup");
             _title.Text = Lang.T(_done ? "WinSolve is ready" : _autoStart && _preset.Launch ? "Updating WinSolve" : "Install WinSolve");
             _subtitle.Text = Lang.F("Version {0}  ·  The multitool for Windows", Installer.Version);
-            _scopeLabel.Text = Lang.T("Install location");
-            _all.Text = Lang.T("All users of this PC");
-            _all.Detail = Lang.F("Protected: only administrators can change the program.\n{0}", Installer.AllUsersDir);
+            _scopeLabel.Text = Lang.T("Install for");
+            _all.Text = Lang.T("All users");
+            _all.Detail = Lang.F("Needs administrator to install.\n{0}", Installer.AllUsersDir);
+            _me.Text = Lang.T("Only me");
+            _me.Detail = Lang.F("Your account only, no admin needed.\n{0}", Shorten(Installer.PerUserDir));
             _clean.Text = Lang.T("Clean install: remove the previous version and its settings");
             _desktop.Text = Lang.T("Create a desktop shortcut");
             _launch.Text = Lang.T("Open WinSolve when setup finishes");
@@ -103,6 +107,7 @@ namespace WinSolve.Setup
             _install.Text = Lang.T(_done ? "Finish" : "Install");
             _cancel.Text = Lang.T("Cancel");
             _all.Invalidate();
+            _me.Invalidate();
         }
 
         private static string Shorten(string path)
@@ -110,7 +115,7 @@ namespace WinSolve.Setup
 
         private void SetEditable(bool editable)
         {
-            foreach (var c in new Control[] { _clean, _desktop, _launch, _language }) c.Enabled = editable;
+            foreach (var c in new Control[] { _all, _me, _clean, _desktop, _launch, _language }) c.Enabled = editable;
         }
 
         private InstallOptions Options() => new InstallOptions

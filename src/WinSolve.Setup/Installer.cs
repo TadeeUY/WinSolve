@@ -40,9 +40,7 @@ namespace WinSolve.Setup
             int.TryParse(Value("--wait"), out var pid);
             return new InstallOptions
             {
-                // Always for all users: WinSolve runs as administrator, and an exe in a folder the
-                // user can write to (the old "only me" mode) could be swapped and run elevated.
-                AllUsers = true,
+                AllUsers = args.Contains("--allusers"),
                 Clean = args.Contains("--clean"),
                 DesktopShortcut = args.Contains("--desktop"),
                 Launch = args.Contains("--launch"),
@@ -142,7 +140,6 @@ namespace WinSolve.Setup
 
         public static void Install(InstallOptions o, Action<string> status, Action<int> progress, CancellationToken ct)
         {
-            o.AllUsers = true;
             progress(5);
             if (!IsRuntimeInstalled())
                 InstallRuntime(status, p => progress(5 + p * 60 / 100), ct);
@@ -218,12 +215,6 @@ namespace WinSolve.Setup
                 key.SetValue("NoModify", 1, RegistryValueKind.DWord);
                 key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
                 key.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd"));
-            }
-            // This account's old "only me" copy: its shortcuts would keep opening the old version.
-            if (IsInstalled(false))
-            {
-                try { RemoveInstallation(allUsers: false, removeData: false, status); }
-                catch { /* best effort */ }
             }
             progress(100);
             status(Lang.T("WinSolve was installed successfully."));
@@ -368,9 +359,10 @@ namespace WinSolve.Setup
             try
             {
                 var full = Path.GetFullPath(dir.Trim().Trim('"')).TrimEnd('\\');
-                // Only the all-users folder: an older "only me" install is moved to Program Files.
-                return File.Exists(Path.Combine(full, ExeName)) && string.Equals(full, AllUsersDir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)
-                    ? full : null;
+                // Only WinSolve's own install folders: Program Files, or this account's "only me" folder.
+                var allowed = string.Equals(full, AllUsersDir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)
+                              || string.Equals(full, PerUserDir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+                return allowed && File.Exists(Path.Combine(full, ExeName)) ? full : null;
             }
             catch { return null; }
         }
@@ -399,9 +391,9 @@ namespace WinSolve.Setup
                 catch { }
             }
 
-            // Updates only ever go to the all-users install: its entry is machine-wide.
-            // (Other users' registry is never touched.)
+            // The machine-wide entry or this account's own; other users' registry is never touched.
             using (var hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64)) Update(hklm, UninstallKey);
+            using (var hkcu = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry64)) Update(hkcu, UninstallKey);
             return found;
         }
 

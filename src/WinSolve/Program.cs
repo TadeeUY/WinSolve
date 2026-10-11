@@ -38,6 +38,17 @@ internal static class Program
             return;
         }
 
+        // A copy inside the signed-in user's own folders (an "only me" install, or Downloads) can be
+        // changed by that user. Running it with another administrator's password would hand them
+        // that administrator's rights, so it only runs for the person it belongs to.
+        if (InteractiveUser.Other is { } signedIn && Environment.ProcessPath is { } self && SafePath.IsSameOrInside(self, signedIn.ProfilePath))
+        {
+            Localization.Loc.Show(null,
+                "This copy of WinSolve is in the signed-in user's own folders, where they can change it, so it won't run with another account's administrator rights.\n\nInstall WinSolve for all users (in Program Files) to use it from this account.",
+                "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
         // Single instance: if WinSolve is already running (e.g. in the notification area), don't start another.
         using var mutex = new Mutex(true, @"Local\WinSolve.SingleInstance", out var isNew);
         if (!isNew && args.Any(a => a.Equals("--restarted", StringComparison.OrdinalIgnoreCase)))

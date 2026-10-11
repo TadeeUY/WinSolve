@@ -35,7 +35,7 @@ namespace WinSolve.Setup
 
             var preset = args.Contains("--install")
                 ? InstallOptions.FromArgs(args)
-                : new InstallOptions { AllUsers = true };
+                : new InstallOptions { AllUsers = !Installer.IsInstalled(false) || Installer.IsInstalled(true) };
             Application.Run(new SetupForm(preset, autoStart: args.Contains("--auto")));
         }
 
