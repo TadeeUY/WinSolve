@@ -546,10 +546,11 @@ public sealed class MainForm : Form
         var brand = new Panel { Dock = DockStyle.Top, Height = 62, BackColor = Theme.Sidebar };
         brand.Controls.Add(new PictureBox
         {
-            Image = Theme.AppIcon(32).ToBitmap(),
+            // The logo is wider than tall: a bigger box keeps it legible.
+            Image = Theme.AppIcon(64).ToBitmap(),
             SizeMode = PictureBoxSizeMode.Zoom,
-            Size = new Size(32, 32),
-            Location = new Point(16, 6),
+            Size = new Size(42, 42),
+            Location = new Point(10, 1),
             BackColor = Color.Transparent,
         });
         brand.Controls.Add(new Label
