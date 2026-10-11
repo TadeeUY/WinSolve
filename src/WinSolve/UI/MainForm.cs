@@ -117,6 +117,7 @@ public sealed class MainForm : Form
             // When started in the tray, ShowFromTray runs the fade-in itself.
             if (!_startHidden) await AnimateInAsync();
             if (!_startHidden && AppSettings.Current.IsFirstRun) BeginInvoke(ShowWelcome);
+            else if (!_startHidden) BeginInvoke(ShowWhatsNewIfUpdated);
         };
         HandleCreated += (_, _) => Theme.StyleWindow(this);
         FormClosing += OnFormClosing;
@@ -237,6 +238,8 @@ public sealed class MainForm : Form
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         Activate();
         if (wasHidden) await AnimateInAsync();
+        // Started hidden in the tray after an update: show what's new the first time it opens.
+        if (_startHidden && !_whatsNewChecked && !AppSettings.Current.IsFirstRun) BeginInvoke(ShowWhatsNewIfUpdated);
     }
 
     private async void OnFormClosing(object? sender, FormClosingEventArgs e)
@@ -269,8 +272,35 @@ public sealed class MainForm : Form
         }
     }
 
+    /// <summary>After an update: what the new version brings, once, in the app's language.</summary>
+    private bool _whatsNewChecked;
+
+    private void ShowWhatsNewIfUpdated()
+    {
+        if (_whatsNewChecked) return;
+        _whatsNewChecked = true;
+        var s = AppSettings.Current;
+        Version.TryParse(s.LastSeenVersion, out var last);
+        var current = UpdateService.CurrentVersion;
+        if (last is not null && last >= current) return;
+        var entries = Changelog.Since(last, current);
+        RememberVersion();
+        if (entries.Count == 0) return;
+        using var dlg = new WhatsNewDialog(entries);
+        dlg.ShowDialog(this);
+    }
+
+    private static void RememberVersion()
+    {
+        var current = UpdateService.CurrentVersion.ToString(3);
+        if (AppSettings.Current.LastSeenVersion == current) return;
+        AppSettings.Current.LastSeenVersion = current;
+        AppSettings.Current.Save();
+    }
+
     private void ShowWelcome()
     {
+        RememberVersion(); // a fresh install doesn't need "what's new"
         var language = AppSettings.Current.Language;
         using var dlg = new WelcomeDialog();
         var ok = dlg.ShowDialog(this) == DialogResult.OK;

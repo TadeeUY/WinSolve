@@ -1432,5 +1432,7 @@ public static class Spanish
         ["Windows didn't list the installed drivers."] = "Windows no listó los drivers instalados.",
         ["Search (Ctrl+K)"] = "Buscar (Ctrl+K)",
         ["{0} of 100"] = "{0} de 100",
+        ["What's new in WinSolve {0}"] = "Novedades de WinSolve {0}",
+        ["Thanks for keeping WinSolve up to date."] = "Gracias por mantener WinSolve actualizado.",
     };
 }
