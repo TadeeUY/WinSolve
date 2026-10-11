@@ -17,6 +17,9 @@ public static class Toolbox
         new("locked-file", "Disks & files", "", "Locked file finder",
             "Shows which program has a file open, closes it or deletes the file at restart.", "unlocker in use bloqueado en uso",
             o => Show(o, new LockedFileDialog())),
+        new("forgotten", "Disks & files", "\uE81C", "Large & forgotten files",
+            "Big files you haven't opened in a year and empty folders, in your own folders.", "old big large unused empty folders viejos grandes olvidados carpetas vacias",
+            o => Show(o, new ForgottenDialog())),
         new("shred", "Disks & files", "", "Secure delete",
             "Overwrites files with random data before deleting them, so they can't be recovered.", "shred wipe borrar seguro triturar",
             o => Show(o, new ShredDialog())),
@@ -817,5 +820,120 @@ internal sealed class BatteryDialog : ToolDialog
             var w = TextRenderer.MeasureText(last, Theme.Small).Width;
             TextRenderer.DrawText(g, last, Theme.Small, new Point(area.Right - w, area.Bottom + 6), Theme.Muted);
         }
+    }
+}
+
+// ═══════════════════════ Large & forgotten files ═══════════════════════
+
+internal sealed class ForgottenDialog : ToolDialog
+{
+    private readonly Segmented _tabs = new();
+    private readonly DataGridView _files = Grid(("name", "File", 220), ("folder", "Folder", 260), ("size", "Size", 90), ("used", "Last used", 110));
+    private readonly DataGridView _empty = Grid(("folder", "Empty folder", 600));
+    private readonly Panel _host = new() { Dock = DockStyle.Fill, BackColor = Color.Transparent };
+    private readonly FlowLayoutPanel _actions = Theme.Row();
+    private readonly ComboBox _age = Theme.Combo("Not used in 6 months", "Not used in 1 year", "Not used in 2 years");
+    private CancellationTokenSource? _cts;
+
+    public ForgottenDialog() : base("\uE81C", "Large & forgotten files",
+        "Files over 100 MB that haven't been opened for a long time, and folders with nothing inside. Only your own folders are searched (not AppData).", new Size(860, 580))
+    {
+        _files.MultiSelect = _empty.MultiSelect = true;
+        _age.SelectedIndex = 1;
+        _age.Width = 190;
+        _age.SelectedIndexChanged += async (_, _) => await ScanAsync();
+        _tabs.Add("files", "Large files", "\uE8B7").Add("empty", "Empty folders", "\uE8F4");
+        _tabs.SelectedChanged += _ => ShowTab();
+        AddRow(Theme.Row(_tabs, _age));
+        AddRow(_actions);
+        Theme.EmptyState(_files, "No large forgotten files found.");
+        Theme.EmptyState(_empty, "No empty folders found.");
+        AddRow(_host, fill: true);
+        _tabs.Select("files", notify: false);
+        ShowTab();
+        Shown += async (_, _) => await ScanAsync();
+        FormClosing += (_, _) => _cts?.Cancel();
+    }
+
+    private void ShowTab()
+    {
+        _host.Controls.Clear();
+        var files = _tabs.Selected != "empty";
+        var card = Theme.InCard(files ? _files : _empty);
+        card.Dock = DockStyle.Fill;
+        _host.Controls.Add(card);
+        _age.Visible = files;
+        Theme.ClearAndDispose(_actions);
+        if (files)
+        {
+            _actions.Controls.Add(Theme.Button("Send to Recycle Bin", (_, _) => RecycleSelected(), primary: true, glyph: "\uE74D"));
+            _actions.Controls.Add(Theme.Button("Open folder", (_, _) => OpenFolder(), glyph: "\uE838"));
+        }
+        else
+        {
+            _actions.Controls.Add(Theme.Button("Delete selected folders", (_, _) => DeleteEmpty(selectedOnly: true), primary: true, glyph: "\uE74D"));
+            _actions.Controls.Add(Theme.Button("Delete all empty folders", (_, _) => DeleteEmpty(selectedOnly: false)));
+        }
+        Loc.Apply(_actions);
+    }
+
+    private async Task ScanAsync()
+    {
+        _cts?.Cancel();
+        var cts = _cts = new CancellationTokenSource();
+        var days = _age.SelectedIndex switch { 0 => 182, 2 => 730, _ => 365 };
+        Status.Text = Loc.T("Searching your folders...");
+        _files.Rows.Clear();
+        _empty.Rows.Clear();
+        try
+        {
+            var (files, empty) = await Task.Run(() => (
+                ForgottenFiles.FindLarge(100L << 20, TimeSpan.FromDays(days), _ => { }, cts.Token),
+                ForgottenFiles.FindEmptyFolders(cts.Token)), cts.Token);
+            if (cts.IsCancellationRequested || IsDisposed) return;
+            foreach (var f in files)
+                _files.Rows[_files.Rows.Add(Path.GetFileName(f.Path), Path.GetDirectoryName(f.Path), Format.Bytes(f.Size), f.LastUsed.ToString("d"))].Tag = f;
+            foreach (var d in empty) _empty.Rows[_empty.Rows.Add(d)].Tag = d;
+            Status.Text = string.Format(Loc.T("{0} large file(s) using {1}  ·  {2} empty folder(s)"), files.Count, Format.Bytes(files.Sum(f => f.Size)), empty.Count);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { if (!IsDisposed) Status.Text = ex.Message; }
+    }
+
+    private List<ForgottenFile> SelectedFiles() => _files.SelectedRows.Cast<DataGridViewRow>().Select(r => r.Tag).OfType<ForgottenFile>().ToList();
+
+    private void OpenFolder()
+    {
+        if (SelectedFiles().FirstOrDefault() is { } f) ProcessRunner.ShellOpen("explorer.exe", $"/select,\"{f.Path}\"");
+    }
+
+    private void RecycleSelected()
+    {
+        var files = SelectedFiles();
+        if (files.Count == 0) { Tell("Select one or more files first."); return; }
+        if (!Ask(string.Format(Loc.T("Send {0} file(s) ({1}) to the Recycle Bin?"), files.Count, Format.Bytes(files.Sum(f => f.Size))))) return;
+        long freed = 0;
+        foreach (var f in files)
+        {
+            if (InteractiveUser.IsOtherUsersData(f.Path)) continue;
+            if (RecycleBin.Send(f.Path, Handle))
+            {
+                freed += f.Size;
+                foreach (DataGridViewRow r in _files.Rows) if (ReferenceEquals(r.Tag, f)) { _files.Rows.Remove(r); break; }
+            }
+        }
+        ActivityLog.Cleaned(freed, "forgotten files");
+        Status.Text = string.Format(Loc.T("{0} moved to the Recycle Bin."), Format.Bytes(freed));
+    }
+
+    private void DeleteEmpty(bool selectedOnly)
+    {
+        var rows = (selectedOnly ? _empty.SelectedRows.Cast<DataGridViewRow>() : _empty.Rows.Cast<DataGridViewRow>()).ToList();
+        var folders = rows.Select(r => r.Tag).OfType<string>().ToList();
+        if (folders.Count == 0) { Tell("Select one or more folders first."); return; }
+        if (!Ask(string.Format(Loc.T("Delete {0} empty folder(s)? Only folders that are still empty are removed."), folders.Count))) return;
+        var removed = ForgottenFiles.DeleteEmptyFolders(folders);
+        foreach (var r in rows) if (r.Tag is string d && !Directory.Exists(d)) _empty.Rows.Remove(r);
+        Status.Text = string.Format(Loc.T("{0} empty folder(s) deleted."), removed);
     }
 }
