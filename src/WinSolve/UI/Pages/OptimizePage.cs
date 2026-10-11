@@ -105,17 +105,20 @@ public sealed class OptimizePage : Page
         var device = OneClickOptimizer.CurrentDevice;
         var level = AppSettings.Current.Level;
 
-        _hardware.Text = "Detected: " + hw.Describe();
-        _desktop.Selected = !custom && device == DeviceKind.PC;
-        _laptop.Selected = !custom && device == DeviceKind.Laptop;
-        _desktop.Text = hw.IsLaptop ? "Desktop PC" : "Desktop PC (detected)";
-        _laptop.Text = hw.IsLaptop ? "Laptop (detected)" : "Laptop";
-        for (int i = 0; i < _levels.Length; i++) _levels[i].Selected = !custom && (int)level == i;
-        _custom.Selected = custom;
+        LayoutBatch.Run(this, () =>
+        {
+            _hardware.Text = "Detected: " + hw.Describe();
+            _desktop.Selected = !custom && device == DeviceKind.PC;
+            _laptop.Selected = !custom && device == DeviceKind.Laptop;
+            _desktop.Text = hw.IsLaptop ? "Desktop PC" : "Desktop PC (detected)";
+            _laptop.Text = hw.IsLaptop ? "Laptop (detected)" : "Laptop";
+            for (int i = 0; i < _levels.Length; i++) _levels[i].Selected = !custom && (int)level == i;
+            _custom.Selected = custom;
+        });
 
         var tasks = await Task.Run(() => OneClickOptimizer.SelectedTasks().ToList());
         var tweaks = await Task.Run(() => OneClickOptimizer.SelectedTweaks().ToList());
-        var pendingTweaks = tweaks.Where(t => !t.SafeIsApplied()).ToList();
+        var pendingTweaks = await Task.Run(() => tweaks.Where(t => !t.SafeIsApplied()).ToList());
 
         var lines = new List<string>();
         if (!custom) lines.AddRange(OneClickOptimizer.CurrentPlan().Reasons.Select(r => "• " + r));

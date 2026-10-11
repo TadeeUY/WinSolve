@@ -76,6 +76,32 @@ public class Stack : FlowLayoutPanel
     }
 }
 
+/// <summary>
+/// Runs a batch of UI changes with layout frozen in every container of a tree, then measures
+/// once. Each visibility or text change otherwise re-measures the whole page.
+/// </summary>
+public static class LayoutBatch
+{
+    public static void Run(Control root, Action changes)
+    {
+        var frozen = new List<Control>();
+        void Walk(Control c)
+        {
+            if (c.Controls.Count == 0) return;
+            c.SuspendLayout();
+            frozen.Add(c);
+            foreach (Control child in c.Controls) Walk(child);
+        }
+        Walk(root);
+        try { changes(); }
+        finally
+        {
+            for (int i = frozen.Count - 1; i > 0; i--) frozen[i].ResumeLayout(false);
+            if (frozen.Count > 0) frozen[0].ResumeLayout(true);
+        }
+    }
+}
+
 /// <summary>Card whose height follows its content (an inner <see cref="Stack"/>).</summary>
 public sealed class StackCard : Card
 {

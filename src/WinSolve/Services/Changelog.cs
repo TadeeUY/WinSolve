@@ -10,6 +10,13 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 13, 1),
+        [
+            new("\uE945", "Much faster: switching pages is now instant (it could take 10-30 seconds before), and pages load in the background while WinSolve is idle.",
+                "Mucho más rápido: cambiar de página ahora es instantáneo (antes podía tardar de 10 a 30 segundos) y las páginas se cargan en segundo plano."),
+            new("\uE895", "Updates show a simpler window: just the progress.",
+                "Las actualizaciones muestran una ventana más simple: solo el progreso."),
+        ]),
         new(new Version(0, 13, 0),
         [
             new("", "Weekly summary on Home: problems detected, space freed and drive health for the past week (Settings > Background).",

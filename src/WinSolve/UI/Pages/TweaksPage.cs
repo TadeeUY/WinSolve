@@ -124,15 +124,18 @@ public sealed class TweaksPage : Page
         _selection.Text = $"{Selected().Count} selected  ·  {applied} already applied";
     }
 
-    private void RefreshBadges()
+    private void RefreshBadges(IReadOnlyDictionary<string, bool>? states = null)
     {
         foreach (var (id, row) in _rows)
         {
             var t = TweakCatalog.Find(id)!;
-            var applied = !t.IsAction && t.SafeIsApplied();
+            var applied = !t.IsAction && (states?.GetValueOrDefault(id) ?? t.SafeIsApplied());
             row.Badge.Tag = applied;
-            row.Badge.Text = t.IsAction ? "Action" : applied ? "Applied" : "";
-            row.Badge.ForeColor = applied ? Theme.Good : Theme.Muted;
+            // Only touch what changed: each text change re-measures the page.
+            var text = Loc.T(t.IsAction ? "Action" : applied ? "Applied" : "");
+            if (row.Badge.Text != text) row.Badge.Text = text;
+            var color = applied ? Theme.Good : Theme.Muted;
+            if (row.Badge.ForeColor != color) row.Badge.ForeColor = color;
         }
         UpdateSelectionLabel();
     }
@@ -363,10 +366,23 @@ public sealed class TweaksPage : Page
     public override async void OnShown()
     {
         _loading = true;
-        await Task.Run(() => { }); // keep the UI responsive while the page appears
-        RefreshBadges();
-        foreach (var (id, toggle) in _toggles) toggle.Checked = TweakCatalog.Find(id)!.SafeIsApplied();
-        RefreshUpdatePolicy();
+        // Reading ~100 settings from the registry happens off the UI thread; the page is then
+        // updated in one batch (one layout instead of one per label).
+        var ids = _rows.Keys.Concat(_toggles.Keys).Distinct().ToList();
+        var states = await Task.Run(() => ids.ToDictionary(id => id, id => TweakCatalog.Find(id) is { IsAction: false } t && t.SafeIsApplied()));
+        var security = await Task.Run(UpdatePolicy.IsSecurityMode);
+        if (IsDisposed) return;
+        var changed = _rows.Any(r => r.Value.Badge.Tag is not bool b || b != states.GetValueOrDefault(r.Key))
+                      || _toggles.Any(t => t.Value.Checked != states.GetValueOrDefault(t.Key));
+        void Apply()
+        {
+            RefreshBadges(states);
+            foreach (var (id, toggle) in _toggles)
+                if (toggle.Checked != states.GetValueOrDefault(id)) toggle.Checked = states.GetValueOrDefault(id);
+        }
+        if (changed) LayoutBatch.Run(this, Apply); else UpdateSelectionLabel();
+        _wuSecurity.Primary = security;
+        _wuDefault.Primary = !security;
         _loading = false;
         _ = LoadDnsAsync();
         if (_features.All(f => f.Feature.Enabled is null)) _ = LoadFeaturesAsync();

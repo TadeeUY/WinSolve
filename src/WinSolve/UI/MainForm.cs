@@ -715,10 +715,14 @@ public sealed class MainForm : Form
         }
         if (!_factories.TryGetValue(key, out var factory)) return;
 
+        // How long pages take to appear goes to the log (bug reports), to find slow ones.
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        long createdMs = -1;
         if (!_pages.TryGetValue(key, out var page))
         {
             page = factory();
             _pages[key] = page;
+            createdMs = timer.ElapsedMilliseconds;
         }
 
         var previous = CurrentPage;
@@ -732,8 +736,9 @@ public sealed class MainForm : Form
 
         var animate = AppSettings.Current.Animations && Visible && Opacity > 0 && previous is not null && WindowState != FormWindowState.Minimized;
 
+        // Pages stay in the window once shown and are only hidden: taking a big page out of the
+        // window (and back in) made Windows rebuild hundreds of controls, up to ~20 s per switch.
         _content.SuspendLayout();
-        foreach (var old in _content.Controls.OfType<Page>().ToList()) _content.Controls.Remove(old);
         if (animate)
         {
             // The new page slides up into place (Windows 11 Settings style); moving an already
@@ -743,12 +748,30 @@ public sealed class MainForm : Form
             page.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
         }
         else page.Dock = DockStyle.Fill;
-        _content.Controls.Add(page);
+        if (page.Parent != _content) _content.Controls.Add(page);
+        // Showing a page makes every control in it report "visible" to its container, and each
+        // report re-measures the whole page: hundreds of passes on a big page. Freeze layout
+        // while it appears and measure once at the end.
+        LayoutBatch.Run(page, () =>
+        {
+            page.Visible = true;
+            page.BringToFront();
+            if (previous is not null) previous.Visible = false;
+        });
         _content.ResumeLayout(true);
 
         _currentPage = page;
         page.OnShown();
+        var shownMs = timer.ElapsedMilliseconds;
         if (animate) SlideIn(page);
+        void Ready(object? s, EventArgs e)
+        {
+            Application.Idle -= Ready;
+            var total = timer.ElapsedMilliseconds;
+            if (total > 500)
+                Logger.Write($"Page '{key}' was slow: {(createdMs >= 0 ? $"built in {createdMs} ms, " : "")}on screen after {total} ms (OnShown at {shownMs} ms).");
+        }
+        Application.Idle += Ready;
     }
 
     private const int SlideDistance = 28;
@@ -775,15 +798,36 @@ public sealed class MainForm : Form
     /// <summary>Builds the other pages up front (while the splash is visible) so switching is instant.</summary>
     private void PreloadPages()
     {
-        foreach (var (key, factory) in _factories)
+        // One page at a time while WinSolve is idle, so the window keeps responding: each page
+        // is built and its window handles created hidden, which makes the first visit instant.
+        var pending = new Queue<string>(_factories.Keys.Where(k => !_pages.ContainsKey(k) || _pages[k].Parent != _content));
+        var timer = new System.Windows.Forms.Timer { Interval = 250 };
+        timer.Tick += (_, _) =>
         {
-            if (_pages.ContainsKey(key)) continue;
-            try { _pages[key] = factory(); }
+            if (pending.Count == 0 || IsDisposed) { timer.Dispose(); return; }
+            if (!Visible || Opacity < 1) return; // during the fade-in or while in the tray
+            var key = pending.Dequeue();
+            try
+            {
+                if (!_pages.TryGetValue(key, out var page)) _pages[key] = page = _factories[key]();
+                if (page.Parent == _content) return;
+                page.Visible = false;
+                page.Dock = DockStyle.Fill;
+                _content.Controls.Add(page);
+                CreateHandles(page);
+            }
             catch (Exception ex) { Logger.Write($"Preloading page '{key}' failed: {ex.Message}"); }
-        }
+        };
+        timer.Start();
     }
 
-    private Page? CurrentPage => _currentPage is not null && _content.Controls.Contains(_currentPage) ? _currentPage : null;
+    private static void CreateHandles(Control c)
+    {
+        _ = c.Handle;
+        foreach (Control child in c.Controls) CreateHandles(child);
+    }
+
+    private Page? CurrentPage => _currentPage is { IsDisposed: false } && _currentPage.Parent == _content ? _currentPage : null;
 
     /// <summary>Recreates every page (e.g. after the accent color changes).</summary>
     /// <summary>True while any page is running a task (optimization, uninstall, driver install...).</summary>
@@ -795,8 +839,11 @@ public sealed class MainForm : Form
         // Recreating pages would orphan running work (no log, no Cancel) and allow a second run.
         if (IsBusy) return false;
         _currentPage = null;
-        _content.Controls.Clear();
+        // Disposing destroys each page's windows in one go (removing them first is very slow).
+        _content.SuspendLayout();
         foreach (var p in _pages.Values) p.Dispose();
+        _content.Controls.Clear();
+        _content.ResumeLayout(false);
         _pages.Clear();
         foreach (var b in _nav) b.Invalidate();
         if (_brandSubtitle is not null) _brandSubtitle.Text = BrandSubtitle;
@@ -804,6 +851,7 @@ public sealed class MainForm : Form
         if (_update is not null && !_updating) ShowUpdate(_update);
         _tray.Text = Localization.Loc.T("WinSolve - watching for Windows errors");
         Navigate(current);
+        PreloadPages();
         return true;
     }
 
