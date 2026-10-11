@@ -1,0 +1,109 @@
+name: Windows end-to-end
+
+# Installs, opens, updates and uninstalls WinSolve on a real (throw-away) Windows machine and
+# tests the driver tools against the real driver store. Nothing is published from here.
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build app and installer
+        run: |
+          dotnet publish src/WinSolve/WinSolve.csproj -c Release -o out/app
+          dotnet build src/WinSolve.Setup/WinSolve.Setup.csproj -c Release -p:AppExe=${{ github.workspace }}/out/app/WinSolve.exe -o out/setup
+          New-Item -ItemType Directory -Force e2e | Out-Null
+
+      - name: Stage two versions of a test driver
+        run: |
+          # A test-signed, device-less driver package in two versions (1.0 and 2.0) of the same INF,
+          # so the "old drivers" tool has something real to find and remove.
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=WinSolve Test Driver" -CertStoreLocation Cert:\LocalMachine\My
+          Export-Certificate -Cert $cert -FilePath e2e\testdriver.cer | Out-Null
+          Import-Certificate -FilePath e2e\testdriver.cer -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          Import-Certificate -FilePath e2e\testdriver.cer -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
+          foreach ($v in "1.0.0.0", "2.0.0.0") {
+            $dir = "e2e\driver-$v"
+            New-Item -ItemType Directory -Force $dir | Out-Null
+          @"
+          [Version]
+          Signature="`$WINDOWS NT`$"
+          Class=System
+          ClassGuid={4d36e97d-e325-11ce-bfc1-08002be10318}
+          Provider=%Prov%
+          CatalogFile=winsolvetest.cat
+          DriverVer=01/01/2024,$v
+          PnpLockdown=1
+
+          [Manufacturer]
+          %Prov%=Models,NTamd64
+
+          [Models.NTamd64]
+          %Dev%=Inst,ROOT\WINSOLVETEST
+
+          [Inst.NT]
+
+          [Inst.NT.Services]
+          AddService=,2
+
+          [Strings]
+          Prov="WinSolve Test"
+          Dev="WinSolve Test Device"
+          "@ -replace '(?m)^ {10}', '' | Set-Content -Encoding ascii "$dir\winsolvetest.inf"
+            New-FileCatalog -CatalogVersion 2 -Path $dir -CatalogFilePath "$dir\winsolvetest.cat" | Out-Null
+            Set-AuthenticodeSignature -FilePath "$dir\winsolvetest.cat" -Certificate $cert | Format-List Status, StatusMessage
+            pnputil /add-driver "$dir\winsolvetest.inf"
+            if ($LASTEXITCODE -ne 0) { throw "pnputil could not stage test driver $v (exit $LASTEXITCODE)." }
+          }
+          pnputil /enum-drivers | Select-String -Context 0,6 winsolvetest
+
+      - name: Driver tests on real Windows
+        env:
+          WINSOLVE_E2E: "1"
+        run: |
+          dotnet test tests/WinSolve.Tests/WinSolve.Tests.csproj -c Release --filter "Category=E2E" --logger "console;verbosity=detailed"
+
+      - name: Installer - only me
+        if: success() || failure()
+        run: ./.github/e2e/installer.ps1 -Setup out/setup/WinSolveSetup.exe -Scope user
+
+      - name: Installer - all users
+        if: success() || failure()
+        run: ./.github/e2e/installer.ps1 -Setup out/setup/WinSolveSetup.exe -Scope all
+
+      - name: Update from the previous release (0.13.1)
+        if: success() || failure()
+        run: ./.github/e2e/update.ps1 -Setup out/setup/WinSolveSetup.exe
+
+      - name: Collect WinSolve logs
+        if: always()
+        run: |
+          Copy-Item "$env:ProgramData\WinSolve\logs\*" e2e\ -ErrorAction SilentlyContinue
+          Get-ChildItem e2e -File | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-results
+          path: |
+            e2e/*.png
+            e2e/*.log
+            e2e/*.txt

@@ -33,10 +33,41 @@ namespace WinSolve.Setup
                 return;
             }
 
+            if (args.Contains("--install") && args.Contains("--quiet"))
+            {
+                Environment.Exit(QuietInstall(args));
+                return;
+            }
+
             var preset = args.Contains("--install")
                 ? InstallOptions.FromArgs(args)
                 : new InstallOptions { AllUsers = !Installer.IsInstalled(false) || Installer.IsInstalled(true) };
             Application.Run(new SetupForm(preset, autoStart: args.Contains("--auto")));
+        }
+
+        /// <summary>
+        /// Unattended install for IT and automated tests: no window, progress on standard output,
+        /// exit code 0 on success, 1 on failure and 5 when an all-users install isn't elevated.
+        /// </summary>
+        private static int QuietInstall(string[] args)
+        {
+            var o = InstallOptions.FromArgs(args);
+            if (o.AllUsers && !Installer.IsElevated)
+            {
+                Console.Error.WriteLine("Installing for all users needs administrator rights.");
+                return 5;
+            }
+            try
+            {
+                Installer.Install(o, Console.WriteLine, _ => { }, System.Threading.CancellationToken.None);
+                if (o.Launch) Installer.LaunchApp(o);
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("Setup failed: " + ex.Message);
+                return 1;
+            }
         }
 
         private static void Uninstall(string[] args)
