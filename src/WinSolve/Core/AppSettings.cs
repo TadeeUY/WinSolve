@@ -71,6 +71,17 @@ public sealed class AppSettings
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsFirstRun { get; private set; }
 
+    /// <summary>First start of WinSolve on this PC; the weekly summary counts weeks from here.</summary>
+    public DateTime? InstalledOn { get; set; }
+
+    /// <summary>Show a short summary of the past week on Home.</summary>
+    public bool WeeklySummary { get; set; } = true;
+
+    public DateTime? LastWeeklySummary { get; set; }
+
+    /// <summary>Version whose "What's new" was last shown (null on a fresh install).</summary>
+    public string? LastSeenVersion { get; set; }
+
     /// <summary>Color theme: System (follows Windows), Dark or Light.</summary>
     public string ThemeMode { get; set; } = "System";
 

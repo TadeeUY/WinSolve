@@ -85,6 +85,12 @@ public sealed class MainForm : Form
             // If WinSolve was closed during a driver install, put Windows Update's driver setting back.
             _ = Task.Run(() => DriverService.RestoreWindowsUpdateDrivers(Logger.Write));
             _ = Task.Run(Maintenance.UpgradeTaskAsync);
+            if (AppSettings.Current.InstalledOn is null)
+            {
+                // Weekly summaries count from here.
+                AppSettings.Current.InstalledOn = DateTime.Now;
+                AppSettings.Current.Save();
+            }
             ErrorMonitor.Instance.AlertRaised += OnAlert;
             ErrorMonitor.Instance.Apply();
             _ = CheckForUpdateAsync();
@@ -190,6 +196,7 @@ public sealed class MainForm : Form
         var ctx = new TaskContext(Logger.Write, default);
         foreach (var id in new[] { "clean-temp-user", "clean-temp-windows" })
             if (TaskCatalog.Find(id) is { } task) await Task.Run(() => task.Run(ctx));
+        ActivityLog.Cleaned(ctx.FreedBytes, "quick clean");
         return Done("Temporary files cleaned",
             ctx.FreedBytes > 0 ? string.Format(Localization.Loc.T("{0} freed. Files in use were skipped."), Format.Bytes(ctx.FreedBytes))
                                : "There was nothing left to clean.", "\uE74D");

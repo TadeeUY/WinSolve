@@ -393,6 +393,7 @@ public sealed class TaskRunnerView : TableLayoutPanel
                 progress(i + 1, tasks.Count);
             }
             log($"Done. {(ctx.FreedBytes > 0 ? $"Freed {Format.Bytes(ctx.FreedBytes)}. " : "")}{(ctx.RebootRecommended ? "Restart the PC to finish." : "")}");
+            Services.ActivityLog.Cleaned(ctx.FreedBytes, "tasks");
             done?.Invoke(ctx);
         });
     }

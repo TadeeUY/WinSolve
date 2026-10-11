@@ -116,6 +116,7 @@ public static class OneClickOptimizer
         log("Measuring the system after optimizing...");
         run.After = await OptimizationHistory.TakeAsync();
         run.FreedBytes = ctx.FreedBytes;
+        ActivityLog.Cleaned(ctx.FreedBytes, "one-click");
         OptimizationHistory.Add(run);
 
         return new OptimizeSummary(ok, failed, applied, ctx.FreedBytes, ctx.RebootRecommended, explorer);

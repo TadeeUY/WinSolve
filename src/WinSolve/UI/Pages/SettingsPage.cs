@@ -11,6 +11,7 @@ public sealed class SettingsPage : Page
     private readonly List<ColorSwatch> _swatches = [];
     private readonly FlowLayoutPanel _swatchRow = Theme.Row();
     private ColorSwatch? _customSwatch;
+    private readonly CheckBox _weekly;
     private readonly CheckBox _restorePoint, _confirm, _scanOnStartup, _alerts, _tray, _animations, _autoStart, _updates, _autoUpdate;
     private readonly ComboBox _schedule = Theme.Combo(Maintenance.Schedules);
     private readonly ComboBox _language = Theme.Combo("English", "Español");
@@ -28,6 +29,7 @@ public sealed class SettingsPage : Page
         _scanOnStartup = Theme.Toggle("", s.ScanOnStartup);
         _alerts = Theme.Toggle("", s.ErrorAlerts);
         _tray = Theme.Toggle("", s.CloseToTray);
+        _weekly = Theme.Toggle("", s.WeeklySummary);
         // Under another administrator's account WinSolve always exits when closed (see MainForm).
         if (InteractiveUser.IsDifferent) _tray.Enabled = false;
         _animations = Theme.Toggle("", s.Animations);
@@ -66,6 +68,9 @@ public sealed class SettingsPage : Page
             Theme.Row(Theme.Button("Show a test alert", (_, _) => ErrorMonitor.Instance.RaiseTest())),
             new Divider(),
             Theme.SettingRow("Keep running in the notification area when the window is closed", null, _tray),
+            new Divider(),
+            Theme.SettingRow("Weekly summary on Home",
+                "Every week since WinSolve was installed, Home shows a short summary: problems detected, space freed and drive health.", _weekly),
             new Divider(),
             Theme.SettingRow("Start WinSolve with Windows", null, _autoStart, _autoStartDescription),
             new Divider(),
@@ -282,6 +287,7 @@ public sealed class SettingsPage : Page
         s.ScanOnStartup = _scanOnStartup.Checked;
         s.ErrorAlerts = _alerts.Checked;
         s.CloseToTray = _tray.Checked;
+        s.WeeklySummary = _weekly.Checked;
         s.Animations = _animations.Checked;
         s.CheckForUpdates = _updates.Checked || _autoUpdate.Checked;
         // The portable build shares settings.json with an installed copy on the same PC: it never

@@ -127,6 +127,7 @@ public sealed partial class ErrorMonitor : IDisposable
         }
 
         Logger.Write($"ALERT: {alert.Title} - {alert.Detail}");
+        if (alert.Kind != "test") ActivityLog.Alert(alert.Severity);
         if (_ui is not null) _ui.Post(_ => AlertRaised?.Invoke(alert), null);
         else AlertRaised?.Invoke(alert);
     }

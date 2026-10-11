@@ -60,13 +60,71 @@ public sealed class DashboardPage : Page
         AddRow(_body, fill: true);
     }
 
+    private Control? _weekly;
+
     public override async void OnShown()
     {
+        ShowWeeklySummaryIfDue();
         if (!_scanned && !_scanning && AppSettings.Current.ScanOnStartup)
             await ScanAsync();
         else if (!_scanned && !_scanning)
             _scanStatus.Text = "Select Scan to check this PC.";
         _scanButton.Text = _scanned ? "Scan again" : "Scan";
+    }
+
+    // ───────────── Weekly summary ─────────────
+
+    private void ShowWeeklySummaryIfDue()
+    {
+        var s = AppSettings.Current;
+        if (_weekly is not null || !s.WeeklySummary || s.InstalledOn is not { } installed) return;
+        var due = ActivityLog.NextDue(installed, s.LastWeeklySummary);
+        if (DateTime.Now < due) return;
+
+        var week = ActivityLog.Summary(due.AddDays(-7), DateTime.Now);
+        var card = new StackCard();
+        card.Add(Theme.SectionHeader("\uE9F9", "Your week with WinSolve",
+            string.Format(Localization.Loc.T("{0} to {1}"), week.From.ToString("d"), week.To.ToString("d"))));
+
+        var stats = new TableLayoutPanel { ColumnCount = 3, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 4, 0, 4) };
+        for (int i = 0; i < 3; i++) stats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
+        Control Stat(string title, string value, string detail, Color? color = null)
+        {
+            var p = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 0, 12, 0) };
+            p.Controls.Add(Theme.Label(title, Theme.Small, Theme.Muted));
+            p.Controls.Add(Theme.Label(value, Theme.H2, color ?? Theme.Text));
+            p.Controls.Add(Theme.Label(detail, Theme.Small, Theme.Muted));
+            return p;
+        }
+        stats.Controls.Add(Stat("Problems detected", week.Alerts.ToString(),
+            week.Alerts == 0 ? Localization.Loc.T("Windows ran without errors") : string.Format(Localization.Loc.T("{0} serious"), week.CriticalAlerts),
+            week.CriticalAlerts > 0 ? Theme.Bad : week.Alerts > 0 ? Theme.Warn : Theme.Good), 0, 0);
+        stats.Controls.Add(Stat("Space freed", Format.Bytes(week.BytesFreed),
+            string.Format(Localization.Loc.T("{0} cleanup(s), {1} automatic"), week.Cleanups, week.MaintenanceRuns)), 1, 0);
+        var worst = s.DiskBaselines.Values.Select(b => b.Health).DefaultIfEmpty(HealthLevel.Unknown).Max();
+        stats.Controls.Add(Stat("Drives", Localization.Loc.T(worst switch { HealthLevel.Bad => "Needs attention", HealthLevel.Caution => "Some wear", HealthLevel.Good => "Healthy", _ => "Not checked yet" }),
+            Localization.Loc.T("From the drives' S.M.A.R.T. data"),
+            worst switch { HealthLevel.Bad => Theme.Bad, HealthLevel.Caution => Theme.Warn, HealthLevel.Good => Theme.Good, _ => Theme.Muted }), 2, 0);
+        card.Add(stats);
+
+        card.Add(Theme.Row(
+            Theme.Button("Got it", (_, _) => DismissWeekly(), primary: true),
+            Theme.Button("Don't show weekly summaries", (_, _) => { AppSettings.Current.WeeklySummary = false; DismissWeekly(); })));
+        _weekly = card;
+        _body.Controls.Add(card);
+        _body.Controls.SetChildIndex(card, 0);
+        Localization.Loc.Apply(card);
+    }
+
+    private void DismissWeekly()
+    {
+        AppSettings.Current.LastWeeklySummary = DateTime.Now;
+        AppSettings.Current.Save();
+        if (_weekly is not null)
+        {
+            _body.Controls.Remove(_weekly);
+            _weekly.Dispose();
+        }
     }
 
     private async Task ScanAsync()

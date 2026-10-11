@@ -111,6 +111,7 @@ public static class Maintenance
         run.After = await OptimizationHistory.TakeAsync();
         run.FreedBytes = ctx.FreedBytes;
         OptimizationHistory.Add(run);
+        ActivityLog.Maintenance(ctx.FreedBytes);
         Logger.Write($"Scheduled maintenance finished. Freed {Format.Bytes(ctx.FreedBytes)}.");
     }
 }

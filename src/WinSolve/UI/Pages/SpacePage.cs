@@ -440,6 +440,7 @@ public sealed class SpacePage : Page
         if (RecycleBin.Send(path, Handle))
         {
             Logger.Write($"Moved to Recycle Bin: {path} ({Format.Bytes(n.Size)})");
+            ActivityLog.Cleaned(n.Size, "disk space");
             var zoomRoot = _map.Root;
             var parent = n.Parent;
             n.Detach();
