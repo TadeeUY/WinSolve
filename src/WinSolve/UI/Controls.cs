@@ -222,6 +222,7 @@ public sealed class NavButton : Control
         Height = 34;
         Margin = new Padding(0, 1, 0, 1);
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            A11y.Clickable(this, text, null, AccessibleRole.PageTab);
     }
 
     private double _hoverT, _selectT;
@@ -244,6 +245,12 @@ public sealed class NavButton : Control
     private void FadeHover(bool on) => Animator.Animate((this, "hover"), () => _hoverT, on ? 1 : 0, v => { _hoverT = v; Invalidate(); }, 120);
 
     protected override void OnPaint(PaintEventArgs e)
+    {
+        PaintContent(e);
+        A11y.DrawFocus(this, e.Graphics);
+    }
+
+    private void PaintContent(PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;

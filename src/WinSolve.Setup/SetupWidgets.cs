@@ -87,6 +87,10 @@ namespace WinSolve.Setup
                      ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
             BackColor = Color.Transparent;
             Cursor = Cursors.Hand;
+            // Reachable with Tab, activated with Enter or Space, announced by Narrator.
+            SetStyle(ControlStyles.Selectable, true);
+            TabStop = true;
+            AccessibleRole = AccessibleRole.PushButton;
             _timer.Tick += (s, e) =>
             {
                 HoverT = Math.Max(0, Math.Min(1, HoverT + (_hover ? 0.15f : -0.15f)));
@@ -98,7 +102,33 @@ namespace WinSolve.Setup
         protected override void OnMouseEnter(EventArgs e) { _hover = true; _timer.Start(); base.OnMouseEnter(e); }
         protected override void OnMouseLeave(EventArgs e) { _hover = false; _timer.Start(); base.OnMouseLeave(e); }
         protected override void OnEnabledChanged(EventArgs e) { Cursor = Enabled ? Cursors.Hand : Cursors.Default; Invalidate(); base.OnEnabledChanged(e); }
-        protected override void OnTextChanged(EventArgs e) { Invalidate(); base.OnTextChanged(e); }
+        protected override void OnTextChanged(EventArgs e) { AccessibleName = Text; Invalidate(); base.OnTextChanged(e); }
+        protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+        protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Space || (e.KeyCode == Keys.Enter && !(this is FlatButton)))
+            {
+                OnClick(EventArgs.Empty);
+                e.Handled = e.SuppressKeyPress = true;
+            }
+            base.OnKeyDown(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            PaintContent(e);
+            if (Focused && ShowFocusCues)
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var pen = new Pen(Ui.Text, 1.5f))
+                using (var path = Ui.Round(new RectangleF(2, 2, Width - 5, Height - 5), 5))
+                    e.Graphics.DrawPath(pen, path);
+            }
+        }
+
+        protected abstract void PaintContent(PaintEventArgs e);
 
         protected override void Dispose(bool disposing)
         {
@@ -119,7 +149,7 @@ namespace WinSolve.Setup
             Font = Ui.BodyBold;
         }
 
-        protected override void OnPaint(PaintEventArgs e)
+        protected override void PaintContent(PaintEventArgs e)
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -150,7 +180,7 @@ namespace WinSolve.Setup
         public bool Checked
         {
             get => _selected;
-            set { _selected = value; Invalidate(); }
+            set { _selected = value; AccessibleRole = AccessibleRole.RadioButton; AccessibleDescription = Detail; Invalidate(); }
         }
 
         protected override void OnClick(EventArgs e)
@@ -159,7 +189,7 @@ namespace WinSolve.Setup
             base.OnClick(e);
         }
 
-        protected override void OnPaint(PaintEventArgs e)
+        protected override void PaintContent(PaintEventArgs e)
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -218,12 +248,19 @@ namespace WinSolve.Setup
         public bool Checked
         {
             get => _checked;
-            set { _checked = value; if (IsHandleCreated) _anim.Start(); else _pos = value ? 1 : 0; Invalidate(); }
+            set
+            {
+                _checked = value;
+                AccessibleRole = AccessibleRole.CheckButton;
+                AccessibleDescription = Lang.T(value ? "On" : "Off");
+                if (IsHandleCreated) _anim.Start(); else _pos = value ? 1 : 0;
+                Invalidate();
+            }
         }
 
         protected override void OnClick(EventArgs e) { if (Enabled) Checked = !Checked; base.OnClick(e); }
 
-        protected override void OnPaint(PaintEventArgs e)
+        protected override void PaintContent(PaintEventArgs e)
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -278,7 +315,7 @@ namespace WinSolve.Setup
             base.OnMouseClick(e);
         }
 
-        protected override void OnPaint(PaintEventArgs e)
+        protected override void PaintContent(PaintEventArgs e)
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;

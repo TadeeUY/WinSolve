@@ -104,6 +104,8 @@ public sealed class ScoreRing : Control
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         Size = new Size(124, 124);
         BackColor = Theme.Card;
+        AccessibleRole = AccessibleRole.ProgressBar;
+        AccessibleName = Localization.Loc.T("Health score");
         _anim.Tick += (_, _) =>
         {
             var target = _score ?? 0;
@@ -117,7 +119,13 @@ public sealed class ScoreRing : Control
     public int? Score
     {
         get => _score;
-        set { _score = value; _anim.Start(); Invalidate(); }
+        set
+        {
+            _score = value;
+            AccessibleDescription = value is { } v ? string.Format(Localization.Loc.T("{0} of 100"), v) : Localization.Loc.T("Scanning...");
+            _anim.Start();
+            Invalidate();
+        }
     }
 
     private static Color ColorFor(double s) => s >= 85 ? Theme.Good : s >= 60 ? Theme.Warn : Theme.Bad;
@@ -170,6 +178,7 @@ public sealed class ActionTile : Control
         Height = 84;
         Cursor = Cursors.Hand;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            A11y.Clickable(this, title, subtitle, AccessibleRole.PushButton);
     }
 
     private double _hoverT;
@@ -182,6 +191,12 @@ public sealed class ActionTile : Control
     protected override void OnMouseUp(MouseEventArgs e) { _pressed = false; Invalidate(); base.OnMouseUp(e); }
 
     protected override void OnPaint(PaintEventArgs e)
+    {
+        PaintContent(e);
+        A11y.DrawFocus(this, e.Graphics);
+    }
+
+    private void PaintContent(PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -245,6 +260,9 @@ public sealed class IconTile : Control
         Glyph = glyph;
         Tint = tint ?? Theme.Accent;
         Size = new Size(48, 48);
+        // Decorative: Narrator skips it.
+        AccessibleRole = AccessibleRole.Graphic;
+        AccessibleName = "";
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
     }
 
@@ -312,6 +330,7 @@ public sealed class OptionCard : Control
         Height = 96;
         Cursor = Cursors.Hand;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            A11y.Clickable(this, title, description, AccessibleRole.PushButton);
     }
 
     public bool Selected
@@ -329,6 +348,12 @@ public sealed class OptionCard : Control
     protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
 
     protected override void OnPaint(PaintEventArgs e)
+    {
+        PaintContent(e);
+        A11y.DrawFocus(this, e.Graphics);
+    }
+
+    private void PaintContent(PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -404,6 +429,7 @@ public sealed class ColorSwatch : Control
         Margin = new Padding(0, 4, 6, 4);
         Cursor = Cursors.Hand;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+            A11y.Clickable(this, hex, null, AccessibleRole.PushButton);
     }
 
     public bool Selected
@@ -416,6 +442,12 @@ public sealed class ColorSwatch : Control
     protected override void OnMouseLeave(EventArgs e) { Animator.Animate(this, () => _hoverT, 0, v => { _hoverT = v; Invalidate(); }, 120); base.OnMouseLeave(e); }
 
     protected override void OnPaint(PaintEventArgs e)
+    {
+        PaintContent(e);
+        A11y.DrawFocus(this, e.Graphics);
+    }
+
+    private void PaintContent(PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -446,12 +478,19 @@ public sealed class SearchPill : Control
         Size = new Size(220, 34);
         Cursor = Cursors.Hand;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+            A11y.Clickable(this, "Search (Ctrl+K)", null, AccessibleRole.PushButton);
     }
 
     protected override void OnMouseEnter(EventArgs e) { Animator.Animate(this, () => _hoverT, 1, v => { _hoverT = v; Invalidate(); }, 120); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { Animator.Animate(this, () => _hoverT, 0, v => { _hoverT = v; Invalidate(); }, 120); base.OnMouseLeave(e); }
 
     protected override void OnPaint(PaintEventArgs e)
+    {
+        PaintContent(e);
+        A11y.DrawFocus(this, e.Graphics);
+    }
+
+    private void PaintContent(PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;

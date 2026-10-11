@@ -1430,5 +1430,7 @@ public static class Spanish
         ["Clean up old drivers"] = "Limpiar drivers viejos",
         ["Kept: Windows says it's still needed."] = "Se conservó: Windows dice que todavía se necesita.",
         ["Windows didn't list the installed drivers."] = "Windows no listó los drivers instalados.",
+        ["Search (Ctrl+K)"] = "Buscar (Ctrl+K)",
+        ["{0} of 100"] = "{0} de 100",
     };
 }

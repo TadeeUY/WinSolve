@@ -59,6 +59,10 @@ public sealed class Toast : Form
     private Toast(ToastOptions o)
     {
         _o = o;
+        // Narrator announces it like a Windows notification.
+        AccessibleRole = AccessibleRole.Alert;
+        AccessibleName = Localization.Loc.T(o.Title);
+        AccessibleDescription = Localization.Loc.T(o.Detail);
         _tint = o.Severity switch
         {
             IssueSeverity.Critical => Theme.Bad,

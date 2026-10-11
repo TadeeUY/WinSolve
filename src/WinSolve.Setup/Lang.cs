@@ -22,6 +22,8 @@ namespace WinSolve.Setup
             ["Updating WinSolve"] = "Actualizando WinSolve",
             ["Version {0}  ·  The multitool for Windows"] = "Versión {0}  ·  La navaja suiza para Windows",
             ["Language"] = "Idioma",
+            ["On"] = "Activado",
+            ["Off"] = "Desactivado",
             ["Install for"] = "Instalar para",
             ["Only me"] = "Solo para mí",
             ["Installs in your user folder  ·  {0}"] = "En tu carpeta de usuario  ·  {0}",

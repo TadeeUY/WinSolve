@@ -29,6 +29,7 @@ public sealed class DriveCard : Control
         Margin = new Padding(0, 0, 10, 10);
         Cursor = Cursors.Hand;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            A11y.Clickable(this, title, detail, AccessibleRole.PushButton);
     }
 
     public bool Selected
@@ -41,6 +42,12 @@ public sealed class DriveCard : Control
     protected override void OnMouseLeave(EventArgs e) { Animator.Animate(this, () => _hoverT, 0, v => { _hoverT = v; Invalidate(); }, 120); base.OnMouseLeave(e); }
 
     protected override void OnPaint(PaintEventArgs e)
+    {
+        PaintContent(e);
+        A11y.DrawFocus(this, e.Graphics);
+    }
+
+    private void PaintContent(PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;

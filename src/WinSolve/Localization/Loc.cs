@@ -190,7 +190,14 @@ public sealed class LocCheckBox : CheckBox
         else
             WinSolve.UI.Theme.DrawCheckBox(g, new Rectangle(0, mid - 9, 18, 18), Checked, _hover, Enabled);
         TextRenderer.DrawText(g, Text, Font, new Rectangle(MarkWidth + 8, 0, Width - MarkWidth - 8, Height),
-            Enabled ? ForeColor : Color.FromArgb(120, 120, 120),
+            Enabled ? ForeColor : WinSolve.UI.Theme.DisabledText,
             TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+        if (Focused && ShowFocusCues)
+        {
+            // Keyboard focus ring around the check box / switch.
+            var mark = _switch ? new Rectangle(0, mid - 12, 42, 24) : new Rectangle(0, mid - 11, 22, 22);
+            using var pen = new Pen(WinSolve.UI.Theme.IsHighContrast ? SystemColors.Highlight : WinSolve.UI.Theme.Text, 1.5f);
+            g.DrawRectangle(pen, mark.X, mark.Y, mark.Width - 1, mark.Height - 1);
+        }
     }
 }

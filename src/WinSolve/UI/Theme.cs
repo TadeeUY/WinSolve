@@ -10,6 +10,9 @@ namespace WinSolve.UI;
 public static class Theme
 {
     /// <summary>Light or dark, from Settings ("System" follows Windows). Applies on the next start.</summary>
+    /// <summary>Windows high contrast mode: WinSolve then uses the system's own colors.</summary>
+    public static readonly bool IsHighContrast = SystemInformation.HighContrast;
+
     public static readonly bool IsLight = WouldBeLight(AppSettings.Current.ThemeMode);
 
     /// <summary>Whether a theme setting (System, Dark or Light) means the light palette.</summary>
@@ -31,45 +34,46 @@ public static class Theme
     private static Color Pick(int dark, int light) => IsLight ? Color.FromArgb(light, light, light) : Color.FromArgb(dark, dark, dark);
     private static Color Pick(Color dark, Color light) => IsLight ? light : dark;
 
-    public static readonly Color Background = Pick(32, 243);
-    public static readonly Color Sidebar = Pick(28, 235);
-    public static readonly Color Card = Pick(43, 251);
-    public static readonly Color CardHover = Pick(50, 245);
-    public static readonly Color Control = Pick(55, 253);
-    public static readonly Color ControlHover = Pick(62, 243);
-    public static readonly Color Border = Pick(58, 222);
-    public static readonly Color Divider = Pick(50, 233);
-    public static readonly Color Text = Pick(242, 27);
-    public static readonly Color Muted = Pick(160, 96);
-    public static readonly Color Good = Pick(Color.FromArgb(108, 203, 95), Color.FromArgb(15, 123, 15));
-    public static readonly Color Warn = Pick(Color.FromArgb(252, 225, 0), Color.FromArgb(157, 93, 0));
-    public static readonly Color Bad = Pick(Color.FromArgb(255, 99, 97), Color.FromArgb(196, 43, 28));
-    public static readonly Color Info = Pick(Color.FromArgb(96, 205, 255), Color.FromArgb(0, 95, 184));
+    public static readonly Color Background = IsHighContrast ? SystemColors.Window : Pick(32, 243);
+    public static readonly Color Sidebar = IsHighContrast ? SystemColors.Window : Pick(28, 235);
+    public static readonly Color Card = IsHighContrast ? SystemColors.Window : Pick(43, 251);
+    public static readonly Color CardHover = IsHighContrast ? SystemColors.Window : Pick(50, 245);
+    public static readonly Color Control = IsHighContrast ? SystemColors.ButtonFace : Pick(55, 253);
+    public static readonly Color ControlHover = IsHighContrast ? SystemColors.ButtonFace : Pick(62, 243);
+    public static readonly Color Border = IsHighContrast ? SystemColors.WindowText : Pick(58, 222);
+    public static readonly Color Divider = IsHighContrast ? SystemColors.GrayText : Pick(50, 233);
+    public static readonly Color Text = IsHighContrast ? SystemColors.WindowText : Pick(242, 27);
+    public static readonly Color Muted = IsHighContrast ? SystemColors.GrayText : Pick(160, 96);
+    public static readonly Color Good = IsHighContrast ? SystemColors.WindowText : Pick(Color.FromArgb(108, 203, 95), Color.FromArgb(15, 123, 15));
+    public static readonly Color Warn = IsHighContrast ? SystemColors.WindowText : Pick(Color.FromArgb(252, 225, 0), Color.FromArgb(157, 93, 0));
+    public static readonly Color Bad = IsHighContrast ? SystemColors.WindowText : Pick(Color.FromArgb(255, 99, 97), Color.FromArgb(196, 43, 28));
+    public static readonly Color Info = IsHighContrast ? SystemColors.WindowText : Pick(Color.FromArgb(96, 205, 255), Color.FromArgb(0, 95, 184));
 
     /// <summary>Recessed surfaces: unchecked boxes, the command palette, pressed cards.</summary>
-    public static readonly Color Inset = Pick(40, 249);
-    public static readonly Color InsetHover = Pick(52, 238);
-    public static readonly Color RowHover = Pick(48, 241);
+    public static readonly Color Inset = IsHighContrast ? SystemColors.Window : Pick(40, 249);
+    public static readonly Color InsetHover = IsHighContrast ? SystemColors.Window : Pick(52, 238);
+    public static readonly Color RowHover = IsHighContrast ? SystemColors.Window : Pick(48, 241);
     /// <summary>Empty part of bars and meters.</summary>
-    public static readonly Color Track = Pick(58, 224);
-    public static readonly Color DisabledFill = Pick(80, 204);
-    public static readonly Color DisabledText = Pick(120, 160);
-    public static readonly Color BorderHover = Pick(80, 190);
+    public static readonly Color Track = IsHighContrast ? SystemColors.GrayText : Pick(58, 224);
+    public static readonly Color DisabledFill = IsHighContrast ? SystemColors.GrayText : Pick(80, 204);
+    public static readonly Color DisabledText = IsHighContrast ? SystemColors.GrayText : Pick(120, 160);
+    public static readonly Color BorderHover = IsHighContrast ? SystemColors.Highlight : Pick(80, 190);
     /// <summary>Background of a selected card (blue-tinted).</summary>
-    public static readonly Color SelectedFill = Pick(Color.FromArgb(36, 52, 72), Color.FromArgb(222, 235, 250));
+    public static readonly Color SelectedFill = IsHighContrast ? SystemColors.Window : Pick(Color.FromArgb(36, 52, 72), Color.FromArgb(222, 235, 250));
     /// <summary>Behind page icons.</summary>
-    public static readonly Color IconTileFill = Pick(Color.FromArgb(28, 45, 66), Color.FromArgb(223, 234, 247));
-    public static readonly Color NavHover = Pick(45, 226);
-    public static readonly Color NavText = Pick(220, 50);
-    public static readonly Color LogBackground = Pick(24, 255);
-    public static readonly Color Faint = Pick(120, 130);
+    public static readonly Color IconTileFill = IsHighContrast ? SystemColors.Window : Pick(Color.FromArgb(28, 45, 66), Color.FromArgb(223, 234, 247));
+    public static readonly Color NavHover = IsHighContrast ? SystemColors.Window : Pick(45, 226);
+    public static readonly Color NavText = IsHighContrast ? SystemColors.WindowText : Pick(220, 50);
+    public static readonly Color LogBackground = IsHighContrast ? SystemColors.Window : Pick(24, 255);
+    public static readonly Color Faint = IsHighContrast ? SystemColors.GrayText : Pick(120, 130);
     /// <summary>Unchecked check box mark and switch knob.</summary>
-    public static readonly Color Knob = Pick(200, 90);
+    public static readonly Color Knob = IsHighContrast ? SystemColors.WindowText : Pick(200, 90);
 
     public static Color Accent
     {
         get
         {
+            if (IsHighContrast) return SystemColors.Highlight;
             try { return ColorTranslator.FromHtml(AppSettings.Current.AccentColor); }
             catch { return Color.FromArgb(0, 103, 192); }
         }
@@ -388,6 +392,9 @@ public static class Theme
         }
         control.Anchor = AnchorStyles.Right;
         control.Margin = new Padding(12, 2, 0, 2);
+        // Toggles and lists here have no text of their own: Narrator reads the row's title.
+        if (string.IsNullOrEmpty(control.AccessibleName)) control.AccessibleName = Loc.T(title);
+        if (description is not null && string.IsNullOrEmpty(control.AccessibleDescription)) control.AccessibleDescription = Loc.T(description);
         row.Controls.Add(text, 0, 0);
         row.Controls.Add(control, 1, 0);
         return row;
@@ -462,7 +469,7 @@ public sealed class FlatBtn : Button
     public bool Primary
     {
         get => _primary;
-        set { _primary = value; ForeColor = value ? Color.White : Theme.Text; Invalidate(); }
+        set { _primary = value; ForeColor = value ? PrimaryText : Theme.Text; Invalidate(); }
     }
 
     private string? _glyph;
@@ -474,13 +481,15 @@ public sealed class FlatBtn : Button
         set { _glyph = value; Padding = value is null ? new Padding(12, 3, 12, 3) : new Padding(34, 3, 12, 3); Invalidate(); }
     }
 
+    private static Color PrimaryText => Theme.IsHighContrast ? SystemColors.HighlightText : Color.White;
+
     public FlatBtn(bool primary)
     {
         _primary = primary;
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
         Font = Theme.Body;
-        ForeColor = primary ? Color.White : Theme.Text;
+        ForeColor = primary ? PrimaryText : Theme.Text;
         Cursor = Cursors.Default;
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
@@ -529,6 +538,13 @@ public sealed class FlatBtn : Button
         }
         TextRenderer.DrawText(g, Text, Font, textRect, color,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+        if (Focused && ShowFocusCues)
+        {
+            // Keyboard focus ring, inside the button.
+            using var ring = new Pen(_primary ? PrimaryText : (Theme.IsHighContrast ? SystemColors.Highlight : Theme.Text), 1.5f);
+            using var inner = Theme.RoundedRect(new Rectangle(2, 2, Width - 5, Height - 5), 3);
+            g.DrawPath(ring, inner);
+        }
     }
 }
 
