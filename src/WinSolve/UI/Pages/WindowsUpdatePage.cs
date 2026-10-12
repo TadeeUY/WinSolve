@@ -66,7 +66,7 @@ public sealed class WindowsUpdatePage : Page
     {
         var until = WindowsUpdateService.PausedUntil();
         _pauseStatus.Text = until is { } u
-            ? string.Format(Localization.Loc.T("Paused until {0}"), u.ToString("D"))
+            ? string.Format(Localization.Loc.T("Paused until {0}"), u.ToString("D", Localization.Loc.Culture))
             : Localization.Loc.T("Updates are on");
         _pauseStatus.ForeColor = until is null ? Theme.Good : Theme.Warn;
     }

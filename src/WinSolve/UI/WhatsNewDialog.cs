@@ -38,8 +38,19 @@ public sealed class WhatsNewDialog : Form
                 row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 44));
                 row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
                 row.Controls.Add(new IconTile(item.Glyph) { Size = new Size(32, 32), Margin = new Padding(0, 2, 10, 0) }, 0, 0);
-                var text = Theme.Paragraph(spanish ? item.Spanish : item.English);
-                text.MaximumSize = new Size(480, 0);
+                // A plain auto-sized label wraps at its own maximum width; Theme.Paragraph fits itself
+                // to the parent's whole width, which here is the row (icon included), cutting lines.
+                var text = new LocLabel
+                {
+                    Text = spanish ? item.Spanish : item.English,
+                    AutoSize = true,
+                    MaximumSize = new Size(480, 0),
+                    UseMnemonic = false,
+                    Font = Theme.Body,
+                    ForeColor = Theme.Muted,
+                    BackColor = Color.Transparent,
+                    Margin = new Padding(0, 0, 0, 6),
+                };
                 row.Controls.Add(text, 1, 0);
                 list.Add(row);
                 Stack.PinWidth(row, 560);

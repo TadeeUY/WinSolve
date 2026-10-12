@@ -174,7 +174,7 @@ public static class PcReport
               @page { margin: 14mm; }
               @media print { body { margin: 0 auto; } }
             </style></head><body>
-            <header><h1>{{E(Environment.MachineName)}}</h1><span>{{E(DateTime.Now.ToString("f"))}}</span></header>
+            <header><h1>{{E(Environment.MachineName)}}</h1><span>{{E(DateTime.Now.ToString("f", Localization.Loc.Culture))}}</span></header>
             {{sb}}
             <footer>{{E(Loc.T("Created with WinSolve. Serial numbers and product keys are not included."))}}{{(pdf ? "" : " " + E(Loc.T("Use the browser's Print > Save as PDF to keep a PDF.")))}}</footer>
             </body></html>

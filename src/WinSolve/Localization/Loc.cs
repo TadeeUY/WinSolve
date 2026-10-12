@@ -27,6 +27,20 @@ public static class Loc
 
     public static bool IsEnglish => Language is not ("es");
 
+    /// <summary>
+    /// Culture for spelled-out dates ("viernes, 16 de octubre"): the PC's own when it is in the
+    /// app's language, otherwise the app's language, so day and month names match the UI.
+    /// </summary>
+    public static System.Globalization.CultureInfo Culture
+    {
+        get
+        {
+            var os = System.Globalization.CultureInfo.CurrentCulture;
+            var lang = IsEnglish ? "en" : Language;
+            return os.TwoLetterISOLanguageName == lang ? os : System.Globalization.CultureInfo.GetCultureInfo(IsEnglish ? "en-US" : lang);
+        }
+    }
+
     /// <summary>Translates a UI string into the current language (returns it unchanged if unknown).</summary>
     public static string T(string? text)
     {
