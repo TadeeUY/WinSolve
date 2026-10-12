@@ -61,6 +61,9 @@ public static class ProcessRunner
             // sfc/dism interleave NUL characters when writing UTF-16 to a pipe.
             var line = data.Replace("\0", string.Empty).TrimEnd();
             if (line.Length == 0) return;
+            // Windows PowerShell repeats Write-Host/progress records on stderr as serialized XML
+            // ("#< CLIXML" + "<Objs ...>"); the readable text already came through stdout.
+            if (line.StartsWith("#< CLIXML", StringComparison.Ordinal) || line.StartsWith("<Objs Version=", StringComparison.Ordinal)) return;
             lock (sb) sb.AppendLine(line);
             onLine?.Invoke(line);
         }

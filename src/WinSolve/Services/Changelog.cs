@@ -10,6 +10,15 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 13, 3),
+        [
+            new("\uE74D", "Uninstalling WinSolve now also removes its scheduled maintenance task.",
+                "Al desinstalar WinSolve ahora también se borra su tarea de mantenimiento programado."),
+            new("\uE9F9", "Cleaner log: no more PowerShell XML noise in the maintenance entries.",
+                "Registro más limpio: ya no aparece texto XML de PowerShell en el mantenimiento."),
+            new("\uE896", "The installer can install silently (--install --quiet), handy for installing on many PCs.",
+                "El instalador puede instalar en silencio (--install --quiet), útil para instalar en varias PCs."),
+        ]),
         new(new Version(0, 13, 2),
         [
             new("\uE713", "Tweaks have three levels: Minimal, Standard (selected by default) and Maximum. You can still tick tweaks one by one.",

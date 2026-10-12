@@ -59,6 +59,7 @@ if ($all) {
     $log -split "`n" | Where-Object { $_ -match 'maintenance' } | ForEach-Object { Write-Host "    | $_" }
     Check ($log -match 'Scheduled maintenance finished') 'maintenance run finishes'
     Check ($log -notmatch '\] .* failed:') 'no maintenance task failed'
+    Check ($log -notmatch 'CLIXML|<Objs ') 'log has no raw PowerShell XML'
 
     # What WinSolve's settings create when the user turns on "Start with Windows" and scheduled
     # maintenance: the uninstaller must remove both tasks.

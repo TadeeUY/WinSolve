@@ -246,8 +246,10 @@ namespace WinSolve.Setup
             }
             catch { }
 
-            // Scheduled task created by WinSolve's "Start with Windows" option.
+            // Scheduled tasks created by WinSolve's "Start with Windows" and scheduled maintenance
+            // options (the second runs as SYSTEM: never leave it pointing at a removed exe).
             RunHidden("schtasks.exe", "/delete /f /tn \"WinSolve\"");
+            if (IsElevated) RunHidden("schtasks.exe", "/delete /f /tn \"WinSolve Maintenance\"");
             if (IsElevated) RestorePendingSettings();
 
             if (removeData)
