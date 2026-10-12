@@ -98,10 +98,26 @@ public sealed class DuplicatesDialog : Form
 
     private void AutoSelect(bool keepNewest)
     {
-        var keep = _groups.Select(g => keepNewest ? g.Files[^1] : g.Files[0]).ToHashSet();
+        // Only sets whose copies are all personal files in the person's own folders: copies spread
+        // over program, game or project folders may each be needed, so those are left to the person.
+        var personal = DuplicateFinder.PersonalFolders();
+        var select = new HashSet<DuplicateFile>();
+        var leftOut = 0;
+        foreach (var g in _groups)
+        {
+            if (!DuplicateFinder.IsSafeToAutoSelect(g.Files.Select(f => f.Path).ToList(), personal))
+            {
+                leftOut++;
+                continue;
+            }
+            var keep = keepNewest ? g.Files[^1] : g.Files[0];
+            select.UnionWith(g.Files.Where(f => f != keep));
+        }
         foreach (DataGridViewRow r in _grid.Rows)
-            r.Cells[0].Value = r.Tag is DuplicateFile f && !keep.Contains(f);
+            r.Cells[0].Value = r.Tag is DuplicateFile f && select.Contains(f);
         UpdateDeleteButton();
+        if (leftOut > 0)
+            _status.Text = $"{leftOut:N0} set(s) were not selected automatically: their copies are not all in your personal folders (Desktop, Documents, Downloads, Pictures, Music, Videos, OneDrive), so a program may need each one. Check them yourself.";
     }
 
     private List<DuplicateFile> Selected()

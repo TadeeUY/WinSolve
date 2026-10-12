@@ -64,15 +64,20 @@ public static class TaskCatalog
         {
             Id = "clean-temp-user", Category = TaskCategory.Cleanup, Recommended = true,
             Title = "User temporary files",
-            Description = "Deletes the contents of %TEMP%. Files in use are skipped.",
-            Run = ctx => { FileCleaner.DeleteContents(InteractiveUser.TempPath, ctx); return Task.CompletedTask; },
+            Description = "Deletes the contents of %TEMP% older than a day. Files in use are skipped.",
+            Run = ctx =>
+            {
+                // %TEMP% can point anywhere (C:\, Documents...): only a real temporary folder is emptied.
+                if (InteractiveUser.CleanableTempPath(ctx.Log) is { } temp) FileCleaner.DeleteContents(temp, ctx, minAge: TempMinAge);
+                return Task.CompletedTask;
+            },
         },
         new()
         {
             Id = "clean-temp-windows", Category = TaskCategory.Cleanup, Recommended = true,
             Title = "Windows temporary files",
-            Description = @"Deletes the contents of C:\Windows\Temp.",
-            Run = ctx => { FileCleaner.DeleteContents(Path.Combine(Win, "Temp"), ctx); return Task.CompletedTask; },
+            Description = @"Deletes the contents of C:\Windows\Temp older than a day.",
+            Run = ctx => { FileCleaner.DeleteContents(Path.Combine(Win, "Temp"), ctx, minAge: TempMinAge); return Task.CompletedTask; },
         },
         new()
         {
@@ -81,6 +86,11 @@ public static class TaskCatalog
             Description = "Removes downloaded update files that are already installed (SoftwareDistribution\\Download).",
             Run = async ctx =>
             {
+                if (UpdateInProgress() is { } busy)
+                {
+                    ctx.Log($"  Skipped the Windows Update cache: {busy}.");
+                    return;
+                }
                 await StopServices(ctx, "wuauserv", "bits");
                 FileCleaner.DeleteContents(Path.Combine(Win, "SoftwareDistribution", "Download"), ctx);
                 await StartServices(ctx, "bits", "wuauserv");
@@ -480,6 +490,34 @@ public static class TaskCatalog
             }
             else ctx.Log("  Done.");
         });
+    }
+
+    /// <summary>Temporary files this recent may still be in use by a running installer or program.</summary>
+    private static TimeSpan TempMinAge => TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// Why the Windows Update cache must not be touched now (an update is being installed or waits
+    /// for a restart), or null. Its downloads are still needed then.
+    /// </summary>
+    private static string? UpdateInProgress()
+    {
+        try
+        {
+            using var hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+            using (var cbs = hklm.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"))
+                if (cbs is not null) return "Windows is waiting for a restart to finish installing updates";
+            using (var wu = hklm.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"))
+                if (wu is not null) return "Windows Update is waiting for a restart";
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException) { }
+
+        foreach (var name in new[] { "TrustedInstaller", "TiWorker", "msiexec" })
+        {
+            var running = System.Diagnostics.Process.GetProcessesByName(name);
+            foreach (var p in running) p.Dispose();
+            if (running.Length > 0) return "updates or programs are being installed right now";
+        }
+        return null;
     }
 
     /// <summary>Deletes error report folders, except reports about programs in another user's profile.</summary>

@@ -6,13 +6,27 @@ namespace WinSolve.Services;
 /// <summary>Error-tolerant deletion: skips files in use and counts the freed space.</summary>
 public static class FileCleaner
 {
-    public static long DeleteContents(string directory, TaskContext ctx, string pattern = "*", bool recursive = true)
+    /// <summary>
+    /// Empties a cache or temporary folder (the folder itself stays). With <paramref name="minAge"/>,
+    /// files and folders created or changed more recently than that are kept.
+    /// </summary>
+    public static long DeleteContents(string directory, TaskContext ctx, string pattern = "*", bool recursive = true, TimeSpan? minAge = null)
     {
-        if (!Directory.Exists(directory)) return 0;
+        // A relative path would resolve against the working folder (System32 when elevated).
+        if (string.IsNullOrWhiteSpace(directory) || !Path.IsPathFullyQualified(directory) || !Directory.Exists(directory)) return 0;
         if (SafePath.HasReparsePoint(directory))
         {
             // Never follow a junction/symlink planted in a user-writable folder.
             ctx.Log($"  Skipped {directory}: it is (or is inside) a junction or symbolic link.");
+            return 0;
+        }
+        // Last line of defence against a wrong path (a %TEMP% set to C:\ or Documents): never empty a
+        // drive, a profile, Windows, Program Files, ProgramData, a personal or system folder, or a
+        // folder that contains one. Long names, so C:\PROGRA~1 can't slip past.
+        var full = SafePath.LongPath(Path.GetFullPath(directory)).TrimEnd('\\');
+        if (SafePath.IsCriticalFolder(full) || InteractiveUser.IsOtherUsersData(full))
+        {
+            ctx.Log($"  Skipped {directory}: it is a system or personal folder, which is never emptied.");
             return 0;
         }
 
@@ -20,7 +34,8 @@ public static class FileCleaner
         try
         {
             // Handle-based: links inside are never followed, even if swapped in mid-cleanup.
-            result = SafeDelete.DeleteContents(directory, pattern, recursive, ctx.Token);
+            DateTime? cutoff = minAge is { } age ? DateTime.UtcNow - age : null;
+            result = SafeDelete.DeleteContents(full, pattern, recursive, ctx.Token, cutoff);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)

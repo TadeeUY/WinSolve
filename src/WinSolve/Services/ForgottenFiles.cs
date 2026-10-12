@@ -5,7 +5,7 @@ namespace WinSolve.Services;
 public sealed record ForgottenFile(string Path, long Size, DateTime LastUsed);
 
 /// <summary>
-/// Big files nobody has opened in a long time, and empty folders, in the signed-in user's own
+/// Big files nobody has changed or opened in a long time, and empty folders, in the signed-in user's own
 /// folders only (not AppData, not other users, not online-only cloud files).
 /// </summary>
 public static class ForgottenFiles
@@ -40,6 +40,7 @@ public static class ForgottenFiles
                 try
                 {
                     if (f.Length < minSize || ((int)f.Attributes & (RecallOnOpen | RecallOnDataAccess)) != 0) continue;
+                    // NTFS often doesn't update the last-access time, so the newer of the two is used.
                     var used = f.LastWriteTime > f.LastAccessTime ? f.LastWriteTime : f.LastAccessTime;
                     if (used < cutoff) list.Add(new ForgottenFile(f.FullName, f.Length, used));
                 }

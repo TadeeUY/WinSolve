@@ -831,19 +831,19 @@ internal sealed class BatteryDialog : ToolDialog
 internal sealed class ForgottenDialog : ToolDialog
 {
     private readonly Segmented _tabs = new();
-    private readonly DataGridView _files = Grid(("name", "File", 220), ("folder", "Folder", 260), ("size", "Size", 90), ("used", "Last used", 110));
+    private readonly DataGridView _files = Grid(("name", "File", 220), ("folder", "Folder", 260), ("size", "Size", 90), ("used", "Last changed or opened", 150));
     private readonly DataGridView _empty = Grid(("folder", "Empty folder", 600));
     private readonly Panel _host = new() { Dock = DockStyle.Fill, BackColor = Color.Transparent };
     private readonly FlowLayoutPanel _actions = Theme.Row();
-    private readonly ComboBox _age = Theme.Combo("Not used in 6 months", "Not used in 1 year", "Not used in 2 years");
+    private readonly ComboBox _age = Theme.Combo("Not changed or opened in 6 months", "Not changed or opened in 1 year", "Not changed or opened in 2 years");
     private CancellationTokenSource? _cts;
 
     public ForgottenDialog() : base("\uE81C", "Large & forgotten files",
-        "Files over 100 MB that haven't been opened for a long time, and folders with nothing inside. Only your own folders are searched (not AppData).", new Size(860, 580))
+        "Files over 100 MB that haven't been changed or opened for a long time (Windows doesn't always record when a file is opened), and folders with nothing inside. Only your own folders are searched (not AppData).", new Size(860, 580))
     {
         _files.MultiSelect = _empty.MultiSelect = true;
         _age.SelectedIndex = 1;
-        _age.Width = 190;
+        _age.Width = 260;
         _age.SelectedIndexChanged += async (_, _) => await ScanAsync();
         _tabs.Add("files", "Large files", "\uE8B7").Add("empty", "Empty folders", "\uE8F4");
         _tabs.SelectedChanged += _ => ShowTab();

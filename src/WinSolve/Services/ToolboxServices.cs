@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Net.NetworkInformation;
@@ -198,13 +199,60 @@ public static class LockFinder
 /// <summary>Overwrites files with random data before deleting them.</summary>
 public static class SecureDelete
 {
-    /// <summary>Refuses system and program folders; returns how many files were shredded.</summary>
+    /// <summary>
+    /// Refuses system, program and personal root folders; returns how many files were shredded.
+    /// Links, cloud (OneDrive) files and files with more than one name (hard links) are never
+    /// overwritten or deleted: that would change the original elsewhere or delete the cloud copy.
+    /// Folders are only removed once empty, so nothing is ever deleted without being overwritten.
+    /// </summary>
     public static int Shred(IReadOnlyList<string> paths, Action<string> log, Action<int, int> progress, CancellationToken ct)
     {
         var files = new List<string>();
         var dirs = new List<string>();
+        var topDirs = new List<string>();
+        var kept = 0;
+
+        void Keep(string path, string why)
+        {
+            kept++;
+            log($"Kept {path}: {why}.");
+        }
+
+        // Lists everything (links and cloud files too, so none is missed), without following links.
+        void Collect(string dir, int depth)
+        {
+            List<FileSystemInfo> entries;
+            try
+            {
+                entries = new DirectoryInfo(dir).EnumerateFileSystemInfos("*",
+                    new EnumerationOptions { RecurseSubdirectories = false, IgnoreInaccessible = false, AttributesToSkip = 0 }).ToList();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Keep(dir, "its contents could not be read");
+                return;
+            }
+            foreach (var e in entries)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (IsLinkOrCloud(e.Attributes))
+                {
+                    Keep(e.FullName, "it is a link or a cloud (OneDrive) file; shredding it could change the original or delete the cloud copy");
+                    continue;
+                }
+                if ((e.Attributes & FileAttributes.Directory) != 0)
+                {
+                    if (depth >= 128) { Keep(e.FullName, "it is nested too deeply"); continue; }
+                    dirs.Add(e.FullName);
+                    Collect(e.FullName, depth + 1);
+                }
+                else files.Add(e.FullName);
+            }
+        }
+
         foreach (var p in paths)
         {
+            if (string.IsNullOrWhiteSpace(p) || !Path.IsPathFullyQualified(p)) continue;
             var full = Path.GetFullPath(p);
             if (InteractiveUser.IsOtherUsersData(full))
             {
@@ -218,8 +266,9 @@ public static class SecureDelete
                     log($"Skipped {full}: protected location or link.");
                     continue;
                 }
-                files.AddRange(Directory.EnumerateFiles(full, "*", SafePath.NoLinks(recursive: true)));
                 dirs.Add(full);
+                topDirs.Add(full);
+                Collect(full, 0);
             }
             else if (File.Exists(full))
             {
@@ -230,12 +279,16 @@ public static class SecureDelete
                     log($"Skipped {full}: inside a system or program folder.");
                     continue;
                 }
+                if (SafePath.HasReparsePoint(parent))
+                {
+                    Keep(full, "it is inside a link or a cloud (OneDrive) folder");
+                    continue;
+                }
                 files.Add(full);
             }
         }
 
         var done = 0;
-        var failed = new List<string>();
         var buffer = new byte[1 << 20];
         for (int i = 0; i < files.Count; i++)
         {
@@ -243,47 +296,83 @@ public static class SecureDelete
             var f = files[i];
             try
             {
-                File.SetAttributes(f, FileAttributes.Normal);
-                using (var fs = new FileStream(f, FileMode.Open, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.WriteThrough))
-                {
-                    var remaining = fs.Length;
-                    while (remaining > 0)
-                    {
-                        ct.ThrowIfCancellationRequested();
-                        RandomNumberGenerator.Fill(buffer);
-                        var n = (int)Math.Min(buffer.Length, remaining);
-                        fs.Write(buffer, 0, n);
-                        remaining -= n;
-                    }
-                    fs.Flush(flushToDisk: true);
-                    fs.SetLength(0);
-                }
-                // A random name too, so the old file name doesn't stay in the folder index.
-                var renamed = Path.Combine(Path.GetDirectoryName(f)!, Guid.NewGuid().ToString("N"));
-                File.Move(f, renamed);
-                File.Delete(renamed);
-                done++;
+                if (ShredFile(f, buffer, ct) is { } why) Keep(f, why);
+                else done++;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
             {
                 log($"Could not shred {f}: {ex.Message}");
-                failed.Add(f);
             }
             progress(i + 1, files.Count);
         }
-        foreach (var d in dirs)
+
+        // Only empty folders are removed (deepest first): a folder with anything left in it (a file
+        // that couldn't be overwritten, a link, a cloud file) stays with its contents untouched.
+        foreach (var d in dirs.OrderByDescending(d => d.Length))
         {
-            // A folder with a file that couldn't be overwritten stays: deleting it would remove that
-            // file without wiping it, and it could be recovered.
-            if (failed.Any(f => SafePath.IsSameOrInside(f, d)))
-            {
-                log($"Kept {d}: some files in it could not be shredded.");
-                continue;
-            }
-            try { Directory.Delete(d, recursive: true); } catch { }
+            try { Directory.Delete(d, recursive: false); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
+        foreach (var d in topDirs.Where(Directory.Exists))
+            log($"Kept {d}: some items in it were not shredded.");
+        if (kept > 0) log($"{kept} item(s) were kept and not shredded (links, cloud files, files with several names or unreadable folders).");
         return done;
     }
+
+    private const int RecallOnOpen = 0x40000, RecallOnDataAccess = 0x400000;
+
+    /// <summary>Junctions, symbolic links, OneDrive placeholders (even downloaded ones) and offline files.</summary>
+    private static bool IsLinkOrCloud(FileAttributes a)
+        => (a & (FileAttributes.ReparsePoint | FileAttributes.Offline)) != 0 || ((int)a & (RecallOnOpen | RecallOnDataAccess)) != 0;
+
+    /// <summary>
+    /// Overwrites and deletes one file. Returns why it was kept instead (link, cloud file, several
+    /// names, reached through a link), or null when it was shredded.
+    /// </summary>
+    private static string? ShredFile(string path, byte[] buffer, CancellationToken ct)
+    {
+        var listed = File.GetAttributes(path); // the entry itself, not what a link points to
+        if (IsLinkOrCloud(listed)) return "it is a link or a cloud (OneDrive) file; shredding it could change the original or delete the cloud copy";
+        if ((listed & FileAttributes.ReadOnly) != 0) File.SetAttributes(path, listed & ~FileAttributes.ReadOnly);
+
+        // Open the entry itself (never a link's target), exclusively, and check again right before
+        // writing what the handle says: a plain file, with this one name, at exactly this path.
+        using var h = CreateFileW(path, GENERIC_WRITE | FILE_READ_ATTRIBUTES, 0, IntPtr.Zero, OPEN_EXISTING,
+            FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_WRITE_THROUGH, IntPtr.Zero);
+        if (h.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+        if (SafeDelete.GetAttributes(h) is not { } now || (now & FileAttributes.Directory) != 0 || IsLinkOrCloud(now))
+            return "it is a link or a cloud (OneDrive) file; shredding it could change the original or delete the cloud copy";
+        if (SafeDelete.LinkCount(h) != 1)
+            return "it has other names (hard links), so overwriting it would also change the file under its other names";
+        if (!SafeDelete.IsAtPath(h, path))
+            return "it is reached through a link";
+
+        using (var fs = new FileStream(h, FileAccess.Write, 1 << 16))
+        {
+            var remaining = fs.Length;
+            while (remaining > 0)
+            {
+                ct.ThrowIfCancellationRequested();
+                RandomNumberGenerator.Fill(buffer);
+                var n = (int)Math.Min(buffer.Length, remaining);
+                fs.Write(buffer, 0, n);
+                remaining -= n;
+            }
+            fs.Flush(flushToDisk: true);
+            fs.SetLength(0);
+        }
+        // A random name too, so the old file name doesn't stay in the folder index.
+        var renamed = Path.Combine(Path.GetDirectoryName(path)!, Guid.NewGuid().ToString("N"));
+        File.Move(path, renamed);
+        File.Delete(renamed);
+        return null;
+    }
+
+    private const uint GENERIC_WRITE = 0x40000000, FILE_READ_ATTRIBUTES = 0x0080, OPEN_EXISTING = 3;
+    private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000, FILE_FLAG_WRITE_THROUGH = 0x80000000;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
 
     /// <summary>Program Files, ProgramData and Windows: shredding there breaks programs or Windows.</summary>
     private static bool InsideProgramOrSystemFolder(string path)
