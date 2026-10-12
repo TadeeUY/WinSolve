@@ -13,6 +13,15 @@ namespace WinSolve.Core;
 /// (children join it automatically) and we wait until nothing in the job is left running,
 /// except apps an installer opens at the end and that keep running (control panels, tray apps).
 /// </remarks>
+/// <summary>
+/// The wait was cancelled. With a drain time, WinSolve first waited for the installer to close
+/// by itself (it is never killed mid-install); <see cref="StillRunning"/> says whether it still was.
+/// </summary>
+public sealed class InstallerCancelledException(bool stillRunning) : OperationCanceledException
+{
+    public bool StillRunning { get; } = stillRunning;
+}
+
 public static class InstallerProcess
 {
     /// <summary>Apps that installers start when they finish and that stay open.</summary>
@@ -30,7 +39,13 @@ public static class InstallerProcess
 
     /// <summary>Starts <paramref name="file"/> and waits until the installation it starts has finished.</summary>
     /// <returns>The exit code of the process that was started (not of its children).</returns>
-    public static async Task<int?> RunAndWaitAsync(string file, string? arguments, Action<string> log, CancellationToken ct)
+    /// <param name="drainOnCancel">
+    /// When set, a cancellation doesn't just stop waiting: WinSolve keeps waiting (up to this long,
+    /// without killing anything) until the installer has closed, then throws
+    /// <see cref="InstallerCancelledException"/>.
+    /// </param>
+    public static async Task<int?> RunAndWaitAsync(string file, string? arguments, Action<string> log, CancellationToken ct,
+        TimeSpan? drainOnCancel = null)
     {
         using var job = CreateJobObject(IntPtr.Zero, null);
         if (job.IsInvalid) throw new InvalidOperationException("Could not create a job object to track the installer.");
@@ -52,12 +67,23 @@ public static class InstallerProcess
         ResumeThread(pi.hThread);
         if (!inJob) log("  (could not track the installer's child processes; waiting for the main one only)");
 
+        async Task Cancelled()
+        {
+            if (drainOnCancel is null) ct.ThrowIfCancellationRequested();
+            log("  Waiting for the installer to close before going on (it is not stopped mid-install)...");
+            var until = DateTime.Now + drainOnCancel!.Value;
+            bool Busy() => WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT
+                           || (inJob && RunningInJob(job).Any(n => !StaysRunning.Contains(n)));
+            while (Busy() && DateTime.Now < until) await Task.Delay(2000, CancellationToken.None);
+            throw new InstallerCancelledException(Busy());
+        }
+
         while (WaitForSingleObject(pi.hProcess, 500) == WAIT_TIMEOUT)
         {
             if (ct.IsCancellationRequested) break;
             await Task.Delay(50, CancellationToken.None);
         }
-        ct.ThrowIfCancellationRequested();
+        if (ct.IsCancellationRequested) await Cancelled();
         int? exitCode = GetExitCodeProcess(pi.hProcess, out var code) ? (int)code : null;
         if (!inJob) return exitCode;
 
@@ -67,7 +93,7 @@ public static class InstallerProcess
         var deadline = DateTime.Now.AddMinutes(90);
         while (true)
         {
-            ct.ThrowIfCancellationRequested();
+            if (ct.IsCancellationRequested) await Cancelled();
             if (DateTime.Now > deadline)
             {
                 log("  Stopped waiting after 90 minutes; check that the installer has finished.");
@@ -80,7 +106,7 @@ public static class InstallerProcess
                 log($"  Waiting for the installer to finish ({string.Join(", ", running.Distinct())})...");
                 announced = true;
             }
-            await Task.Delay(2000, ct);
+            try { await Task.Delay(2000, ct); } catch (OperationCanceledException) { }
         }
         return exitCode;
     }

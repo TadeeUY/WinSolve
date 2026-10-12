@@ -252,7 +252,7 @@ public sealed partial class ErrorMonitor : IDisposable
         try
         {
             var ms = (long)UpdateFailureWindow.TotalMilliseconds;
-            var query = $"*[System[Provider[@Name='Microsoft-Windows-WindowsUpdateClient'] and EventID=20 and TimeCreated[timediff(@SystemTime) &lt;= {ms}]]]";
+            var query = $"*[System[Provider[@Name='Microsoft-Windows-WindowsUpdateClient'] and EventID=20 and TimeCreated[timediff(@SystemTime) <= {ms}]]]";
             using var reader = new EventLogReader(new EventLogQuery("System", PathType.LogName, query) { ReverseDirection = true });
             for (var (rec, n) = (reader.ReadEvent(), 0); rec is not null && n < 500; rec = reader.ReadEvent(), n++)
             {

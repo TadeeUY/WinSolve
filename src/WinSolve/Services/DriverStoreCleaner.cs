@@ -69,21 +69,34 @@ public static class DriverStoreCleaner
     // ───────────── Cleanup only after a restart ─────────────
 
     private const string PendingKey = @"SOFTWARE\WinSolve\Pending";
+    private const string PendingBootId = "DriverCleanupBootId";
     private const string PendingValue = "DriverCleanupBootTime";
+    private const string PrefetchKey = @"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters";
 
-    /// <summary>When Windows last started (UTC), from the uptime counter.</summary>
+    /// <summary>When Windows last started (UTC), from the uptime counter. Only a fallback: clock changes move it.</summary>
     public static DateTime BootTimeUtc => DateTime.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64);
+
+    /// <summary>Windows' boot counter (increments on every boot), or null if it isn't there.</summary>
+    private static int? BootId()
+    {
+        try { return Reg.Get(Microsoft.Win32.RegistryHive.LocalMachine, PrefetchKey, "BootId") is int id ? id : null; }
+        catch { return null; }
+    }
 
     /// <summary>
     /// The previous versions are the rollback until a restart proves the new drivers work:
-    /// after an update only remember that a cleanup can be offered, with the current boot time.
+    /// after an update only remember that a cleanup can be offered, with the current boot.
     /// </summary>
     public static void MarkCleanupPending()
     {
         try
         {
-            Reg.Set(Microsoft.Win32.RegistryHive.LocalMachine, PendingKey, PendingValue,
-                BootTimeUtc.ToString("o", System.Globalization.CultureInfo.InvariantCulture), Microsoft.Win32.RegistryValueKind.String);
+            ClearCleanupPending();
+            if (BootId() is { } id)
+                Reg.Set(Microsoft.Win32.RegistryHive.LocalMachine, PendingKey, PendingBootId, id, Microsoft.Win32.RegistryValueKind.DWord);
+            else
+                Reg.Set(Microsoft.Win32.RegistryHive.LocalMachine, PendingKey, PendingValue,
+                    BootTimeUtc.ToString("o", System.Globalization.CultureInfo.InvariantCulture), Microsoft.Win32.RegistryValueKind.String);
         }
         catch (Exception ex) { Logger.Write($"Could not remember the driver cleanup: {ex.Message}"); }
     }
@@ -93,6 +106,8 @@ public static class DriverStoreCleaner
     {
         try
         {
+            if (Reg.Get(Microsoft.Win32.RegistryHive.LocalMachine, PendingKey, PendingBootId) is int saved)
+                return BootId() is { } now ? now != saved : false;
             if (Reg.Get(Microsoft.Win32.RegistryHive.LocalMachine, PendingKey, PendingValue) is not string s
                 || !DateTime.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var recorded))
                 return false;
@@ -103,7 +118,12 @@ public static class DriverStoreCleaner
 
     public static void ClearCleanupPending()
     {
-        try { Reg.Delete(Microsoft.Win32.RegistryHive.LocalMachine, PendingKey, PendingValue); } catch { }
+        try
+        {
+            Reg.Delete(Microsoft.Win32.RegistryHive.LocalMachine, PendingKey, PendingBootId);
+            Reg.Delete(Microsoft.Win32.RegistryHive.LocalMachine, PendingKey, PendingValue);
+        }
+        catch { }
     }
 
     /// <summary>The uptime-based boot time drifts by seconds: only a clearly later boot counts as a restart.</summary>

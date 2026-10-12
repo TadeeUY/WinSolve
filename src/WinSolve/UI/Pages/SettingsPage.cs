@@ -99,7 +99,8 @@ public sealed class SettingsPage : Page
             swatches);
 
         var tasksPanel = CheckList();
-        foreach (var group in TaskCatalog.All.GroupBy(t => t.Category))
+        // Tasks that need a warning confirmed (network reset...) never run unattended in one click.
+        foreach (var group in TaskCatalog.All.Where(t => t.ConfirmWarning is null).GroupBy(t => t.Category))
         {
             tasksPanel.Controls.Add(GroupLabel(group.Key == TaskCategory.Repair ? "Repair" : group.Key.ToString()));
             foreach (var t in group) tasksPanel.Controls.Add(_tasks[t] = ListCheck(t.Title));
