@@ -447,16 +447,24 @@ public sealed class MainForm : Form
         }
         else if (alert.DeviceInstanceId is { } id)
         {
-            RunDialog.Run(this, "Repair device", async (log, _, ct) =>
+            // Only what a restart/reinstall can fix, and only after saying what will happen.
+            var device = HardwareService.GetProblemDevices().FirstOrDefault(d => string.Equals(d.InstanceId, id, StringComparison.OrdinalIgnoreCase));
+            if (device is null)
             {
-                log("Restarting the device...");
-                var r = await HardwareService.RestartDeviceAsync(id, log, ct);
-                if (!r.Success)
-                {
-                    log("Reinstalling the device...");
-                    await HardwareService.ReinstallDeviceAsync(id, log, ct);
-                }
-            });
+                Localization.Loc.Show(this, "This device has no error any more.", "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            var plans = HardwareService.PlanRepairs([device]);
+            if (plans.Count == 0)
+            {
+                Localization.Loc.Show(this, string.Format(Localization.Loc.T("WinSolve can't fix this automatically (code {0}): {1}\n\nOpen Device Manager to check the device."), device.ErrorCode, Localization.Loc.T(device.Explanation)),
+                    "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (Localization.Loc.Show(this, Localization.Loc.T("These devices will be repaired:") + "\n\n" + Localization.Loc.T(HardwareService.DescribePlan(plans[0])) + "\n\n" + Localization.Loc.T("Continue?"),
+                    "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                return;
+            RunDialog.Run(this, "Repair device", (log, _, ct) => DriverService.RepairProblemDevicesAsync(plans, log, ct));
         }
         else if (alert.NavigateTo is { } target)
         {

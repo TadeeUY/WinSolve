@@ -7,8 +7,9 @@ public sealed record OldDriver(string Inf, string OriginalName, string Provider,
 
 /// <summary>
 /// Old copies of third-party drivers that Windows keeps in the driver store after each update
-/// (graphics drivers can take gigabytes). Only packages that no device uses AND that have a
-/// newer version of the same driver installed are offered; pnputil (without /force) refuses
+/// (graphics drivers can take gigabytes). Only packages that no device uses AND that are older
+/// than the two newest versions of the same driver are offered (the previous version stays for
+/// rollback); pnputil (without /force) refuses
 /// to delete anything a device still uses.
 /// </summary>
 public static class DriverStoreCleaner
@@ -51,16 +52,63 @@ public static class DriverStoreCleaner
         // Same driver = same original INF name from the same provider.
         foreach (var group in parsed.GroupBy(p => (p.Name.ToLowerInvariant(), p.Provider.ToLowerInvariant())))
         {
-            var newest = group.Max(p => p.Version)!;
+            // Keep the newest AND the version before it: if the new driver misbehaves, Windows
+            // can still roll back to the previous one.
+            var kept = group.Select(p => p.Version).Distinct().OrderByDescending(v => v).Take(2).ToList();
+            var newest = kept[0];
             foreach (var p in group)
             {
-                if (p.Version >= newest || inUse.Contains(p.Inf)) continue; // never the newest, never one in use
+                if (kept.Contains(p.Version) || inUse.Contains(p.Inf)) continue; // never the newest or the previous one, never one in use
                 DateTime? date = DateTime.TryParse(p.Date, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d) ? d : null;
                 result.Add(new OldDriver(p.Inf, p.Name, p.Provider, p.Class, p.Version, date, size(p.Original), newest.ToString()));
             }
         }
         return result.OrderByDescending(d => d.Size).ToList();
     }
+
+    // ───────────── Cleanup only after a restart ─────────────
+
+    private const string PendingKey = @"SOFTWARE\WinSolve\Pending";
+    private const string PendingValue = "DriverCleanupBootTime";
+
+    /// <summary>When Windows last started (UTC), from the uptime counter.</summary>
+    public static DateTime BootTimeUtc => DateTime.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64);
+
+    /// <summary>
+    /// The previous versions are the rollback until a restart proves the new drivers work:
+    /// after an update only remember that a cleanup can be offered, with the current boot time.
+    /// </summary>
+    public static void MarkCleanupPending()
+    {
+        try
+        {
+            Reg.Set(Microsoft.Win32.RegistryHive.LocalMachine, PendingKey, PendingValue,
+                BootTimeUtc.ToString("o", System.Globalization.CultureInfo.InvariantCulture), Microsoft.Win32.RegistryValueKind.String);
+        }
+        catch (Exception ex) { Logger.Write($"Could not remember the driver cleanup: {ex.Message}"); }
+    }
+
+    /// <summary>True when a cleanup was postponed and Windows has restarted since then.</summary>
+    public static bool IsCleanupDue()
+    {
+        try
+        {
+            if (Reg.Get(Microsoft.Win32.RegistryHive.LocalMachine, PendingKey, PendingValue) is not string s
+                || !DateTime.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var recorded))
+                return false;
+            return BootedSince(recorded.ToUniversalTime(), BootTimeUtc);
+        }
+        catch { return false; }
+    }
+
+    public static void ClearCleanupPending()
+    {
+        try { Reg.Delete(Microsoft.Win32.RegistryHive.LocalMachine, PendingKey, PendingValue); } catch { }
+    }
+
+    /// <summary>The uptime-based boot time drifts by seconds: only a clearly later boot counts as a restart.</summary>
+    internal static bool BootedSince(DateTime recordedBootUtc, DateTime currentBootUtc)
+        => currentBootUtc > recordedBootUtc.AddMinutes(2);
 
     private static long FolderSize(string infPath)
     {

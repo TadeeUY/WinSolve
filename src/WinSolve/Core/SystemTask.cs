@@ -42,5 +42,12 @@ public sealed class SystemTask
 
     public bool NeedsReboot { get; init; }
 
+    /// <summary>
+    /// Risky task: returns the warning to confirm before it runs from the UI (null = nothing to
+    /// warn about right now). Evaluated on the UI thread just before running, so it can look at
+    /// the PC's current state.
+    /// </summary>
+    public Func<string?>? ConfirmWarning { get; init; }
+
     public override string ToString() => Localization.Loc.T(Title);
 }

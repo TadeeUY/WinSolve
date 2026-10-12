@@ -1,4 +1,8 @@
+using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using Microsoft.Win32;
+using Microsoft.Win32.SafeHandles;
 using WinSolve.Core;
 
 namespace WinSolve.Services;
@@ -13,6 +17,12 @@ public sealed class VolumeInfo
     public string Health { get; set; } = "";
 
     public bool IsSystem => string.Equals(Letter + ":", Path.GetPathRoot(Environment.SystemDirectory)?.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Hosts the page file, user profiles or Program Files: can't be dismounted safely.</summary>
+    public bool InUse { get; set; }
+
+    /// <summary>The repair has to wait for the next restart instead of dismounting the drive.</summary>
+    public bool RepairAtRestart => IsSystem || InUse;
     public bool SupportsOnlineScan => FileSystem.Equals("NTFS", StringComparison.OrdinalIgnoreCase) || FileSystem.Equals("ReFS", StringComparison.OrdinalIgnoreCase);
 }
 
@@ -51,12 +61,14 @@ public static class DiskRepairService
         if (start < 0) return [];
         try
         {
+            var inUse = InUseLetters();
             return (JsonSerializer.Deserialize<List<PsVolume>>(r.Output[start..], new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [])
                 .Where(v => v.Letter is { Length: 1 } l && char.IsLetter(l[0]))
                 .Select(v => new VolumeInfo
                 {
                     Letter = v.Letter!.ToUpperInvariant(), Label = v.Label ?? "", FileSystem = v.FileSystem ?? "",
                     Size = v.Size, Free = v.Free, Health = v.Health ?? "",
+                    InUse = inUse.Contains(char.ToUpperInvariant(v.Letter![0])),
                 })
                 .ToList();
         }
@@ -84,37 +96,210 @@ public static class DiskRepairService
         });
     }
 
+    // ───────────── Drives in use ─────────────
+
     /// <summary>
-    /// Fixes file system errors. The system drive is in use, so the repair is scheduled for
-    /// the next restart; other drives are briefly dismounted (open files on them are closed).
+    /// Drive letters that Windows keeps busy: the Windows drive, drives with a page file, user
+    /// profiles or Program Files. Dismounting them (/x) would break running programs, so their
+    /// repair is scheduled for the next restart instead.
+    /// </summary>
+    public static HashSet<char> InUseLetters()
+    {
+        var paths = new List<string>
+        {
+            Environment.SystemDirectory,
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+        };
+        try
+        {
+            if (Reg.Get(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management", "PagingFiles") is string[] pageFiles)
+                paths.AddRange(pageFiles);
+            foreach (var page in Wmi.Query("SELECT Name FROM Win32_PageFileUsage")) paths.Add(page.Str("Name"));
+        }
+        catch { /* best effort */ }
+        try
+        {
+            using var profiles = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64)
+                .OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList");
+            if (profiles is not null)
+                foreach (var sid in profiles.GetSubKeyNames())
+                {
+                    using var k = profiles.OpenSubKey(sid);
+                    if (k?.GetValue("ProfileImagePath") is string path) paths.Add(Environment.ExpandEnvironmentVariables(path));
+                }
+        }
+        catch { /* best effort */ }
+        return DriveLetters(paths);
+    }
+
+    /// <summary>Drive letters of the given paths ("C:\pagefile.sys 0 0" → C). "?:\pagefile.sys" means the Windows drive.</summary>
+    internal static HashSet<char> DriveLetters(IEnumerable<string?> paths)
+    {
+        var letters = new HashSet<char>();
+        var system = (Path.GetPathRoot(Environment.SystemDirectory) ?? "C:")[0];
+        foreach (var raw in paths)
+        {
+            var p = (raw ?? "").Trim().TrimStart('"');
+            if (p.StartsWith(@"\\?\", StringComparison.Ordinal)) p = p[4..];
+            if (p.Length < 2 || p[1] != ':') continue;
+            if (p[0] == '?') letters.Add(char.ToUpperInvariant(system));
+            else if (char.IsAsciiLetter(p[0])) letters.Add(char.ToUpperInvariant(p[0]));
+        }
+        return letters;
+    }
+
+    // ───────────── Scheduling at boot ─────────────
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool DeviceIoControl(SafeFileHandle device, uint code, IntPtr inBuffer, uint inSize, out uint outBuffer, uint outSize, out uint returned, IntPtr overlapped);
+
+    private const uint FsctlIsVolumeDirty = 0x00090078;
+
+    /// <summary>Whether the volume's dirty bit is set (autochk then checks it at boot). Null if it can't be read.</summary>
+    public static bool? IsVolumeDirty(char letter)
+    {
+        if (!char.IsAsciiLetter(letter)) return null;
+        // No access rights needed for this control code; share everything so nothing is locked.
+        using var h = CreateFile($@"\\.\{char.ToUpperInvariant(letter)}:", 0, 7, IntPtr.Zero, 3 /* OPEN_EXISTING */, 0, IntPtr.Zero);
+        if (h.IsInvalid) return null;
+        if (!DeviceIoControl(h, FsctlIsVolumeDirty, IntPtr.Zero, 0, out var flags, 4, out _, IntPtr.Zero)) return null;
+        return (flags & 1) != 0; // VOLUME_IS_DIRTY
+    }
+
+    /// <summary>
+    /// Whether a CHKDSK of the volume is scheduled in BootExecute (what "chkdsk X: /r" writes when
+    /// it schedules). Language-independent, unlike chkdsk's or chkntfs's messages.
+    /// </summary>
+    public static bool IsCheckScheduled(char letter, bool surfaceScan)
+    {
+        try
+        {
+            if (Reg.Get(RegistryHive.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager", "BootExecute") is not string[] entries) return false;
+            return IsCheckScheduled(entries, letter, surfaceScan);
+        }
+        catch { return false; }
+    }
+
+    internal static bool IsCheckScheduled(IEnumerable<string> bootExecute, char letter, bool surfaceScan)
+        => bootExecute.Any(e => e.Contains("autochk", StringComparison.OrdinalIgnoreCase)
+                                && e.Contains($@"\??\{char.ToUpperInvariant(letter)}:", StringComparison.OrdinalIgnoreCase)
+                                && (!surfaceScan || Regex.IsMatch(e, @"(^|\s)/r(\s|$)", RegexOptions.IgnoreCase)));
+
+    /// <summary>The letter chkdsk accepts as "yes" in its (Y/N) question, read from its own prompt: Y, S (Spanish), J (German), O (French)...</summary>
+    internal static char? YesLetter(string chkdskOutput)
+    {
+        var m = Regex.Matches(chkdskOutput, @"\((\p{L})\s*/\s*(\p{L})\)").LastOrDefault();
+        return m is null ? null : m.Groups[1].Value[0];
+    }
+
+    /// <summary>
+    /// Schedules a check of an in-use drive at the next restart and verifies it really is
+    /// scheduled. /f: the dirty bit is set (autochk checks dirty volumes at boot on any language).
+    /// /r: chkdsk is asked to schedule it, answering its question with the "yes" letter of this
+    /// Windows language, and the schedule is read back from the registry.
+    /// </summary>
+    public static async Task<bool> ScheduleAtRestartAsync(char letter, bool surfaceScan, Action<string> log, CancellationToken ct)
+    {
+        letter = char.ToUpperInvariant(letter);
+        if (!char.IsAsciiLetter(letter)) throw new ArgumentException("Invalid drive letter.");
+        var drive = $"{letter}:";
+
+        if (!surfaceScan)
+        {
+            var set = await ProcessRunner.RunAsync("fsutil.exe", $"dirty set {drive}", log, ct);
+            // Read back from the volume itself; only if that's impossible, trust fsutil's exit code.
+            var dirty = IsVolumeDirty(letter) ?? set.Success;
+            log(dirty ? $"{drive} will be checked and repaired on the next restart."
+                      : $"The repair of {drive} could not be scheduled. Nothing will run at restart.");
+            return dirty;
+        }
+
+        var isWindowsDrive = letter == char.ToUpperInvariant((Path.GetPathRoot(Environment.SystemDirectory) ?? "C:")[0]);
+        if (IsCheckScheduled(letter, surfaceScan: true))
+        {
+            log($"A surface scan of {drive} was already scheduled.");
+        }
+        else if (isWindowsDrive)
+        {
+            // The Windows drive can never be locked while Windows runs, so chkdsk only asks
+            // whether to schedule it, "(Y/N)" in the Windows language. Asked once with no answer
+            // (stdin is NUL, so it never waits) to read the letter, then answered with it.
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromMinutes(2));
+            var probe = await ProcessRunner.CmdAsync($"chkdsk {drive} /r < nul", null, timeout.Token);
+            if (YesLetter(probe.Output) is { } y && char.IsLetter(y))
+                await ProcessRunner.CmdAsync($"echo {y}| chkdsk {drive} /r", log, timeout.Token);
+        }
+        else
+        {
+            // Another drive would first be offered a forced dismount, which must not happen to a
+            // drive with the page file or profiles: write the same boot entry chkdsk writes.
+            try
+            {
+                const string sessionManager = @"SYSTEM\CurrentControlSet\Control\Session Manager";
+                var entries = (Reg.Get(RegistryHive.LocalMachine, sessionManager, "BootExecute") as string[] ?? ["autocheck autochk *"]).ToList();
+                var at = entries.FindIndex(e => e.Trim().Equals("autocheck autochk *", StringComparison.OrdinalIgnoreCase));
+                entries.Insert(at < 0 ? 0 : at, $@"autocheck autochk /r \??\{letter}:");
+                Reg.Set(RegistryHive.LocalMachine, sessionManager, "BootExecute", entries.ToArray(), RegistryValueKind.MultiString);
+            }
+            catch (Exception ex) { log($"Could not schedule the scan: {ex.Message}"); }
+        }
+
+        var scheduled = IsCheckScheduled(letter, surfaceScan: true);
+        log(scheduled ? $"The surface scan of {drive} will run on the next restart (it can take hours, do not turn the PC off)."
+                      : $"The surface scan of {drive} could not be scheduled. Nothing will run at restart.");
+        return scheduled;
+    }
+
+    /// <summary>S.M.A.R.T. advice for the physical disk that holds a drive letter, or null if it can't be found.</summary>
+    public static async Task<(DiskInfo Disk, string Text, HealthLevel Level)?> HealthOfDriveAsync(char letter, CancellationToken ct)
+    {
+        if (!char.IsAsciiLetter(letter)) return null;
+        var r = await ProcessRunner.PowerShellAsync($"(Get-Partition -DriveLetter {letter} -ErrorAction Stop).DiskNumber", ct: ct);
+        if (!int.TryParse(r.Output.Trim().Split('\n').LastOrDefault()?.Trim(), out var number)) return null;
+        var disk = (await DiskHealthService.ScanAsync(ct)).FirstOrDefault(d => d.DiskNumber == number);
+        if (disk is null) return null;
+        var (text, level) = Advice(disk);
+        return (disk, text, level);
+    }
+
+    /// <summary>
+    /// Fixes file system errors. Drives Windows keeps in use (system, page file, profiles,
+    /// Program Files) are repaired at the next restart; other drives are briefly dismounted
+    /// (open files on them are closed). Returns true when a restart is needed.
     /// </summary>
     public static async Task<bool> FixAsync(VolumeInfo v, Action<string> log, CancellationToken ct)
     {
-        if (v.IsSystem)
+        if (v.RepairAtRestart)
         {
-            log($"{Drive(v)} is the Windows drive: the repair will run on the next restart.");
-            await ProcessRunner.CmdAsync($"echo Y| chkdsk {Drive(v)} /f", log, ct);
-            return true; // restart needed
+            log(v.IsSystem ? $"{Drive(v)} is the Windows drive: the repair will run on the next restart."
+                           : $"{Drive(v)} is in use by Windows (page file, user profiles or programs): the repair will run on the next restart.");
+            return await ScheduleAtRestartAsync(v.Letter[0], surfaceScan: false, log, ct);
         }
         log($"Repairing {Drive(v)}. The drive is dismounted for a moment; programs using it may lose open files.");
-        await ProcessRunner.RunAsync("chkdsk.exe", $"{Drive(v)} /f /x", log, ct);
+        // stdin is NUL: if chkdsk asks anything, it gets "no" instead of waiting forever.
+        await ProcessRunner.CmdAsync($"chkdsk {Drive(v)} /f /x < nul", log, ct);
         return false;
     }
 
     /// <summary>
     /// Surface scan: finds bad sectors, recovers readable data and isolates the bad areas.
-    /// Takes hours on large hard disks.
+    /// Takes hours on large hard disks. Returns true when a restart is needed.
     /// </summary>
     public static async Task<bool> RepairBadSectorsAsync(VolumeInfo v, Action<string> log, CancellationToken ct)
     {
-        if (v.IsSystem)
+        if (v.RepairAtRestart)
         {
-            log($"{Drive(v)} is the Windows drive: the surface scan will run on the next restart (it can take hours, do not turn the PC off).");
-            await ProcessRunner.CmdAsync($"echo Y| chkdsk {Drive(v)} /r", log, ct);
-            return true;
+            log(v.IsSystem ? $"{Drive(v)} is the Windows drive: the surface scan will run on the next restart."
+                           : $"{Drive(v)} is in use by Windows (page file, user profiles or programs): the surface scan will run on the next restart.");
+            return await ScheduleAtRestartAsync(v.Letter[0], surfaceScan: true, log, ct);
         }
         log($"Scanning every sector of {Drive(v)}. This can take hours on large hard disks; keep the PC on.");
-        await ProcessRunner.RunAsync("chkdsk.exe", $"{Drive(v)} /r /x", log, ct);
+        await ProcessRunner.CmdAsync($"chkdsk {Drive(v)} /r /x < nul", log, ct);
         log("Finished. Refresh S.M.A.R.T. to see the reallocated / pending sector counts now.");
         return false;
     }

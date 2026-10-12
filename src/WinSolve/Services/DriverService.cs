@@ -232,32 +232,222 @@ public static class DriverService
 
     // ═══════════════════ Clean install ═══════════════════
 
-    /// <summary>
-    /// Removes every installed display driver package from the given vendor (current and
-    /// older versions left in the driver store), like DDU does with pnputil.
-    /// </summary>
-    public static async Task RemoveDisplayDriversAsync(GpuVendor vendor, Action<string> log, CancellationToken ct)
+    /// <summary>An installed display driver package (oemNN.inf) of one vendor.</summary>
+    public sealed record DisplayPackage(string Inf, string OriginalName, string Provider, string Version);
+
+    private sealed class PsPackage
     {
-        var provider = vendor switch
+        public string? Driver { get; set; }
+        public string? OriginalFileName { get; set; }
+        public string? ProviderName { get; set; }
+        public string? Version { get; set; }
+    }
+
+    private static string ProviderPattern(GpuVendor vendor) => vendor switch
+    {
+        GpuVendor.Nvidia => "^NVIDIA",
+        // Anchored: an unanchored "ATI" would also match "Corporation" (Intel/NVIDIA Corporation).
+        GpuVendor.Amd => "^(Advanced Micro Devices|AMD|ATI Technologies)",
+        GpuVendor.Intel => "^Intel",
+        _ => throw new ArgumentException("Unknown vendor"),
+    };
+
+    private static readonly Regex OemInf = new(@"^oem\d+\.inf$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>Every installed display driver package from the vendor (current and older versions in the driver store).</summary>
+    public static async Task<List<DisplayPackage>> GetDisplayPackagesAsync(GpuVendor vendor, CancellationToken ct)
+    {
+        var r = await ProcessRunner.PowerShellAsync($$"""
+            $d = Get-WindowsDriver -Online | Where-Object { $_.ClassName -eq 'Display' -and $_.ProviderName -match '{{ProviderPattern(vendor)}}' } | Select-Object Driver, OriginalFileName, ProviderName, Version
+            ConvertTo-Json -InputObject @($d) -Compress
+            """, ct: ct);
+        var start = r.Output.IndexOf('[');
+        if (start < 0) throw new InvalidOperationException("Windows didn't list the installed graphics drivers. Nothing was removed.");
+        var list = JsonSerializer.Deserialize<List<PsPackage>>(r.Output[start..], new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+        return list.Where(p => p.Driver is { } inf && OemInf.IsMatch(inf))
+            .Select(p => new DisplayPackage(p.Driver!, Path.GetFileName(p.OriginalFileName ?? ""), p.ProviderName ?? "", p.Version ?? ""))
+            .ToList();
+    }
+
+    /// <summary>Folder that keeps the copies of removed graphics drivers (administrators only).</summary>
+    public static string DriverBackupRoot => Path.Combine(SafePath.DataFolder, "DriverBackup");
+
+    /// <summary>
+    /// Exports every package (pnputil /export-driver) into a new administrators-only folder
+    /// before anything is removed. Throws if any package could not be saved.
+    /// </summary>
+    public static async Task<string> BackupDisplayPackagesAsync(IReadOnlyList<DisplayPackage> packages, Action<string> log, CancellationToken ct)
+    {
+        var folder = SafePath.CreateAdminOnlyFolder(Path.Combine("DriverBackup", DateTime.Now.ToString("yyyy-MM-dd_HHmmss")));
+        log($"Backing up the current graphics driver to {folder}");
+        try
         {
-            GpuVendor.Nvidia => "^NVIDIA",
-            // Anchored: an unanchored "ATI" would also match "Corporation" (Intel/NVIDIA Corporation).
-            GpuVendor.Amd => "^(Advanced Micro Devices|AMD|ATI Technologies)",
-            GpuVendor.Intel => "^Intel",
-            _ => throw new ArgumentException("Unknown vendor"),
-        };
-
-        log("Removing the current graphics driver (the screen may flicker or change resolution)...");
-        await ProcessRunner.PowerShellAsync($$"""
-            $drivers = Get-WindowsDriver -Online | Where-Object { $_.ClassName -eq 'Display' -and $_.ProviderName -match '{{provider}}' }
-            if (-not $drivers) { 'No driver packages found for this vendor.' }
-            foreach ($d in $drivers) {
-                "Removing $($d.Driver) - $($d.ProviderName) $($d.Version)"
-                pnputil.exe /delete-driver $d.Driver /uninstall /force | Out-String
+            foreach (var p in packages)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!OemInf.IsMatch(p.Inf)) throw new InvalidOperationException($"Unexpected driver name {p.Inf}. Nothing was removed.");
+                var target = Path.Combine(folder, Path.GetFileNameWithoutExtension(p.Inf));
+                Directory.CreateDirectory(target);
+                log($"  {p.Inf} - {p.Provider} {p.Version}");
+                var r = await ProcessRunner.RunAsync("pnputil.exe", $"/export-driver {p.Inf} \"{target}\"", l => log("    " + l), ct);
+                if (!r.Success || !Directory.EnumerateFiles(target, "*.inf", SearchOption.AllDirectories).Any())
+                    throw new InvalidOperationException($"Could not back up the driver {p.Inf} ({p.Provider} {p.Version}). Nothing was removed.");
             }
-            """, log, ct);
+        }
+        catch
+        {
+            try { Directory.Delete(folder, recursive: true); } catch { }
+            throw;
+        }
+        log($"Backup complete: {packages.Count} driver package(s) saved in {folder}");
+        PruneDriverBackups(keep: 3);
+        return folder;
+    }
 
+    /// <summary>Graphics driver backups take hundreds of MB each: only the newest few are kept.</summary>
+    private static void PruneDriverBackups(int keep)
+    {
+        try
+        {
+            var root = DriverBackupRoot;
+            if (!Directory.Exists(root) || SafePath.HasReparsePoint(root)) return;
+            foreach (var dir in new DirectoryInfo(root).EnumerateDirectories("*", SafePath.NoLinks(recursive: false))
+                         .OrderByDescending(d => d.CreationTimeUtc).Skip(keep))
+                try { Directory.Delete(dir.FullName, recursive: true); } catch { }
+        }
+        catch { }
+    }
+
+    /// <summary>Installs the drivers saved by <see cref="BackupDisplayPackagesAsync"/> again. Never cancelled.</summary>
+    public static async Task<bool> RestoreDisplayBackupAsync(string folder, Action<string> log)
+    {
+        log("Reinstalling the backed-up graphics driver...");
+        var r = await ProcessRunner.RunAsync("pnputil.exe", $"/add-driver \"{Path.Combine(folder, "*.inf")}\" /subdirs /install",
+            l => log("  " + l), CancellationToken.None);
+        // 3010: installed, a restart completes it.
+        return r.ExitCode is 0 or 3010;
+    }
+
+    /// <summary>
+    /// Creates a restore point; when that fails, asks whether to continue without one (default No)
+    /// and stops with a cancellation if not.
+    /// </summary>
+    private static async Task EnsureRestorePointAsync(string description, Func<string, bool> confirm, Action<string> log, CancellationToken ct)
+    {
+        if (await TaskCatalog.CreateRestorePoint(new TaskContext(log, ct), description)) return;
+        if (!confirm("A restore point could not be created (System Protection may be turned off).\n\nContinue without a restore point?"))
+        {
+            log("Stopped: no restore point could be created. Nothing was changed.");
+            throw new OperationCanceledException();
+        }
+        log("Continuing without a restore point, as you chose.");
+    }
+
+    /// <summary>Deletes the packages and uninstalls them from the devices that use them (like DDU does with pnputil).</summary>
+    private static async Task RemovePackagesAsync(GpuVendor vendor, IReadOnlyList<DisplayPackage> packages, Action<string> log, CancellationToken ct)
+    {
+        log("Removing the current graphics driver (the screen may flicker or change resolution)...");
+        foreach (var p in packages)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!OemInf.IsMatch(p.Inf)) continue;
+            log($"Removing {p.Inf} - {p.Provider} {p.Version}");
+            await ProcessRunner.RunAsync("pnputil.exe", $"/delete-driver {p.Inf} /uninstall /force", l => log("  " + l), ct);
+        }
         ClearShaderCaches(vendor, log);
+    }
+
+    /// <summary>
+    /// "Remove driver only": every display driver package of the vendor is exported to a backup
+    /// folder first (stops if that fails), a restore point is created (asks if that fails), then
+    /// the packages are removed. Returns the backup folder, or null if there was nothing to remove.
+    /// </summary>
+    public static async Task<string?> RemoveDisplayDriversAsync(GpuVendor vendor, Func<string, bool> confirm, Action<string> log, CancellationToken ct)
+    {
+        var packages = await GetDisplayPackagesAsync(vendor, ct);
+        if (packages.Count == 0)
+        {
+            log("No driver packages found for this vendor.");
+            return null;
+        }
+        await EnsureRestorePointAsync("WinSolve - before removing the graphics driver", confirm, log, ct);
+        var backup = await BackupDisplayPackagesAsync(packages, log, ct);
+        await RemovePackagesAsync(vendor, packages, log, ct);
+        log($"The graphics driver was removed. A copy is saved in {backup}");
+        log("To get it back: run the vendor's driver installer, or in Device Manager choose the display adapter > Update driver > Browse my computer, and pick that folder.");
+        return backup;
+    }
+
+    // ───────────── Installer checks ─────────────
+
+    private static readonly string[] NotADisplayPackage =
+    [
+        @"chipset", @"(?<![a-z])dsa(?![a-z])", @"support[\s_-]*assistant", @"auto[\s_-]*detect", @"(?<![a-z])web(?![a-z])",
+        @"minimal[\s_-]*setup", @"(?<![a-z])online(?![a-z])", @"ryzen[\s_-]*master", @"(?<![a-z])raid(?![a-z])", @"rapid[\s_-]*storage",
+        @"management[\s_-]*engine", @"wi[\s_-]*fi", @"bluetooth", @"ethernet", @"(?<![a-z])audio(?![a-z])", @"serial[\s_-]*io", @"thunderbolt",
+    ];
+
+    /// <summary>
+    /// Why a file can't be used for a clean install of this vendor's graphics driver, or null when
+    /// it looks like the full display driver package. Checked before anything is removed: a chipset
+    /// driver, a support assistant or a web installer would leave the PC with no graphics driver.
+    /// </summary>
+    public static string? InstallerProblem(GpuVendor vendor, string file)
+    {
+        string? product = null, description = null;
+        try
+        {
+            var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(file);
+            product = info.ProductName;
+            description = info.FileDescription;
+        }
+        catch { /* no version resource */ }
+        return InstallerProblem(vendor, product, description, Path.GetFileName(file));
+    }
+
+    internal static string? InstallerProblem(GpuVendor vendor, string? product, string? description, string fileName)
+    {
+        // NVIDIA's installer replaces the driver itself, nothing is removed beforehand.
+        if (vendor is not (GpuVendor.Amd or GpuVendor.Intel)) return null;
+
+        static string Clean(string? s) => Regex.Replace(Regex.Replace(s ?? "", @"®|™|\((R|TM)\)", " ", RegexOptions.IgnoreCase), @"\s+", " ").Trim();
+        var meta = $"{Clean(product)} | {Clean(description)}";
+        var all = $"{meta} | {Clean(fileName)}";
+        var shown = Clean(product).Length > 0 ? Clean(product) : Clean(description).Length > 0 ? Clean(description) : "no product information";
+        var vendorName = vendor == GpuVendor.Amd ? "AMD" : "Intel";
+
+        if (NotADisplayPackage.Any(p => Regex.IsMatch(all, p, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)))
+            return string.Format("'{0}' is not a full {1} graphics driver package ({2}). Chipset drivers, Driver & Support Assistant, auto-detect tools and web installers can't be used here: download the complete graphics driver installer. Nothing was changed.",
+                fileName, vendorName, shown);
+
+        string[] accepted = vendor == GpuVendor.Amd
+            ? [@"amd[\s_-]*software", @"radeon", @"adrenalin"]
+            : [@"intel.*graphics", @"graphics[\s_-]*driver", @"(?<![a-z])arc(?![a-z])", @"(?<![a-z])iris(?![a-z])", @"gfx[\s_-]*win"];
+        if (accepted.Any(p => Regex.IsMatch(all, p, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)))
+            return null;
+        return string.Format("'{0}' doesn't look like a {1} graphics driver installer ({2}). Nothing was changed.", fileName, vendorName, shown);
+    }
+
+    // ───────────── Hybrid graphics ─────────────
+
+    /// <summary>Integrated GPUs (Intel UHD/Iris/Arc Graphics, AMD Radeon Graphics / Vega / 780M APUs).</summary>
+    public static bool IsLikelyIntegrated(GpuVendor vendor, string name) => vendor switch
+    {
+        // Arc A380/A770, B580... are graphics cards; "Intel Arc Graphics" (Core Ultra) is integrated.
+        GpuVendor.Intel => !Regex.IsMatch(name, @"\bArc\b.*\b[AB]\d{3}", RegexOptions.IgnoreCase),
+        GpuVendor.Amd => Regex.IsMatch(name, @"Radeon(\s*\(TM\))?\s+((Vega\s+\d+\s+)?Graphics\s*$|\d{3}M\b)|Vega\s+\d+\s+Graphics", RegexOptions.IgnoreCase),
+        _ => false,
+    };
+
+    /// <summary>
+    /// A warning when the PC has more than one graphics adapter and the driver being removed is
+    /// the integrated one: on laptops it usually drives the built-in screen.
+    /// </summary>
+    public static string? HybridWarning(GpuVendor vendor, IReadOnlyList<GpuInfo> gpus)
+    {
+        if (gpus.Count < 2 || !gpus.Any(g => g.Vendor == vendor && IsLikelyIntegrated(g.Vendor, g.Name))) return null;
+        return string.Format("This PC has more than one graphics adapter ({0}). The {1} one is the integrated GPU: on laptops it usually drives the built-in screen, which can go black or drop to a low resolution until a driver is installed again. Keep an external monitor connected, or know how to start Windows in Safe Mode, before you continue.",
+            string.Join(", ", gpus.Select(g => g.Name)), vendor == GpuVendor.Amd ? "AMD" : vendor == GpuVendor.Intel ? "Intel" : vendor.ToString());
     }
 
     private static void ClearCache(string dir, Action<string> log)
@@ -276,15 +466,17 @@ public static class DriverService
     public sealed record InstallOutcome(bool Success, string Message);
 
     /// <summary>
-    /// Clean install: restore point, removal of the old driver (except NVIDIA, whose installer
-    /// replaces it itself with -clean), then the new installer, waiting for the whole setup.
+    /// Clean install: installer check, restore point (asks if it fails), backup and removal of the
+    /// old driver (except NVIDIA, whose installer replaces it itself with -clean), then the new
+    /// installer, waiting for the whole setup. If the new driver ends up inactive, or the install
+    /// fails or is cancelled after the removal, the backed-up driver is reinstalled.
     /// Windows Update is kept from slipping its own driver in meanwhile, the unpacked installer
     /// files are removed, and the result is verified against the driver Windows actually loaded.
     /// The installer is copied into an administrators-only folder and kept open (no writes,
     /// no deletes) while its signature is verified and it runs, so it cannot be swapped.
     /// </summary>
     public static async Task<InstallOutcome> CleanInstallAsync(GpuVendor vendor, string installer, bool requireVendorSignature,
-        string? expectedVersion, Action<string> log, CancellationToken ct)
+        string? expectedVersion, Func<string, bool> confirm, Action<string> log, CancellationToken ct)
     {
         var protectedRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSolve", "Drivers");
         string safeCopy;
@@ -304,7 +496,7 @@ public static class DriverService
         }
         try
         {
-            return await InstallCopyAsync(vendor, safeCopy, requireVendorSignature, expectedVersion, log, ct);
+            return await InstallCopyAsync(vendor, safeCopy, requireVendorSignature, expectedVersion, confirm, log, ct);
         }
         finally
         {
@@ -314,9 +506,8 @@ public static class DriverService
     }
 
     private static async Task<InstallOutcome> InstallCopyAsync(GpuVendor vendor, string safeCopy, bool requireVendorSignature,
-        string? expectedVersion, Action<string> log, CancellationToken ct)
+        string? expectedVersion, Func<string, bool> confirm, Action<string> log, CancellationToken ct)
     {
-
         // Hold the file open (read sharing only) until the installer has finished.
         await using var lockHandle = new FileStream(safeCopy, FileMode.Open, FileAccess.Read, FileShare.Read);
         if (!HasValidSignature(safeCopy, vendor, out var signer))
@@ -330,35 +521,63 @@ public static class DriverService
             log($"Signature verified: {signer}");
         }
 
-        var ctx = new TaskContext(log, ct);
-        if (AppSettings.Current.CreateRestorePoint)
-            await TaskCatalog.CreateRestorePoint(ctx, "WinSolve - before graphics driver clean install");
+        // Before anything is touched: a chipset driver, support assistant or web installer would
+        // leave the PC without a graphics driver once the current one is removed.
+        if (InstallerProblem(vendor, safeCopy) is { } problem)
+            throw new InvalidOperationException(problem);
+
+        await EnsureRestorePointAsync("WinSolve - before graphics driver clean install", confirm, log, ct);
 
         var before = DriverState(vendor);
         var started = DateTime.Now;
 
+        // NVIDIA's installer does its own clean install (-clean), so the working driver is only
+        // replaced once the new one installs. Other vendors' installers don't, so the current
+        // driver is removed first, after saving a copy that is put back if the new one fails.
+        List<DisplayPackage> packages = [];
+        string? backup = null;
+        if (vendor != GpuVendor.Nvidia)
+        {
+            packages = await GetDisplayPackagesAsync(vendor, ct);
+            if (packages.Count > 0) backup = await BackupDisplayPackagesAsync(packages, log, ct);
+        }
+
+        var removed = false;
         BlockWindowsUpdateDrivers(log);
         try
         {
-            // NVIDIA's installer does its own clean install (-clean), so the working driver is only
-            // replaced once the new one installs. Other vendors' installers don't, so remove first.
-            if (vendor != GpuVendor.Nvidia)
-                await RemoveDisplayDriversAsync(vendor, log, ct);
+            try
+            {
+                if (packages.Count > 0)
+                {
+                    removed = true;
+                    await RemovePackagesAsync(vendor, packages, log, ct);
+                }
 
-            log($"Starting the installer: {Path.GetFileName(safeCopy)}");
-            if (vendor == GpuVendor.Nvidia)
-            {
-                log("Installing silently with a clean profile (-s -clean -noreboot). This takes a few minutes; the screen will flicker...");
-                var code = await InstallerProcess.RunAndWaitAsync(safeCopy, "-s -clean -noreboot -noeula", log, ct);
-                log($"NVIDIA installer finished (exit code {code?.ToString() ?? "unknown"}).");
+                log($"Starting the installer: {Path.GetFileName(safeCopy)}");
+                if (vendor == GpuVendor.Nvidia)
+                {
+                    log("Installing silently with a clean profile (-s -clean -noreboot). This takes a few minutes; the screen will flicker...");
+                    var code = await InstallerProcess.RunAndWaitAsync(safeCopy, "-s -clean -noreboot -noeula", log, ct);
+                    log($"NVIDIA installer finished (exit code {code?.ToString() ?? "unknown"}).");
+                }
+                else
+                {
+                    log(vendor == GpuVendor.Amd
+                        ? "The AMD installer is opening. Choose 'Factory Reset' if it is offered, then follow the steps. WinSolve waits until it finishes."
+                        : "The installer is opening. If it offers a clean installation, choose it. WinSolve waits until it finishes.");
+                    await InstallerProcess.RunAndWaitAsync(safeCopy, null, log, ct);
+                    log("Installer finished.");
+                }
             }
-            else
+            catch (Exception ex) when (removed && backup is not null)
             {
-                log(vendor == GpuVendor.Amd
-                    ? "The AMD installer is opening. Choose 'Factory Reset' if it is offered, then follow the steps. WinSolve waits until it finishes."
-                    : "The installer is opening. If it offers a clean installation, choose it. WinSolve waits until it finishes.");
-                await InstallerProcess.RunAndWaitAsync(safeCopy, null, log, ct);
-                log("Installer finished.");
+                // Cancelled or failed after the old driver was removed: never leave the PC without one.
+                log(ex is OperationCanceledException
+                    ? "The installation was stopped after the old driver was removed."
+                    : $"The installation failed after the old driver was removed: {ex.Message}");
+                await PutBackupBackAsync(vendor, backup, log);
+                throw;
             }
         }
         finally
@@ -370,10 +589,44 @@ public static class DriverService
         RemoveExtractedFiles(vendor, started, log);
 
         log("Checking which driver Windows is using now...");
-        await Task.Delay(3000, ct);
-        var outcome = Verify(vendor, before, DriverState(vendor), expectedVersion);
+        await Task.Delay(3000, CancellationToken.None);
+        var after = DriverState(vendor);
+        var outcome = Verify(vendor, before, after, expectedVersion);
+        if (removed && backup is not null && NoVendorDriverActive(after))
+        {
+            log(outcome.Message);
+            log("The new driver is not active, so the previous one is put back.");
+            outcome = await PutBackupBackAsync(vendor, backup, log)
+                ? new(false, $"The new {VendorLabel(vendor)} driver did not install, so WinSolve put the previous driver back. Run the installer again or try another version. Backup: {backup}")
+                : new(false, $"The new {VendorLabel(vendor)} driver did not install and the previous driver could not be put back automatically. In Device Manager choose the display adapter > Update driver > Browse my computer and pick {backup}, or run the installer again.");
+        }
         log(outcome.Message);
         return outcome;
+    }
+
+    private static string VendorLabel(GpuVendor vendor) => vendor switch { GpuVendor.Nvidia => "NVIDIA", GpuVendor.Amd => "AMD", GpuVendor.Intel => "Intel", _ => "graphics" };
+
+    /// <summary>No adapter of the vendor runs its driver: none listed, or on Microsoft's basic display driver.</summary>
+    private static bool NoVendorDriverActive(List<AdapterState> after) => after.Count == 0 || after.Any(a => a.BasicDriver);
+
+    /// <summary>Reinstalls the backup and checks that the vendor driver is active again.</summary>
+    private static async Task<bool> PutBackupBackAsync(GpuVendor vendor, string backup, Action<string> log)
+    {
+        try
+        {
+            var added = await RestoreDisplayBackupAsync(backup, log);
+            await Task.Delay(3000, CancellationToken.None);
+            var active = !NoVendorDriverActive(DriverState(vendor));
+            log(active ? "The previous graphics driver is active again."
+                : added ? "The previous graphics driver was reinstalled; restart the PC to load it."
+                : $"Could not reinstall the previous graphics driver automatically. Its backup is in {backup}");
+            return active || added;
+        }
+        catch (Exception ex)
+        {
+            log($"Could not reinstall the previous graphics driver automatically ({ex.Message}). Its backup is in {backup}");
+            return false;
+        }
     }
 
     // ───────────── Verification ─────────────
@@ -545,13 +798,62 @@ public static class DriverService
             else { "$($result.Updates.Count) driver update(s) available:"; foreach ($u in $result.Updates) { "  - $($u.Title)" } }
             """, log, ct);
 
-    /// <summary>Downloads and installs every pending driver update from Windows Update.</summary>
-    public static Task InstallWindowsUpdateDriversAsync(Action<string> log, CancellationToken ct)
-        => ProcessRunner.PowerShellAsync(WindowsUpdatePrelude + """
+    /// <summary>A driver update offered by Windows Update.</summary>
+    public sealed record PendingDriverUpdate(string UpdateId, string Title, long Size, bool Optional);
 
-            if ($result.Updates.Count -eq 0) { 'No driver updates to install.'; return }
+    private sealed class PsUpdate
+    {
+        public string? Id { get; set; }
+        public string? Title { get; set; }
+        public long Size { get; set; }
+        public bool BrowseOnly { get; set; }
+        public bool AutoSelect { get; set; }
+    }
+
+    private const string JsonMarker = "@@WINSOLVE-JSON@@";
+
+    /// <summary>Pending driver updates with their size. Optional ones are those Windows itself wouldn't install automatically.</summary>
+    public static async Task<List<PendingDriverUpdate>> GetWindowsUpdateDriversAsync(Action<string> log, CancellationToken ct)
+    {
+        var r = await ProcessRunner.PowerShellAsync(WindowsUpdatePrelude + $$"""
+
+            $out = foreach ($u in $result.Updates) {
+                [pscustomobject]@{ Id = "$($u.Identity.UpdateID)"; Title = "$($u.Title)"; Size = [int64]$u.MaxDownloadSize; BrowseOnly = [bool]$u.BrowseOnly; AutoSelect = [bool]$u.AutoSelectOnWebSites }
+            }
+            '{{JsonMarker}}' + (ConvertTo-Json -InputObject @($out) -Compress)
+            """, l => { if (!l.StartsWith(JsonMarker, StringComparison.Ordinal)) log(l); }, ct);
+        var line = r.Output.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith(JsonMarker, StringComparison.Ordinal));
+        if (!r.Success || line is null) throw new InvalidOperationException("Windows Update could not list the driver updates.");
+        var list = JsonSerializer.Deserialize<List<PsUpdate>>(line[JsonMarker.Length..], new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+        return list.Where(u => Guid.TryParse(u.Id, out _))
+            .Select(u => new PendingDriverUpdate(u.Id!, u.Title ?? "", u.Size, u.BrowseOnly || !u.AutoSelect))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Downloads and installs only the chosen driver updates (matched by update ID), after a
+    /// restore point (asks whether to continue if it can't be created).
+    /// </summary>
+    public static async Task InstallWindowsUpdateDriversAsync(IReadOnlyList<PendingDriverUpdate> selected, Func<string, bool> confirm,
+        Action<string> log, CancellationToken ct)
+    {
+        var ids = selected.Select(u => u.UpdateId).Where(id => Guid.TryParse(id, out _)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (ids.Count == 0)
+        {
+            log("No driver updates selected.");
+            return;
+        }
+        await EnsureRestorePointAsync("WinSolve - before installing driver updates", confirm, log, ct);
+
+        var wanted = string.Join(", ", ids.Select(id => $"'{id}'"));
+        var r = await ProcessRunner.PowerShellAsync(WindowsUpdatePrelude + $$"""
+
+            $wanted = @({{wanted}})
             $list = New-Object -ComObject Microsoft.Update.UpdateColl
-            foreach ($u in $result.Updates) { if (-not $u.EulaAccepted) { $u.AcceptEula() }; $list.Add($u) | Out-Null; "Queued: $($u.Title)" }
+            foreach ($u in $result.Updates) {
+                if ($wanted -contains "$($u.Identity.UpdateID)") { if (-not $u.EulaAccepted) { $u.AcceptEula() }; $list.Add($u) | Out-Null; "Queued: $($u.Title)" }
+            }
+            if ($list.Count -eq 0) { 'The selected driver updates are no longer offered.'; exit 1 }
             $codes = @{ 0 = 'not started'; 1 = 'in progress'; 2 = 'installed'; 3 = 'installed with errors'; 4 = 'FAILED'; 5 = 'aborted' }
             try {
                 'Downloading...'
@@ -571,32 +873,44 @@ public static class DriverService
                     "  $($ready.Item($i).Title): $($codes[[int]$c])"
                 }
                 if ($res.RebootRequired) { 'A restart is required to finish installing drivers.' }
-                if ($failed -gt 0) { "$failed driver update(s) did not install correctly."; exit 1 } else { 'All driver updates installed.' }
+                if ($failed -gt 0) { "$failed driver update(s) did not install correctly."; exit 1 } else { 'All selected driver updates installed.' }
             } catch { "Windows Update error: $($_.Exception.Message)"; exit 1 }
             """, log, ct);
+        if (!r.Success) throw new InvalidOperationException("Some driver updates did not install. See the details above.");
+    }
 
-    /// <summary>Restarts, and if needed reinstalls, every device with an error.</summary>
-    public static async Task RepairProblemDevicesAsync(Action<string> log, CancellationToken ct)
+    /// <summary>Restarts, and where it's safe reinstalls, the devices in the plan.</summary>
+    public static async Task RepairProblemDevicesAsync(IReadOnlyList<HardwareService.DeviceRepairPlan> plans, Action<string> log, CancellationToken ct)
     {
-        var devices = HardwareService.GetProblemDevices();
-        if (devices.Count == 0)
+        if (plans.Count == 0)
         {
-            log("No devices with problems.");
+            log("No devices with problems that a restart or reinstall can fix.");
             return;
         }
-        foreach (var d in devices)
+        foreach (var p in plans)
         {
-            log($"> {d.Name} (code {d.ErrorCode})");
-            await HardwareService.RestartDeviceAsync(d.InstanceId, l => log("  " + l), ct);
+            log($"> Restarting {p.Device.Name} (code {p.Device.ErrorCode})");
+            await HardwareService.RestartDeviceAsync(p.Device.InstanceId, l => log("  " + l), ct);
         }
         await Task.Delay(3000, ct);
-        foreach (var d in HardwareService.GetProblemDevices())
+
+        var stillFailing = HardwareService.GetProblemDevices().ToDictionary(d => d.InstanceId, StringComparer.OrdinalIgnoreCase);
+        foreach (var p in plans)
         {
-            log($"> Still failing, reinstalling: {d.Name}");
-            await HardwareService.ReinstallDeviceAsync(d.InstanceId, l => log("  " + l), ct);
+            if (!stillFailing.TryGetValue(p.Device.InstanceId, out var now)) continue;
+            // Re-checked with the current code and class: only reinstall what is safe to remove.
+            if (HardwareService.RepairActionFor(now.Class, now.ErrorCode) != HardwareService.DeviceRepairAction.RestartThenReinstall)
+            {
+                log($"> Still failing, not reinstalled (only restarted, to keep this kind of device safe): {now.Name}");
+                continue;
+            }
+            log($"> Still failing, reinstalling: {now.Name}");
+            await HardwareService.ReinstallDeviceAsync(now.InstanceId, l => log("  " + l), ct);
         }
-        var left = HardwareService.GetProblemDevices();
-        log(left.Count == 0 ? "All devices are working." : $"{left.Count} device(s) still have problems. Try Windows Update drivers or the manufacturer's website.");
+        await Task.Delay(2000, ct);
+        var ids = plans.Select(p => p.Device.InstanceId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var left = HardwareService.GetProblemDevices().Count(d => ids.Contains(d.InstanceId));
+        log(left == 0 ? "All the repaired devices are working." : $"{left} device(s) still have problems. Try Windows Update drivers or the manufacturer's website.");
     }
 
     /// <summary>Exports every third-party driver (DISM) so they can be restored later.</summary>

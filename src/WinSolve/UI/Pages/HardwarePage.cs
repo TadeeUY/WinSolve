@@ -216,7 +216,7 @@ public sealed class HardwarePage : Page
                     Theme.Button("Check", (_, _) => Run($"Checking {v.Letter}:", (log, ct) => DiskRepairService.ScanAsync(v, log, ct)), glyph: "\uE721"),
                     Theme.Button("Fix file system errors", (_, _) =>
                     {
-                        var msg = v.IsSystem
+                        var msg = v.RepairAtRestart
                             ? $"Repair {v.Letter}: on the next restart? Windows will check the drive before starting."
                             : $"Repair {v.Letter}: now? The drive is dismounted for a moment; save and close files that are open on it.";
                         if (Localization.Loc.Show(this, msg, "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
@@ -227,7 +227,7 @@ public sealed class HardwarePage : Page
                     Theme.Button("Scan & repair bad sectors", (_, _) =>
                     {
                         var msg = (d.Health == HealthLevel.Bad ? "This drive is failing: copy your files first. " : "") +
-                                  (v.IsSystem
+                                  (v.RepairAtRestart
                                       ? $"Scan every sector of {v.Letter}: on the next restart? It can take hours; do not turn the PC off."
                                       : $"Scan every sector of {v.Letter}: now? It can take hours and the drive is unavailable meanwhile.");
                         if (Localization.Loc.Show(this, msg, "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;

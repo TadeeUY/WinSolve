@@ -8,7 +8,7 @@ public class DriverStoreCleanerTests
     private const string Repo = @"C:\Windows\System32\DriverStore\FileRepository\";
 
     [Fact]
-    public void Only_older_unused_versions_of_the_same_driver_are_offered()
+    public void Only_unused_versions_older_than_the_previous_one_are_offered()
     {
         var packages = new List<(string, string, string, string, string, string?)>
         {
@@ -23,8 +23,48 @@ public class DriverStoreCleanerTests
 
         var old = DriverStoreCleaner.Pick(packages, inUse, _ => 100);
 
-        Assert.Equal(["oem10.inf", "oem12.inf"], old.Select(d => d.Inf).OrderBy(x => x));
+        // 6590 is the newest and 6094 the previous one (kept for rollback): only 5222 goes.
+        // Acme has just two versions: both stay.
+        Assert.Equal(["oem12.inf"], old.Select(d => d.Inf));
         Assert.All(old, d => Assert.Equal("32.0.15.6590", d.NewerVersion));
+    }
+
+    [Fact]
+    public void The_newest_and_the_previous_version_are_always_kept()
+    {
+        var packages = new List<(string, string, string, string, string, string?)>
+        {
+            ("oem1.inf", Repo + @"a.inf_amd64_1\a.inf", "Acme", "Display", "1.0.0.0", null),
+            ("oem2.inf", Repo + @"a.inf_amd64_2\a.inf", "Acme", "Display", "2.0.0.0", null),
+            ("oem3.inf", Repo + @"a.inf_amd64_3\a.inf", "Acme", "Display", "3.0.0.0", null),
+            ("oem4.inf", Repo + @"a.inf_amd64_4\a.inf", "Acme", "Display", "4.0.0.0", null),
+            ("oem5.inf", Repo + @"a.inf_amd64_5\a.inf", "Acme", "Display", "4.0.0.0", null), // same newest version twice
+        };
+
+        var old = DriverStoreCleaner.Pick(packages, [], _ => 1);
+
+        Assert.Equal(["oem1.inf", "oem2.inf"], old.Select(d => d.Inf).OrderBy(x => x));
+        Assert.All(old, d => Assert.Equal("4.0.0.0", d.NewerVersion));
+    }
+
+    [Fact]
+    public void Two_versions_of_a_driver_are_both_kept()
+    {
+        var packages = new List<(string, string, string, string, string, string?)>
+        {
+            ("oem1.inf", Repo + @"b.inf_amd64_1\b.inf", "Acme", "Net", "1.0.0.0", null),
+            ("oem2.inf", Repo + @"b.inf_amd64_2\b.inf", "Acme", "Net", "2.0.0.0", null),
+        };
+        Assert.Empty(DriverStoreCleaner.Pick(packages, [], _ => 1));
+    }
+
+    [Fact]
+    public void Cleanup_is_offered_only_after_a_later_boot()
+    {
+        var boot = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+        Assert.False(DriverStoreCleaner.BootedSince(boot, boot));
+        Assert.False(DriverStoreCleaner.BootedSince(boot, boot.AddSeconds(30))); // uptime drift, same boot
+        Assert.True(DriverStoreCleaner.BootedSince(boot, boot.AddHours(3)));
     }
 
     [Fact]

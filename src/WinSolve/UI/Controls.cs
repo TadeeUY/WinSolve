@@ -408,6 +408,21 @@ public sealed class TaskRunnerView : TableLayoutPanel
     /// <summary>Runs catalog tasks in order.</summary>
     public Task<bool> RunTasksAsync(IReadOnlyList<SystemTask> tasks, Action<TaskContext>? done = null)
     {
+        // Risky tasks always ask (default No), whatever the confirmation setting; declined ones are skipped.
+        static string? WarningOf(SystemTask t)
+        {
+            // A warning that can't be worked out still asks, with the task's description.
+            try { return t.ConfirmWarning?.Invoke(); }
+            catch { return t.Description; }
+        }
+        tasks = tasks.Where(t => WarningOf(t) is not { } warning
+            || Loc.Show(FindForm(), Loc.T(t.Title) + "\n\n" + Loc.T(warning) + "\n\n" + Loc.T("Continue?"), "WinSolve",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes).ToList();
+        if (tasks.Count == 0)
+        {
+            Log("Canceled.");
+            return Task.FromResult(false);
+        }
         return RunAsync(tasks.Count == 1 ? tasks[0].Title : $"Running {tasks.Count} tasks", async (log, progress, ct) =>
         {
             var ctx = new TaskContext(log, ct);

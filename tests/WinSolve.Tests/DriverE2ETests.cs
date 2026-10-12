@@ -24,7 +24,7 @@ public sealed class E2EFactAttribute : FactAttribute
 [Trait("Category", "E2E")]
 public class DriverE2ETests(ITestOutputHelper output)
 {
-    // Two versions of the same test driver package, staged by the workflow before the tests.
+    // Three versions (1.0, 2.0, 3.0) of the same test driver package, staged by the workflow before the tests.
     private const string TestInf = "winsolvetest.inf";
 
     private static List<(string Inf, string Original, string Version)> StagedTestPackages()
@@ -49,22 +49,26 @@ public class DriverE2ETests(ITestOutputHelper output)
     }
 
     [E2EFact]
-    public async Task Older_copy_of_a_driver_is_found_and_removed_and_the_newest_stays()
+    public async Task Oldest_copy_of_a_driver_is_removed_and_the_newest_two_stay()
     {
         var staged = StagedTestPackages();
         foreach (var p in staged) output.WriteLine($"Staged: {p.Inf} {p.Version} {p.Original}");
-        Assert.True(staged.Count >= 2, "The workflow should have staged two versions of the test driver.");
-        var newest = staged.MaxBy(p => Version.Parse(p.Version));
+        Assert.True(staged.Count >= 3, "The workflow should have staged three versions of the test driver.");
+        // The newest and the previous version stay (rollback); only 1.0 is old enough to remove.
+        var kept = staged.OrderByDescending(p => Version.Parse(p.Version)).Take(2).Select(p => p.Inf).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var oldest = staged.MinBy(p => Version.Parse(p.Version));
+        Assert.Equal("1.0.0.0", oldest.Version);
 
         var old = (await DriverStoreCleaner.FindAsync()).Where(d => d.OriginalName.Equals(TestInf, StringComparison.OrdinalIgnoreCase)).ToList();
-        Assert.Equal(staged.Count - 1, old.Count);
-        Assert.DoesNotContain(old, d => d.Inf.Equals(newest.Inf, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(staged.Count - 2, old.Count);
+        Assert.Contains(old, d => d.Inf.Equals(oldest.Inf, StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(old, d => kept.Contains(d.Inf));
 
         await DriverStoreCleaner.DeleteAsync(old, output.WriteLine, default);
 
         var left = StagedTestPackages();
-        Assert.Single(left);
-        Assert.Equal(newest.Inf, left[0].Inf, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(2, left.Count);
+        Assert.All(left, p => Assert.Contains(p.Inf, kept));
         Assert.DoesNotContain(await DriverStoreCleaner.FindAsync(), d => d.OriginalName.Equals(TestInf, StringComparison.OrdinalIgnoreCase));
     }
 

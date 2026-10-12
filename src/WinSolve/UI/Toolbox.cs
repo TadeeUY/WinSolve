@@ -1013,9 +1013,17 @@ internal sealed class OldDriversDialog : ToolDialog
         }
     }
 
-    /// <summary>After a driver update: offers the cleanup when there's something worth removing.</summary>
-    public static async Task OfferAfterUpdateAsync(IWin32Window owner)
+    /// <summary>
+    /// After a driver update: the previous versions are the rollback until a restart proves the
+    /// new drivers work, so the cleanup is only remembered here and offered after the restart.
+    /// </summary>
+    public static void OfferAfterUpdate() => DriverStoreCleaner.MarkCleanupPending();
+
+    /// <summary>After the restart that followed a driver update: offers the cleanup when there's something worth removing.</summary>
+    public static async Task OfferIfRebootedAsync(IWin32Window owner)
     {
+        if (!DriverStoreCleaner.IsCleanupDue()) return;
+        DriverStoreCleaner.ClearCleanupPending();
         try
         {
             var old = await DriverStoreCleaner.FindAsync();

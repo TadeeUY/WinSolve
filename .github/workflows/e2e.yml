@@ -32,15 +32,16 @@ jobs:
           dotnet build src/WinSolve.Setup/WinSolve.Setup.csproj -c Release -p:AppExe=${{ github.workspace }}/out/app/WinSolve.exe -o out/setup
           New-Item -ItemType Directory -Force e2e | Out-Null
 
-      - name: Stage two versions of a test driver
+      - name: Stage three versions of a test driver
         run: |
-          # A test-signed, device-less driver package in two versions (1.0 and 2.0) of the same INF,
-          # so the "old drivers" tool has something real to find and remove.
+          # A test-signed, device-less driver package in three versions (1.0, 2.0 and 3.0) of the same INF,
+          # so the "old drivers" tool has something real to find and remove (it keeps the newest and
+          # the previous version for rollback, so only 1.0 is removed).
           $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=WinSolve Test Driver" -CertStoreLocation Cert:\LocalMachine\My
           Export-Certificate -Cert $cert -FilePath e2e\testdriver.cer | Out-Null
           Import-Certificate -FilePath e2e\testdriver.cer -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
           Import-Certificate -FilePath e2e\testdriver.cer -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
-          foreach ($v in "1.0.0.0", "2.0.0.0") {
+          foreach ($v in "1.0.0.0", "2.0.0.0", "3.0.0.0") {
             $dir = "e2e\driver-$v"
             New-Item -ItemType Directory -Force $dir | Out-Null
           @"

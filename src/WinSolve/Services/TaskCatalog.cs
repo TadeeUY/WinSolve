@@ -284,22 +284,15 @@ public static class TaskCatalog
         {
             Id = "repair-chkdsk-reboot", Category = TaskCategory.Repair, NeedsReboot = true,
             Title = "Repair the system drive on restart",
-            Description = "Schedules chkdsk /f /r for the next boot. Can take a long time on large drives.",
-            Run = async ctx =>
-            {
-                // chkdsk's exit code here means "scheduled / volume in use", not failure.
-                await Cmd(ctx, $"echo Y| chkdsk {SystemDrive} /f /r", check: false);
-                // The Y answer only works on English Windows (Spanish expects S, German J...).
-                // Marking the volume dirty guarantees at least a /f check at boot on any language.
-                await Cmd(ctx, $"fsutil dirty set {SystemDrive}");
-                ctx.RebootRecommended = true;
-            },
+            Description = "Checks the drive's health, then schedules chkdsk /f (file system repair) for the next boot. Can take a while on large drives.",
+            Run = RepairSystemDriveOnRestart,
         },
         new()
         {
             Id = "repair-windows-update", Category = TaskCategory.Repair, NeedsReboot = true,
             Title = "Reset Windows Update",
             Description = "Stops the update services, renames SoftwareDistribution and catroot2 and restarts them. Fixes stuck or failing updates.",
+            ConfirmWarning = () => "Updates already downloaded are downloaded again and the update history in Settings starts empty. Don't run it while Windows is installing updates.",
             Run = async ctx =>
             {
                 string[] services = ["wuauserv", "bits", "cryptsvc", "msiserver"];
@@ -433,8 +426,16 @@ public static class TaskCatalog
             Id = "net-reset-stack", Category = TaskCategory.Network, NeedsReboot = true,
             Title = "Reset network stack (Winsock + TCP/IP)",
             Description = "Deep network repair: resets Winsock, TCP/IP, the ARP cache and NetBIOS. Requires a restart.",
+            ConfirmWarning = NetworkResetWarning,
             Run = async ctx =>
             {
+                // Never reset without a copy of the settings it erases.
+                if (await BackupNetworkSettings(ctx) is null)
+                {
+                    ctx.Log("  The network settings could not be saved, so nothing was reset.");
+                    ctx.CommandErrors++;
+                    return;
+                }
                 await Run(ctx, "netsh.exe", "winsock reset");
                 // These often report a harmless "Access is denied" on one registry key.
                 await Run(ctx, "netsh.exe", "int ip reset", check: false);
@@ -462,6 +463,104 @@ public static class TaskCatalog
             Run = ctx => Ps(ctx, "Start-MpScan -ScanType QuickScan; $t = Get-MpThreatDetection; if ($t) { \"Threats detected: $($t.Count). Open Windows Security for details.\" } else { 'No threats found.' }"),
         },
     ];
+
+    // ───────────── Network reset safety ─────────────
+
+    /// <summary>Adapters with a manually set IPv4 address: "Ethernet (192.168.1.10, gateway 192.168.1.1, DNS 1.1.1.1)".</summary>
+    public static List<string> StaticIpv4Adapters()
+        => Wmi.Query("SELECT Description, IPAddress, DefaultIPGateway, DNSServerSearchOrder FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = TRUE AND DHCPEnabled = FALSE")
+            .Select(a =>
+            {
+                var ipv4 = (a.Get<string[]>("IPAddress") ?? []).Where(ip => ip.Contains('.')).ToList();
+                if (ipv4.Count == 0) return null;
+                var gateway = string.Join(" ", a.Get<string[]>("DefaultIPGateway") ?? []);
+                var dns = string.Join(" ", a.Get<string[]>("DNSServerSearchOrder") ?? []);
+                return $"{a.Str("Description")} ({string.Join(" ", ipv4)}" + (gateway.Length > 0 ? $", gateway {gateway}" : "") + (dns.Length > 0 ? $", DNS {dns}" : "") + ")";
+            })
+            .OfType<string>()
+            .ToList();
+
+    private static string NetworkResetWarning()
+    {
+        var statics = StaticIpv4Adapters();
+        var text = "Every manual network setting is lost: static IP addresses, gateways and DNS servers go back to automatic (DHCP). VPN clients, firewalls and security software that hook into the network may need to be reinstalled. The current settings are saved first in ProgramData\\WinSolve\\NetworkBackup.";
+        return statics.Count == 0 ? text
+            : "This PC uses a static IP address. Write these settings down, you will have to enter them again after the reset:\n" +
+              string.Join("\n", statics.Select(a => "• " + a)) + "\n\n" + text;
+    }
+
+    /// <summary>
+    /// Saves the network configuration (netsh interface dump, IP and DNS settings as JSON) to
+    /// ProgramData\WinSolve\NetworkBackup\(time). Returns the folder, or null if it couldn't be saved.
+    /// </summary>
+    private static async Task<string?> BackupNetworkSettings(TaskContext ctx)
+    {
+        try
+        {
+            var folder = SafePath.CreateAdminOnlyFolder(Path.Combine("NetworkBackup", DateTime.Now.ToString("yyyy-MM-dd_HHmmss")));
+            var dump = Path.Combine(folder, "netsh-interface-dump.txt");
+            var ip = Path.Combine(folder, "ip-configuration.json");
+            var dns = Path.Combine(folder, "dns-servers.json");
+            ctx.Log("> Saving the current network settings...");
+            await ProcessRunner.CmdAsync($"netsh interface dump > \"{dump}\"", l => ctx.Log("  " + l), ctx.Token);
+            await ProcessRunner.PowerShellAsync($$$"""
+                Get-NetIPConfiguration -Detailed | Select-Object InterfaceAlias, InterfaceIndex, InterfaceDescription,
+                    @{n='Dhcp';e={"$($_.NetIPv4Interface.Dhcp)"}}, @{n='IPv4';e={@($_.IPv4Address | ForEach-Object { "$($_.IPAddress)/$($_.PrefixLength)" })}},
+                    @{n='IPv6';e={@($_.IPv6Address | ForEach-Object { "$($_.IPAddress)/$($_.PrefixLength)" })}},
+                    @{n='Gateway';e={@($_.IPv4DefaultGateway | ForEach-Object { "$($_.NextHop)" })}}, @{n='Dns';e={@($_.DNSServer | ForEach-Object { $_.ServerAddresses })}} |
+                    ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -LiteralPath '{{{ip.Replace("'", "''")}}}'
+                Get-DnsClientServerAddress | Select-Object InterfaceAlias, InterfaceIndex, AddressFamily, ServerAddresses |
+                    ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -LiteralPath '{{{dns.Replace("'", "''")}}}'
+                """, l => ctx.Log("  " + l), ctx.Token);
+            if (!File.Exists(dump) || new FileInfo(dump).Length == 0)
+            {
+                ctx.Log("  netsh could not export the network configuration.");
+                return null;
+            }
+            foreach (var adapter in StaticIpv4Adapters()) ctx.Log($"  Static IP settings that the reset will remove: {adapter}");
+            ctx.Log($"  Network settings saved in {folder}");
+            Logger.Write($"Network settings saved before the network reset: {folder}");
+            return folder;
+        }
+        catch (Exception ex)
+        {
+            ctx.Log($"  Could not save the network settings: {ex.Message}");
+            return null;
+        }
+    }
+
+    // ───────────── System drive repair ─────────────
+
+    /// <summary>
+    /// Schedules a file system repair (/f, not the long /r surface scan) of the Windows drive,
+    /// after checking its health: on a failing drive a repair at boot can make data loss worse,
+    /// so it's refused until the files are backed up. Reports whether it really got scheduled.
+    /// </summary>
+    private static async Task RepairSystemDriveOnRestart(TaskContext ctx)
+    {
+        var letter = SystemDrive[0];
+        (DiskInfo Disk, string Text, HealthLevel Level)? health = null;
+        try { health = await DiskRepairService.HealthOfDriveAsync(letter, ctx.Token); }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) { ctx.Log($"  Could not read the drive's health: {ex.Message}"); }
+
+        if (health is null)
+            ctx.Log("  The drive's health (S.M.A.R.T.) could not be read. Back up important files before restarting.");
+        else if (health.Value.Level == HealthLevel.Bad)
+        {
+            ctx.Log($"  Not scheduled. {health.Value.Text}");
+            ctx.Log("  Back up your files first. The Hardware page shows the drive's details and its repair options.");
+            ctx.CommandErrors++;
+            return;
+        }
+        else if (health.Value.Level == HealthLevel.Caution)
+            ctx.Log($"  WARNING: {health.Value.Text} Back up important files before restarting.");
+
+        if (await DiskRepairService.ScheduleAtRestartAsync(letter, surfaceScan: false, l => ctx.Log("  " + l), ctx.Token))
+            ctx.RebootRecommended = true;
+        else
+            ctx.CommandErrors++;
+    }
 
     /// <summary>
     /// Per-user app repairs: run as the signed-in user (with their own apps), not as the

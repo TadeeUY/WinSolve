@@ -71,6 +71,48 @@ public static class HardwareService
         return list;
     }
 
+    // ───────────── Safe automatic repair ─────────────
+
+    public enum DeviceRepairAction { None, RestartOnly, RestartThenReinstall }
+
+    public sealed record DeviceRepairPlan(ProblemDevice Device, DeviceRepairAction Action);
+
+    /// <summary>
+    /// Problem codes that restarting or reinstalling the device can fix. Others are left alone:
+    /// disabled (22, 29, 32), unplugged (45, 47), pending restart or removal (14, 21), blocked or
+    /// unsigned drivers (48, 52), resource conflicts (12)...
+    /// </summary>
+    public static readonly IReadOnlySet<int> RepairableCodes = new HashSet<int> { 1, 3, 10, 18, 19, 24, 28, 31, 37, 39, 40, 41, 43 };
+
+    /// <summary>
+    /// Device classes that are never removed, only restarted: removing a network adapter loses its
+    /// settings, and removing storage, input, system, display or USB controller devices can leave
+    /// the PC without a disk, keyboard, mouse, screen or USB ports until the next restart.
+    /// </summary>
+    public static readonly IReadOnlySet<string> RestartOnlyClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "Net", "SCSIAdapter", "HDC", "HDCController", "DiskDrive", "Volume", "VolumeSnapshot", "Keyboard", "Mouse", "HIDClass",
+        "System", "Processor", "Computer", "Battery", "Display", "USB", "SoftwareDevice", "Firmware", "SecurityDevices",
+    };
+
+    /// <summary>What the automatic repair may do for a device with this class and problem code.</summary>
+    public static DeviceRepairAction RepairActionFor(string deviceClass, int errorCode)
+    {
+        if (!RepairableCodes.Contains(errorCode)) return DeviceRepairAction.None;
+        return RestartOnlyClasses.Contains(deviceClass ?? "") ? DeviceRepairAction.RestartOnly : DeviceRepairAction.RestartThenReinstall;
+    }
+
+    /// <summary>The devices the automatic repair may act on, and how.</summary>
+    public static List<DeviceRepairPlan> PlanRepairs(IEnumerable<ProblemDevice> devices)
+        => devices.Select(d => new DeviceRepairPlan(d, RepairActionFor(d.Class, d.ErrorCode)))
+            .Where(p => p.Action != DeviceRepairAction.None)
+            .ToList();
+
+    /// <summary>One line per device for the confirmation: what will happen to it.</summary>
+    public static string DescribePlan(DeviceRepairPlan p) => p.Action == DeviceRepairAction.RestartThenReinstall
+        ? $"• {p.Device.Name} (code {p.Device.ErrorCode}): restart; if it still fails, remove it so Windows reinstalls it"
+        : $"• {p.Device.Name} (code {p.Device.ErrorCode}): restart only";
+
     /// <summary>Restarts a device (disable + enable) with pnputil.</summary>
     public static Task<ProcessResult> RestartDeviceAsync(string instanceId, Action<string> log, CancellationToken ct = default)
         => ProcessRunner.RunAsync("pnputil.exe", $"/restart-device \"{CheckId(instanceId)}\"", log, ct);
@@ -80,6 +122,7 @@ public static class HardwareService
         => instanceId.IndexOfAny(['"', '\r', '\n', '\0']) >= 0 ? throw new ArgumentException("Invalid device instance ID.") : instanceId;
 
     /// <summary>Removes the device so Windows reinstalls it on the next hardware scan.</summary>
+    /// <remarks>Callers decide with <see cref="RepairActionFor"/> whether removing is safe.</remarks>
     public static async Task ReinstallDeviceAsync(string instanceId, Action<string> log, CancellationToken ct = default)
     {
         await ProcessRunner.RunAsync("pnputil.exe", $"/remove-device \"{CheckId(instanceId)}\"", log, ct);

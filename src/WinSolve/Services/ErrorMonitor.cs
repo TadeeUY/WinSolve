@@ -195,13 +195,26 @@ public sealed partial class ErrorMonitor : IDisposable
                     NavigateTo = "drivers",
                 };
             case ("Microsoft-Windows-WindowsUpdateClient", 20):
+            {
+                // One failure is often temporary (Windows retries by itself): the full reset is only
+                // suggested after repeated failures.
+                var failures = RecentUpdateFailures();
+                if (!ShouldSuggestUpdateReset(failures, DateTime.Now))
+                    return new Alert
+                    {
+                        Kind = "wu", DedupeKey = "single", Severity = IssueSeverity.Info,
+                        Title = "A Windows update failed to install",
+                        Detail = "Windows usually retries it by itself. If it keeps failing, WinSolve will suggest resetting Windows Update.",
+                        NavigateTo = "winupdate",
+                    };
                 return new Alert
                 {
-                    Kind = "wu",
-                    Title = "A Windows update failed to install",
+                    Kind = "wu", DedupeKey = "repeated",
+                    Title = "Windows updates keep failing to install",
                     Detail = "Resetting the Windows Update components usually fixes this.",
                     FixTaskIds = ["repair-windows-update"],
                 };
+            }
             case ("Service Control Manager", 7031 or 7034):
             {
                 var service = Prop(rec, 0);
@@ -216,6 +229,46 @@ public sealed partial class ErrorMonitor : IDisposable
             default:
                 return null;
         }
+    }
+
+    /// <summary>Failures needed within <see cref="UpdateFailureWindow"/> before the Windows Update reset is suggested.</summary>
+    internal const int UpdateFailuresForReset = 3;
+    internal static readonly TimeSpan UpdateFailureWindow = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// True after repeated update failures: at least 3 within 7 days, where the same update
+    /// failing several times on the same day counts once (Windows retries within minutes).
+    /// </summary>
+    internal static bool ShouldSuggestUpdateReset(IEnumerable<(DateTime Time, string Update)> failures, DateTime now)
+        => failures.Where(f => f.Time <= now && now - f.Time <= UpdateFailureWindow)
+            .Select(f => (f.Time.Date, Update: f.Update.Trim().ToLowerInvariant()))
+            .Distinct()
+            .Count() >= UpdateFailuresForReset;
+
+    /// <summary>Windows Update installation failures (event 20) of the last 7 days: time and update.</summary>
+    private static List<(DateTime Time, string Update)> RecentUpdateFailures()
+    {
+        var list = new List<(DateTime, string)>();
+        try
+        {
+            var ms = (long)UpdateFailureWindow.TotalMilliseconds;
+            var query = $"*[System[Provider[@Name='Microsoft-Windows-WindowsUpdateClient'] and EventID=20 and TimeCreated[timediff(@SystemTime) &lt;= {ms}]]]";
+            using var reader = new EventLogReader(new EventLogQuery("System", PathType.LogName, query) { ReverseDirection = true });
+            for (var (rec, n) = (reader.ReadEvent(), 0); rec is not null && n < 500; rec = reader.ReadEvent(), n++)
+            {
+                using (rec)
+                {
+                    // Properties: error code, update title, update ID...
+                    var update = Prop(rec, 2) is { Length: > 0 } id ? id : Prop(rec, 1);
+                    list.Add((rec.TimeCreated ?? DateTime.Now, update));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Write($"Could not read Windows Update failures: {ex.Message}");
+        }
+        return list;
     }
 
     private void CheckSinceLastRun()
