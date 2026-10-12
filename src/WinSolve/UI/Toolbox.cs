@@ -246,7 +246,7 @@ internal sealed class LockedFileDialog : ToolDialog
         Theme.EmptyState(_grid, "Choose a file or folder to see which programs are using it.");
         AddRow(Theme.InCard(_grid), fill: true);
         AddRow(Theme.Row(
-            Theme.Button("Close selected program", (_, _) => CloseSelected(), glyph: ""),
+            Theme.Button("Close selected program", async (_, _) => await CloseSelected(), glyph: ""),
             Theme.Button("Delete at next restart", (_, _) => DeleteOnRestart(), glyph: "")));
     }
 
@@ -279,7 +279,13 @@ internal sealed class LockedFileDialog : ToolDialog
             var procs = LockFinder.Find(_files);
             foreach (var p in procs)
             {
-                var i = _grid.Rows.Add(p.Name + (p.IsService ? " (service)" : ""), p.Pid, p.Path ?? "");
+                var tag = LockFinder.CanKill(p) switch
+                {
+                    KillVerdict.Service => " (service)",
+                    KillVerdict.Critical => " (Windows)",
+                    _ => "",
+                };
+                var i = _grid.Rows.Add(p.Name + Loc.T(tag), p.Pid, p.Path ?? "");
                 _grid.Rows[i].Tag = p;
             }
             Status.Text = procs.Count == 0 ? Loc.T("No program is using it right now. If it still can't be deleted, try 'Delete at next restart'.")
@@ -291,14 +297,34 @@ internal sealed class LockedFileDialog : ToolDialog
         }
     }
 
-    private void CloseSelected()
+    private async Task CloseSelected()
     {
         if (_grid.CurrentRow?.Tag is not LockingProcess p) return;
-        if (p.IsService)
+        if (p.ProcessName.Length == 0 && p.Pid != Environment.ProcessId)
         {
-            // Services often share one process (svchost) with other services: killing it stops them all.
-            Tell("This is a Windows service, often sharing its process with other services, so WinSolve won't close it. Use 'Delete at next restart' instead.", warning: true);
+            // It had already exited (or couldn't be identified) when the list was made.
+            Tell("That program has closed or changed since the list was made. Check the refreshed list and try again.", warning: true);
+            Scan();
             return;
+        }
+        switch (LockFinder.CanKill(p))
+        {
+            case KillVerdict.Service:
+                // Services often share one process (svchost) with other services: killing it stops them all.
+                Tell("This is a Windows service, often sharing its process with other services, so WinSolve won't close it. Use 'Delete at next restart' instead.", warning: true);
+                return;
+            case KillVerdict.Critical:
+                Tell($"{p.Name} is a critical part of Windows. Closing it could crash the PC (blue screen) or sign you out, so WinSolve won't do it. Use 'Delete at next restart' instead.", warning: true);
+                return;
+            case KillVerdict.Self:
+                Tell("That is WinSolve itself. Close the window or tool in WinSolve that uses the file instead.", warning: true);
+                return;
+            case KillVerdict.Explorer:
+                // Killing Explorer leaves no taskbar or desktop; restarting it releases the file and brings them back.
+                if (!Ask("Windows Explorer (the taskbar, desktop and folder windows) is using it.\n\nRestart Explorer instead of closing it? Open folder windows will close.", danger: true)) return;
+                await TaskCatalog.ExplorerRestart(new TaskContext(Logger.Write, default));
+                Scan();
+                return;
         }
         if (!Ask($"Close {p.Name}? Unsaved work in it will be lost.", danger: true)) return;
         try
@@ -309,9 +335,18 @@ internal sealed class LockedFileDialog : ToolDialog
                 Tell("That program belongs to another user signed in to this PC, so WinSolve won't close it.", warning: true);
                 return;
             }
+            // Hold a handle so the PID can't be reused, then make sure it is still the same program.
+            _ = proc.SafeHandle;
+            if (!LockFinder.IsSameProcess(proc, p))
+            {
+                Tell("That program has closed or changed since the list was made. Check the refreshed list and try again.", warning: true);
+                Scan();
+                return;
+            }
             proc.Kill(entireProcessTree: false);
             proc.WaitForExit(5000);
         }
+        catch (ArgumentException) { /* already closed */ }
         catch (Exception ex) { Tell(ex.Message, warning: true); }
         Scan();
     }
@@ -606,10 +641,12 @@ internal sealed class ContextMenuDialog : ToolDialog
     public ContextMenuDialog() : base("", "Right-click menu cleanup",
         "Entries that programs added to the right-click menu (\"Show more options\" on Windows 11). Turning one off hides it; turn it back on any time.", new Size(900, 600))
     {
+        AddRow(Theme.Paragraph("Turning off a shell extension blocks the whole extension, not just its menu entry: its icon overlays (sync status badges), property pages and other Explorer features stop too. Entries from Windows and Microsoft are not listed."));
         Theme.StyleGrid(_grid);
         _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
         _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "on", HeaderText = "On", FillWeight = 30 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "name", HeaderText = "Entry", ReadOnly = true, FillWeight = 200 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "Type", ReadOnly = true, FillWeight = 80 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "where", HeaderText = "Shows on", ReadOnly = true, FillWeight = 100 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "src", HeaderText = "Program", ReadOnly = true, FillWeight = 120 });
         _grid.CellContentClick += (_, e) => { if (e.ColumnIndex == 0) _grid.CommitEdit(DataGridViewDataErrorContexts.Commit); };
@@ -620,8 +657,11 @@ internal sealed class ContextMenuDialog : ToolDialog
             var entry = (ContextMenuEntry)row.Tag!;
             try
             {
-                ContextMenuItems.SetEnabled(entry, row.Cells[0].Value is true);
-                Status.Text = Loc.T("Changed. Restart Explorer to see it.");
+                var on = row.Cells[0].Value is true;
+                ContextMenuItems.SetEnabled(entry, on);
+                Status.Text = Loc.T(entry.IsHandler && !on
+                    ? "Extension blocked: its icon overlays and other Explorer features are off too. Restart Explorer to see it."
+                    : "Changed. Restart Explorer to see it.");
             }
             catch (Exception ex)
             {
@@ -635,23 +675,33 @@ internal sealed class ContextMenuDialog : ToolDialog
         AddRow(Theme.InCard(_grid), fill: true);
         Buttons.Controls.Add(Theme.Button("Restart Explorer", async (_, _) =>
             await TaskCatalog.ExplorerRestart(new TaskContext(Logger.Write, default)), glyph: ""));
-        Shown += (_, _) => Fill();
+        Shown += async (_, _) => await FillAsync();
     }
 
-    private void Fill()
+    private async Task FillAsync()
     {
-        _filling = true;
-        _grid.Rows.Clear();
+        Status.Text = Loc.T("Loading...");
+        List<ContextMenuEntry> entries;
         try
         {
-            foreach (var e in ContextMenuItems.List())
-            {
-                var i = _grid.Rows.Add(e.Enabled, e.Name, Loc.T(e.Where), e.Source);
-                _grid.Rows[i].Tag = e;
-            }
+            // Checking the extensions' signatures can take a moment: off the UI thread.
+            entries = await Task.Run(ContextMenuItems.List);
         }
-        catch (Exception ex) { Status.Text = ex.Message; }
+        catch (Exception ex)
+        {
+            if (!IsDisposed) Status.Text = ex.Message;
+            return;
+        }
+        if (IsDisposed) return;
+        _filling = true;
+        _grid.Rows.Clear();
+        foreach (var e in entries)
+        {
+            var i = _grid.Rows.Add(e.Enabled, e.Name, Loc.T(e.IsHandler ? "Shell extension" : "Command"), Loc.T(e.Where), e.Source);
+            _grid.Rows[i].Tag = e;
+        }
         _filling = false;
+        Status.Text = "";
     }
 }
 

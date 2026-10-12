@@ -102,11 +102,67 @@ public static class DiskBench
 
 // ═══════════════════════ Locked files ═══════════════════════
 
-public sealed record LockingProcess(int Pid, string Name, string? Path, bool IsService);
+/// <summary>
+/// A program that has a file open. <see cref="ProcessName"/> is the image name without ".exe";
+/// <see cref="StartTime"/> is its creation time (FILETIME, UTC) as Restart Manager reported it,
+/// so a later kill can tell it apart from a new process that got the same PID.
+/// </summary>
+public sealed record LockingProcess(int Pid, string Name, string? Path, bool IsService,
+    string ProcessName = "", int ApplicationType = 0, long StartTime = 0);
+
+/// <summary>What the locked file finder may do with a program that holds a file.</summary>
+public enum KillVerdict
+{
+    Allowed,
+    /// <summary>A Windows service (often sharing svchost with others).</summary>
+    Service,
+    /// <summary>Part of Windows that must keep running (closing it crashes or signs out the PC).</summary>
+    Critical,
+    /// <summary>Windows Explorer: restart it instead of leaving the person without a taskbar.</summary>
+    Explorer,
+    /// <summary>WinSolve itself.</summary>
+    Self,
+}
 
 /// <summary>Finds which programs have a file open (Restart Manager, the API installers use).</summary>
 public static class LockFinder
 {
+    private const int RmService = 3, RmExplorer = 4, RmCritical = 1000;
+
+    /// <summary>Windows processes that are never closed: killing them blue-screens the PC, signs the user out or turns off protection.</summary>
+    public static readonly HashSet<string> CriticalProcessNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "System", "Idle", "smss", "csrss", "wininit", "winlogon", "lsass", "lsaiso", "services", "svchost", "dwm", "fontdrvhost",
+        "sihost", "ctfmon", "LogonUI", "Registry", "Memory Compression", "MsMpEng", "SecurityHealthService", "audiodg", "spoolsv",
+    };
+
+    /// <summary>Decides whether a program may be closed, from its image name and Restart Manager's application type.</summary>
+    public static KillVerdict CanKill(string processName, int applicationType, bool isService, int pid)
+    {
+        if (pid == Environment.ProcessId) return KillVerdict.Self;
+        var name = processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? processName[..^4] : processName;
+        if (pid is 0 or 4 || applicationType == RmCritical || name.Length == 0 || CriticalProcessNames.Contains(name)) return KillVerdict.Critical;
+        if (isService || applicationType == RmService) return KillVerdict.Service;
+        if (applicationType == RmExplorer || name.Equals("explorer", StringComparison.OrdinalIgnoreCase)) return KillVerdict.Explorer;
+        return KillVerdict.Allowed;
+    }
+
+    public static KillVerdict CanKill(LockingProcess p) => CanKill(p.ProcessName, p.ApplicationType, p.IsService, p.Pid);
+
+    /// <summary>
+    /// True when <paramref name="proc"/> is still the program the scan found: same image name and
+    /// same start time. A PID can be reused by a new process after the old one exits.
+    /// </summary>
+    public static bool IsSameProcess(Process proc, LockingProcess scanned)
+    {
+        if (scanned.StartTime == 0 || scanned.ProcessName.Length == 0) return false;
+        if (!proc.ProcessName.Equals(scanned.ProcessName, StringComparison.OrdinalIgnoreCase)) return false;
+        return IsSameStartTime(proc.StartTime.ToUniversalTime().ToFileTimeUtc(), scanned.StartTime);
+    }
+
+    /// <summary>Both start times within one second (they come from the same kernel value; this only absorbs rounding).</summary>
+    internal static bool IsSameStartTime(long fileTimeA, long fileTimeB) => Math.Abs(fileTimeA - fileTimeB) < TimeSpan.TicksPerSecond;
+
     public static List<LockingProcess> Find(IEnumerable<string> files)
     {
         var list = files.Take(5000).ToArray();
@@ -136,15 +192,18 @@ public static class LockFinder
             {
                 var info = infos[i];
                 string? exe = null;
+                var processName = "";
                 try
                 {
                     using var p = Process.GetProcessById(info.Process.dwProcessId);
+                    processName = p.ProcessName;
                     exe = p.MainModule?.FileName;
                 }
                 catch { }
+                var start = ((long)info.Process.ProcessStartTime.dwHighDateTime << 32) | (uint)info.Process.ProcessStartTime.dwLowDateTime;
                 result.Add(new LockingProcess(info.Process.dwProcessId,
                     string.IsNullOrEmpty(info.strAppName) ? $"PID {info.Process.dwProcessId}" : info.strAppName,
-                    exe, info.ApplicationType == 3 /* RmService */));
+                    exe, info.ApplicationType == RmService, processName, info.ApplicationType, start));
             }
         }
         finally
@@ -719,7 +778,8 @@ public static class ContextMenuItems
                     var clsid = (h.StartsWith('{') ? h : hk?.GetValue("") as string)?.Trim();
                     if (string.IsNullOrEmpty(clsid) || !clsid.StartsWith('{')) continue;
                     var (clsName, dll) = DescribeClsid(clsid);
-                    if (dll.Length == 0 || dll.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.Windows), StringComparison.OrdinalIgnoreCase)) continue;
+                    // Windows/Microsoft extensions are not offered, unless one is blocked already (so it can be turned back on).
+                    if (dll.Length == 0 || (!blocked.Contains(clsid) && IsWindowsComponent(dll))) continue;
                     entries.Add(new ContextMenuEntry
                     {
                         Name = clsName is { Length: > 0 } n ? n : h, Where = label, Source = ProgramOf(dll) ?? Path.GetFileName(dll),
@@ -747,7 +807,38 @@ public static class ContextMenuItems
         return (null, "");
     }
 
+    private static readonly string[] MicrosoftSigners = ["Microsoft Corporation", "Microsoft Windows", "Microsoft Windows Publisher"];
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> WindowsComponentCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Shell extensions that come with Windows or Microsoft Defender: in the Windows folder, in
+    /// Defender's folders, or signed by Microsoft. Blocking them could break Explorer features.
+    /// </summary>
+    private static bool IsWindowsComponent(string dll) => WindowsComponentCache.GetOrAdd(dll, d =>
+    {
+        var pd = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        string[] folders =
+        [
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Windows Defender"),
+            Path.Combine(pd, "Microsoft", "Windows Defender"),
+        ];
+        try
+        {
+            var full = Path.GetFullPath(d);
+            if (folders.Any(f => SafePath.IsSameOrInside(full, f))) return true;
+            return File.Exists(full) && Authenticode.IsSignedBy(full, MicrosoftSigners, out _);
+        }
+        catch { return false; }
+    });
+
+    /// <summary>
+    /// Marks a key WinSolve made in the user's classes to hide a machine-wide entry: 1 = WinSolve
+    /// created the key (it may delete it again), 2 = the key already existed (only our values are removed).
+    /// </summary>
     private const string OverrideMarker = "WinSolveOverride";
+    private const int CreatedByWinSolve = 1, ExistedBefore = 2;
+    private const string BlockedByWinSolve = "WinSolve";
 
     private static bool HasUserOverride(string path)
     {
@@ -755,6 +846,15 @@ public static class ContextMenuItems
         using var key = classes?.OpenSubKey(path);
         return key?.GetValue(OverrideMarker) is not null;
     }
+
+    /// <summary>
+    /// What turning a machine-wide entry back on removes from the user's override key: the whole
+    /// key only when WinSolve created it and nothing else was added to it since; otherwise just
+    /// WinSolve's own values.
+    /// </summary>
+    internal static bool MayDeleteOverrideKey(object? marker, IEnumerable<string> valueNames, int subKeyCount)
+        => marker is int m && m == CreatedByWinSolve && subKeyCount == 0
+           && valueNames.All(v => v.Equals(OverrideMarker, StringComparison.OrdinalIgnoreCase) || v.Equals("LegacyDisable", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Turns an entry on or off for the signed-in user only; other users' menus don't change.</summary>
     public static void SetEnabled(ContextMenuEntry e, bool enabled)
@@ -766,11 +866,16 @@ public static class ContextMenuItems
             using (var key = user.CreateSubKey(BlockedKey))
             {
                 if (enabled) key.DeleteValue(clsid, throwOnMissingValue: false);
-                else key.SetValue(clsid, "WinSolve", RegistryValueKind.String);
+                else if (key.GetValue(clsid) is null) key.SetValue(clsid, BlockedByWinSolve, RegistryValueKind.String);
             }
             if (enabled)
                 using (var machine = Registry.LocalMachine.OpenSubKey(BlockedKey, writable: true))
-                    if (machine?.GetValue(clsid) as string == "WinSolve") machine.DeleteValue(clsid, throwOnMissingValue: false);
+                {
+                    var value = machine?.GetValue(clsid);
+                    if (value as string == BlockedByWinSolve) machine!.DeleteValue(clsid, throwOnMissingValue: false);
+                    else if (value is not null)
+                        throw new InvalidOperationException("This extension is blocked for all users by a policy or another program. WinSolve leaves that setting alone.");
+                }
         }
         else if (e.Hive == RegistryHive.CurrentUser)
         {
@@ -786,16 +891,33 @@ public static class ContextMenuItems
             using var classes = OpenClasses(RegistryHive.CurrentUser, writable: true) ?? throw new InvalidOperationException("The user's settings are not available.");
             if (enabled)
             {
-                if (HasUserOverride(e.RegistryPath)) classes.DeleteSubKeyTree(e.RegistryPath, throwOnMissingSubKey: false);
+                var deleteKey = false;
+                using (var key = classes.OpenSubKey(e.RegistryPath, writable: true))
+                {
+                    if (key?.GetValue(OverrideMarker) is { } marker)
+                    {
+                        deleteKey = MayDeleteOverrideKey(marker, key.GetValueNames(), key.SubKeyCount);
+                        if (!deleteKey)
+                        {
+                            // The key was there before WinSolve (or holds more now): only take our values back out.
+                            key.DeleteValue("LegacyDisable", throwOnMissingValue: false);
+                            key.DeleteValue(OverrideMarker, throwOnMissingValue: false);
+                        }
+                    }
+                }
+                if (deleteKey) classes.DeleteSubKey(e.RegistryPath, throwOnMissingSubKey: false);
                 using var machine = OpenClasses(RegistryHive.LocalMachine, writable: true);
                 using var legacy = machine?.OpenSubKey(e.RegistryPath, writable: true);
                 legacy?.DeleteValue("LegacyDisable", throwOnMissingValue: false); // set by older versions
             }
             else
             {
+                bool existed;
+                using (var before = classes.OpenSubKey(e.RegistryPath)) existed = before is not null;
                 using var key = classes.CreateSubKey(e.RegistryPath, writable: true);
+                if (key.GetValue(OverrideMarker) is null)
+                    key.SetValue(OverrideMarker, existed ? ExistedBefore : CreatedByWinSolve, RegistryValueKind.DWord);
                 key.SetValue("LegacyDisable", "", RegistryValueKind.String);
-                key.SetValue(OverrideMarker, 1, RegistryValueKind.DWord);
             }
         }
         e.Enabled = enabled;
