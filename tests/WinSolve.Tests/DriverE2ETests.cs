@@ -145,3 +145,32 @@ public class DriverE2ETests(ITestOutputHelper output)
         Assert.Equal(expected, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)), ignoreCase: true);
     }
 }
+
+[Trait("Category", "E2E")]
+public class ReportE2ETests(ITestOutputHelper output)
+{
+    [E2EFact]
+    public async Task Pc_report_is_saved_as_a_pdf_with_the_rating()
+    {
+        var language = AppSettings.Current.Language;
+        AppSettings.Current.Language = "es";
+        Localization.Loc.Reset();
+        try
+        {
+            var file = await PcReport.CreateAsync(output.WriteLine, default);
+            output.WriteLine(file);
+            Assert.EndsWith(".pdf", file);
+            var bytes = await File.ReadAllBytesAsync(file);
+            Assert.True(bytes.Length > 10_000, $"{bytes.Length} bytes");
+            Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
+            // Kept for the workflow to publish as a sample (it is a test VM, nothing private).
+            var copy = Environment.GetEnvironmentVariable("WINSOLVE_E2E_OUT");
+            if (!string.IsNullOrEmpty(copy)) File.Copy(file, Path.Combine(copy, "pc-report.pdf"), overwrite: true);
+        }
+        finally
+        {
+            AppSettings.Current.Language = language;
+            Localization.Loc.Reset();
+        }
+    }
+}

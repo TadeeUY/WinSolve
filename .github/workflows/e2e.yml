@@ -79,8 +79,18 @@ jobs:
       - name: Driver tests on real Windows
         env:
           WINSOLVE_E2E: "1"
+          WINSOLVE_E2E_OUT: ${{ github.workspace }}\e2e
         run: |
           dotnet test tests/WinSolve.Tests/WinSolve.Tests.csproj -c Release --filter "Category=E2E" --logger "console;verbosity=detailed"
+
+      - name: Sample PC report (base64, to read it from the log)
+        if: success() || failure()
+        run: |
+          if (Test-Path e2e\pc-report.pdf) {
+            "----- PC REPORT PDF BEGIN -----"
+            [Convert]::ToBase64String([IO.File]::ReadAllBytes("e2e\pc-report.pdf")) -split '(.{1,4000})' | Where-Object { $_ }
+            "----- PC REPORT PDF END -----"
+          }
 
       - name: Installer - only me
         if: success() || failure()
@@ -105,6 +115,7 @@ jobs:
         with:
           name: e2e-results
           path: |
+            e2e/*.pdf
             e2e/*.png
             e2e/*.log
             e2e/*.txt
