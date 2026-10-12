@@ -18,6 +18,9 @@ public sealed class HardwareProfile
     public bool HasDedicatedGpu { get; init; }
     public bool IsWindows11 { get; init; }
 
+    /// <summary>A battery was found (laptop, or a desktop on a UPS). Hibernation then stays on.</summary>
+    public bool HasBattery { get; init; }
+
     public bool LowRam => RamGb <= 8.5;
 
     public string Describe()
@@ -83,9 +86,24 @@ public sealed class HardwareProfile
             GpuVendor = vendor,
             HasDedicatedGpu = dedicated is not null,
             IsWindows11 = Environment.OSVersion.Version.Build >= 22000,
+            HasBattery = hasBattery || PowerStatusReportsBattery(),
         };
         return _cached;
     }
+
+    /// <summary>GetSystemPowerStatus: BatteryFlag 128 = no system battery, 255 = unknown.</summary>
+    private static bool PowerStatusReportsBattery()
+        => GetSystemPowerStatus(out var status) && status.BatteryFlag is not (128 or 255);
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct SYSTEM_POWER_STATUS
+    {
+        public byte ACLineStatus, BatteryFlag, BatteryLifePercent, SystemStatusFlag;
+        public int BatteryLifeTime, BatteryFullLifeTime;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS status);
 }
 
 /// <summary>What will be done, and why.</summary>
@@ -123,12 +141,8 @@ public static class OptimizationPlanner
             plan.Reasons.Add(hw.SystemOnSsd
                 ? "SSD detected: TRIM is used instead of defragmentation."
                 : "Hard disk detected: the system drive will be defragmented.");
-
-            if (hw.LowRam)
-            {
-                W("perf-background-apps");
-                plan.Reasons.Add($"Only {hw.RamGb:0} GB of RAM: background apps are blocked to free memory.");
-            }
+            // Blocking background apps is left to the Tweaks page: it stops notifications, mail and
+            // calendar sync of Store apps, which nobody should get without choosing it.
         }
 
         if (level == OptimizationLevel.Maximum)
@@ -151,8 +165,15 @@ public static class OptimizationPlanner
             if (device == DeviceKind.PC)
             {
                 T("perf-ultimate-power-plan");
-                W("perf-fast-startup-off", "sys-hibernation-off");
-                plan.Reasons.Add("Desktop: Ultimate Performance power plan; hibernation and Fast Startup are disabled.");
+                // Only when there really is no battery (even if "Desktop" was chosen): on battery
+                // power, hibernation is what saves the work when it runs out.
+                if (!hw.HasBattery)
+                {
+                    W("perf-fast-startup-off", "sys-hibernation-off");
+                    plan.Reasons.Add("Desktop: Ultimate Performance power plan; hibernation and Fast Startup are disabled.");
+                }
+                else
+                    plan.Reasons.Add("Desktop: Ultimate Performance power plan. A battery was found, so hibernation and Fast Startup stay on.");
             }
             else
             {

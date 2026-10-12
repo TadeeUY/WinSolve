@@ -2,7 +2,10 @@ using WinSolve.Core;
 
 namespace WinSolve.Services;
 
-public sealed record OptimizeSummary(int TasksOk, int TasksFailed, int TweaksApplied, long FreedBytes, bool RebootRecommended, bool ExplorerRestarted);
+/// <param name="ExplorerRestartSuggested">Some tweaks only fully show after Explorer restarts (the user is asked; it is never restarted automatically).</param>
+/// <param name="ProtectionTurnedOnDrive">Drive on which System Protection had to be turned on for the restore point, or null.</param>
+public sealed record OptimizeSummary(int TasksOk, int TasksFailed, int TweaksApplied, long FreedBytes, bool RebootRecommended,
+    bool ExplorerRestartSuggested, string? ProtectionTurnedOnDrive = null);
 
 /// <summary>One-click optimization: runs the tasks and tweaks of the selected profile.</summary>
 public static class OneClickOptimizer
@@ -29,10 +32,16 @@ public static class OneClickOptimizer
         var ids = AppSettings.Current.OneClickTweaks;
         return ids is null
             ? TweakCatalog.All.Where(t => t.Recommended)
-            : TweakCatalog.All.Where(t => ids.Contains(t.Id));
+            : TweakCatalog.All.Where(t => ids.Contains(t.Id) && t.SafeIsAvailable());
     }
 
-    public static async Task<OptimizeSummary> RunAsync(Action<string> log, Action<int, int> progress, CancellationToken ct)
+    /// <summary>
+    /// Runs the optimization. When the restore point can't be created,
+    /// <paramref name="continueWithoutRestorePoint"/> is asked (on the caller's side, e.g. the UI
+    /// thread); answering no cancels the run before anything changes.
+    /// </summary>
+    public static async Task<OptimizeSummary> RunAsync(Action<string> log, Action<int, int> progress, CancellationToken ct,
+        Func<string, bool>? continueWithoutRestorePoint = null)
     {
         log("Measuring the system before optimizing...");
         var run = new OptimizationRun
@@ -52,10 +61,22 @@ public static class OneClickOptimizer
         int total = tasks.Count + (tweaks.Count > 0 ? 1 : 0) + (AppSettings.Current.CreateRestorePoint ? 1 : 0);
         int step = 0, ok = 0, failed = 0, applied = 0;
         bool explorer = false;
+        string? protectionDrive = null;
 
         if (AppSettings.Current.CreateRestorePoint)
         {
-            await TaskCatalog.CreateRestorePoint(ctx, "WinSolve - before optimization");
+            var point = await TaskCatalog.CreateRestorePointAsync(ctx, "WinSolve - before optimization");
+            if (point.ProtectionTurnedOn) protectionDrive = point.Drive;
+            if (!point.Created)
+            {
+                var proceed = continueWithoutRestorePoint?.Invoke("Could not create a restore point. Continue without it?") ?? true;
+                if (!proceed)
+                {
+                    log("Stopped: nothing was changed because no restore point could be created.");
+                    throw new OperationCanceledException();
+                }
+                log("Continuing without a restore point.");
+            }
             progress(++step, total);
         }
 
@@ -108,10 +129,9 @@ public static class OneClickOptimizer
             progress(++step, total);
         }
 
-        if (explorer)
-        {
-            await TaskCatalog.ExplorerRestart(ctx);
-        }
+        // Never restart Explorer here (it closes open folder windows): tell it settings changed,
+        // and the page offers a restart at the end.
+        if (explorer) TaskCatalog.RefreshShell(ctx);
 
         log("Measuring the system after optimizing...");
         run.After = await OptimizationHistory.TakeAsync();
@@ -119,6 +139,6 @@ public static class OneClickOptimizer
         ActivityLog.Cleaned(ctx.FreedBytes, "one-click");
         OptimizationHistory.Add(run);
 
-        return new OptimizeSummary(ok, failed, applied, ctx.FreedBytes, ctx.RebootRecommended, explorer);
+        return new OptimizeSummary(ok, failed, applied, ctx.FreedBytes, ctx.RebootRecommended, explorer, protectionDrive);
     }
 }

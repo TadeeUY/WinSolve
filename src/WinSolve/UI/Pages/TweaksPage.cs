@@ -79,7 +79,7 @@ public sealed class TweaksPage : Page
     {
         var card = new StackCard();
         card.Add(Theme.Label(title, Theme.H2, caution ? Theme.Warn : Theme.Text), Theme.Paragraph(subtitle));
-        foreach (var t in TweakCatalog.All.Where(t => t.Group == group))
+        foreach (var t in TweakCatalog.All.Where(t => t.Group == group && t.SafeIsAvailable()))
         {
             var row = new TableLayoutPanel { ColumnCount = 3, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 1, 0, 1) };
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -181,18 +181,21 @@ public sealed class TweaksPage : Page
             ? $"{Loc.T(t.Title)}: {Loc.T(on ? "on" : "off")}"
             : Loc.T(t.Title);
         var warnings = work.Where(w => w.On && w.Tweak.Warning is not null).Select(w => $"{Loc.T(w.Tweak.Title)}: {Loc.T(w.Tweak.Warning)}").ToList();
+        var policyWarning = await Task.Run(() => ManagedPc.PolicyWarning(work.Select(w => w.Tweak).ToList()));
         var message = Loc.T($"Are you sure you want to apply these {work.Count} change(s)?")
                       + "\n\n- " + string.Join("\n- ", work.Select(w => Line(w.Tweak, w.On)))
                       + (warnings.Count > 0 ? "\n\n" + string.Join("\n", warnings) : "")
+                      + (policyWarning.Length > 0 ? "\n\n" + policyWarning : "")
                       + (AppSettings.Current.CreateRestorePoint ? "\n\n" + Loc.T("A restore point is created first, so you can go back.") : "");
         // Always asked, even with "confirm actions" turned off: this is the Save step itself.
-        if (Loc.Show(this, message, "Save tweaks", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        if (Loc.Show(this, message, "Save tweaks", MessageBoxButtons.YesNo, policyWarning.Length > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Question) != DialogResult.Yes) return;
 
-        bool explorer = false, reboot = false;
+        bool explorer = false, reboot = false, changed = false;
+        string? protectionDrive = null;
         RunDialog.Run(this, "Saving tweaks", async (log, progress, ct) =>
         {
             if (AppSettings.Current.CreateRestorePoint)
-                await TaskCatalog.CreateRestorePoint(new TaskContext(log, ct), "WinSolve - before tweaks");
+                await RestorePointOrAskAsync(log, ct, "WinSolve - before tweaks", drive => protectionDrive = drive);
             for (int i = 0; i < work.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
@@ -202,24 +205,51 @@ public sealed class TweaksPage : Page
                 {
                     await Task.Run(() => { if (on) t.Apply(); else t.Revert(); }, ct);
                     log($"OK  {t.Title}");
+                    changed = true;
                     explorer |= t.NeedsExplorerRestart;
                     reboot |= t.NeedsReboot;
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     log($"ERROR  {t.Title}: {ex.Message}");
                 }
                 progress(i + 1, work.Count);
             }
+            if (explorer) TaskCatalog.RefreshShell(new TaskContext(log, ct));
             log("Done.");
         });
 
-        _pending.Clear();
-        await RefreshStatesAsync(resetToggles: true);
+        if (protectionDrive is not null) Info(TaskCatalog.ProtectionTurnedOnMessage(protectionDrive));
+        // Stopped before anything changed (e.g. no restore point): keep the switches the user flipped.
+        await RefreshStatesAsync(resetToggles: changed);
         if (explorer && Loc.Show(this, "Restart Explorer now to see the changes?", "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             await TaskCatalog.ExplorerRestart(new TaskContext(Logger.Write, default));
         if (reboot) AskReboot(this);
     }
+
+    /// <summary>
+    /// Runs inside RunDialog's worker: creates the restore point and, if that fails, asks whether to
+    /// go on without one (default No; answering No cancels before anything changes).
+    /// </summary>
+    private async Task RestorePointOrAskAsync(Action<string> log, CancellationToken ct, string description, Action<string> protectionTurnedOn)
+    {
+        var r = await TaskCatalog.CreateRestorePointAsync(new TaskContext(log, ct), description);
+        if (r.ProtectionTurnedOn) protectionTurnedOn(r.Drive);
+        if (r.Created) return;
+        if (!AskFromWorker("Could not create a restore point. Continue without it?"))
+        {
+            log("Stopped: nothing was changed because no restore point could be created.");
+            throw new OperationCanceledException();
+        }
+        log("Continuing without a restore point.");
+    }
+
+    /// <summary>Asks a Yes/No question (default No) from a background thread, on the UI thread over the open RunDialog.</summary>
+    private bool AskFromWorker(string message) => !IsDisposed && (bool)Invoke(() =>
+    {
+        IWin32Window owner = Application.OpenForms.OfType<RunDialog>().LastOrDefault() ?? (IWin32Window)this;
+        return Loc.Show(owner, message, "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+    });
 
     private async Task RunSelectedAsync(bool undo)
     {
@@ -234,15 +264,18 @@ public sealed class TweaksPage : Page
         }
 
         var warnings = undo ? [] : work.Where(t => t.Warning is not null).Select(t => $"{Loc.T(t.Title)}: {Loc.T(t.Warning)}").ToList();
-        var message = (undo ? $"Undo {work.Count} tweak(s)?" : $"Run {work.Count} tweak(s)?") + "\n\n- " + string.Join("\n- ", work.Select(t => Loc.T(t.Title)))
-                      + (warnings.Count > 0 ? "\n\n" + string.Join("\n", warnings) : "");
-        if (!Confirm(message)) return;
+        var policyWarning = await Task.Run(() => ManagedPc.PolicyWarning(work));
+        var message = Loc.T(undo ? $"Undo {work.Count} tweak(s)?" : $"Run {work.Count} tweak(s)?") + "\n\n- " + string.Join("\n- ", work.Select(t => Loc.T(t.Title)))
+                      + (warnings.Count > 0 ? "\n\n" + string.Join("\n", warnings) : "")
+                      + (policyWarning.Length > 0 ? "\n\n" + policyWarning : "");
+        if (policyWarning.Length > 0 ? !ConfirmDanger(message) : !Confirm(message)) return;
 
         bool explorer = false, reboot = false;
+        string? protectionDrive = null;
         RunDialog.Run(this, undo ? "Undoing tweaks" : "Running tweaks", async (log, progress, ct) =>
         {
             if (!undo && AppSettings.Current.CreateRestorePoint)
-                await TaskCatalog.CreateRestorePoint(new TaskContext(log, ct), "WinSolve - before tweaks");
+                await RestorePointOrAskAsync(log, ct, "WinSolve - before tweaks", drive => protectionDrive = drive);
             for (int i = 0; i < work.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
@@ -255,15 +288,17 @@ public sealed class TweaksPage : Page
                     explorer |= t.NeedsExplorerRestart;
                     reboot |= t.NeedsReboot;
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     log($"ERROR  {t.Title}: {ex.Message}");
                 }
                 progress(i + 1, work.Count);
             }
+            if (explorer) TaskCatalog.RefreshShell(new TaskContext(log, ct));
             log("Done.");
         });
 
+        if (protectionDrive is not null) Info(TaskCatalog.ProtectionTurnedOnMessage(protectionDrive));
         RefreshBadges();
         if (explorer && Loc.Show(this, "Restart Explorer now to see the changes?", "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             await TaskCatalog.ExplorerRestart(new TaskContext(Logger.Write, default));
@@ -276,7 +311,7 @@ public sealed class TweaksPage : Page
     {
         var card = new StackCard();
         card.Add(Theme.Label("Customize preferences", Theme.H2), Theme.Paragraph("Applied when you select Save."));
-        foreach (var t in TweakCatalog.All.Where(t => t.Group == TweakGroup.Preference))
+        foreach (var t in TweakCatalog.All.Where(t => t.Group == TweakGroup.Preference && t.SafeIsAvailable()))
         {
             var row = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 2, 0, 2) };
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -317,20 +352,95 @@ public sealed class TweaksPage : Page
         Theme.Paragraph("The Ultimate Performance plan keeps the CPU at full clocks. Best on desktops; uses more power."),
         Theme.Row(
             Theme.Button("Add and activate Ultimate Performance", (_, _) => RunDialog.RunTasks(this, "Ultimate Performance", [TaskCatalog.Find("perf-ultimate-power-plan")!])),
-            Theme.Button("Remove Ultimate Performance", (_, _) => RunDialog.Run(this, "Removing Ultimate Performance", (log, _, ct) => PowerPlans.RemoveUltimateAsync(log, ct)))));
+            Theme.Button("Remove Ultimate Performance", (_, _) => RunDialog.Run(this, "Removing Ultimate Performance", (log, _, ct) => PowerPlans.RemoveUltimateAsync(log, ct))),
+            Theme.Button("Restore previous plan", (_, _) =>
+            {
+                if (!PowerPlans.HasSavedPlan)
+                {
+                    Info("There is no saved power plan: WinSolve hasn't switched plans on this PC (or the previous one is already back).");
+                    return;
+                }
+                RunDialog.Run(this, "Restoring the previous power plan", (log, _, ct) => PowerPlans.RestorePreviousAsync(log, ct));
+            })));
 
     // ───────────── DNS ─────────────
 
     private Control DnsCard() => new StackCard().Add(
         Theme.Label("DNS", Theme.H2),
-        Theme.Paragraph("Changes the DNS servers of every connected adapter. Cloudflare and Google are fast; Quad9 and the filtering options block malicious sites."),
+        Theme.Paragraph("Changes the DNS servers of the connected network adapters (never on a work domain network). The current settings are saved first; choose Default (DHCP) to put them back. Cloudflare and Google are fast; Quad9 and the filtering options block malicious sites."),
         _dnsCurrent,
-        Theme.Row(_dns, Theme.Button("Apply DNS", (_, _) =>
+        Theme.Row(_dns, Theme.Button("Apply DNS", async (_, _) => await ApplyDnsAsync(), primary: true)));
+
+    private bool _dnsBusy;
+
+    private async Task ApplyDnsAsync()
+    {
+        if (_dnsBusy) return;
+        _dnsBusy = true;
+        try
         {
             var provider = DnsService.Providers[Math.Max(0, _dns.SelectedIndex)];
-            RunDialog.Run(this, "Changing DNS", (log, _, ct) => DnsService.ApplyAsync(provider, log, ct));
-            _ = LoadDnsAsync();
-        }, primary: true)));
+            List<DnsAdapter> adapters;
+            Dictionary<string, DnsBackupEntry> backup;
+            try
+            {
+                adapters = await DnsService.GetAdaptersAsync();
+                backup = await Task.Run(DnsService.LoadBackup);
+            }
+            catch (Exception ex)
+            {
+                Info(Loc.T("Could not read the network adapters.") + "\n\n" + ex.Message);
+                return;
+            }
+
+            var domain = adapters.Where(a => a.Domain).ToList();
+            var eligible = adapters.Where(a => !a.Domain).ToList();
+            var domainNote = domain.Count == 0 ? ""
+                : "\n\n" + string.Format(Loc.T("Not changed, because they are on a network managed by your organization (domain): {0}"), string.Join(", ", domain.Select(a => a.Name)));
+            if (eligible.Count == 0)
+            {
+                Info(Loc.T("There is no connected network adapter whose DNS WinSolve can change.") + domainNote);
+                return;
+            }
+
+            string Servers(IEnumerable<string> s) => s.Any() ? string.Join(", ", s) : Loc.T("none");
+            List<DnsRestorePlan>? plans = null;
+            string message;
+            if (provider.IsDefault)
+            {
+                plans = eligible.Select(a => DnsService.PlanDefault(a, backup.GetValueOrDefault(a.Guid))).ToList();
+                var lines = plans.Select(p => p.Kind switch
+                {
+                    DnsRestoreKind.SetSaved => string.Format(Loc.T("{0}: back to its previous DNS servers ({1})"), p.Adapter.Name, Servers(p.Servers)),
+                    DnsRestoreKind.ResetToDhcp => string.Format(Loc.T("{0}: DNS servers from the router (DHCP)"), p.Adapter.Name),
+                    _ => string.Format(Loc.T("{0}: kept as it is ({1}). It has a static IP address, so without these servers it would have no DNS."), p.Adapter.Name, Servers(p.Adapter.V4.Concat(p.Adapter.V6))),
+                }).ToList();
+                if (plans.All(p => p.Kind == DnsRestoreKind.Keep))
+                {
+                    Info(Loc.T("Nothing to change:") + "\n\n- " + string.Join("\n- ", lines) + domainNote);
+                    return;
+                }
+                message = Loc.T("Restore the DNS settings of these adapters?") + "\n\n- " + string.Join("\n- ", lines) + domainNote;
+            }
+            else
+            {
+                message = string.Format(Loc.T("Change the DNS servers to {0} on these adapters?"), Loc.T(provider.Name))
+                          + "\n\n- " + string.Join("\n- ", eligible.Select(a => $"{a.Name} ({Servers(a.V4.Concat(a.V6))})"))
+                          + "\n\n" + Loc.T("Their current settings are saved first: choose Default (DHCP) later to put them back.")
+                          + domainNote;
+            }
+            if (Loc.Show(this, message, "DNS", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+            RunDialog.Run(this, "Changing DNS", (log, _, ct) => plans is not null
+                ? DnsService.RestoreAsync(plans, log, ct)
+                : DnsService.ApplyAsync(provider, eligible, log, ct));
+            await LoadDnsAsync();
+        }
+        finally
+        {
+            _dnsBusy = false;
+        }
+    }
 
     private async Task LoadDnsAsync()
     {
@@ -342,13 +452,30 @@ public sealed class TweaksPage : Page
 
     // ───────────── Windows Update ─────────────
 
-    private Control UpdatesCard() => new StackCard().Add(
-        Theme.Label("Windows Update", Theme.H2),
-        Theme.Paragraph("Security settings delay feature updates by a year and security updates by 4 days, skip drivers from Windows Update and avoid automatic restarts. You still get every security fix."),
-        Theme.Row(_wuSecurity, _wuDefault));
+    private const string HomeUpdateNote = "Windows Home ignores the update delay policies: on this PC only the driver and automatic restart settings take effect.";
+
+    private readonly Label _wuHomeNote = Theme.Label(HomeUpdateNote, Theme.Small, Theme.Warn);
+
+    private Control UpdatesCard()
+    {
+        _wuHomeNote.Visible = false;
+        return new StackCard().Add(
+            Theme.Label("Windows Update", Theme.H2),
+            Theme.Paragraph("Security settings delay feature updates by a year and security updates by 4 days, skip drivers from Windows Update and avoid automatic restarts. You still get every security fix."),
+            _wuHomeNote,
+            Theme.Row(_wuSecurity, _wuDefault));
+    }
 
     private void SetUpdatePolicy(bool security)
     {
+        var home = UpdatePolicy.IsHomeEdition;
+        var message = security
+            ? Loc.T("Apply the Windows Update security settings?") + "\n\n"
+              + Loc.T("Feature updates are delayed by a year and security updates by 4 days, drivers aren't installed through Windows Update and the PC doesn't restart by itself while someone is signed in.")
+              + (home ? "\n\n" + Loc.T(HomeUpdateNote) : "")
+            : Loc.T("Go back to the default Windows Update settings?") + "\n\n"
+              + Loc.T("Only the settings that 'Security settings' changed are put back as they were before.");
+        if (Loc.Show(this, message, "Windows Update", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         try
         {
             if (security) UpdatePolicy.ApplySecurity(); else UpdatePolicy.ApplyDefault();
@@ -417,6 +544,19 @@ public sealed class TweaksPage : Page
             Info("There are no changes to apply.");
             return;
         }
+
+        // Turning a feature off can break things people rely on: say what, and always ask.
+        var disabling = changes.Where(c => !c.Toggle.Checked).Select(c => c.Feature).ToList();
+        var enabling = changes.Where(c => c.Toggle.Checked).Select(c => c.Feature).ToList();
+        var parts = new List<string>();
+        if (disabling.Count > 0)
+            parts.Add(Loc.T("Turn off these Windows features?") + "\n\n"
+                      + string.Join("\n", disabling.Select(f => $"- {Loc.T(f.Name)}: {Loc.T(f.DisableEffect)}")));
+        if (enabling.Count > 0)
+            parts.Add(Loc.T("Turn on:") + "\n- " + string.Join("\n- ", enabling.Select(f => Loc.T(f.Name))));
+        parts.Add(Loc.T("A restart is needed to finish."));
+        var message = string.Join("\n\n", parts);
+        if (disabling.Count > 0 ? !ConfirmDanger(message, "Windows features") : !Confirm(message, "Windows features")) return;
         var ok = RunDialog.Run(this, "Windows features", async (log, progress, ct) =>
         {
             for (int i = 0; i < changes.Count; i++)
@@ -468,6 +608,7 @@ public sealed class TweaksPage : Page
         _loading = false;
         _wuSecurity.Primary = security;
         _wuDefault.Primary = !security;
+        _wuHomeNote.Visible = await Task.Run(() => UpdatePolicy.IsHomeEdition);
     }
 
     protected override void Dispose(bool disposing)
