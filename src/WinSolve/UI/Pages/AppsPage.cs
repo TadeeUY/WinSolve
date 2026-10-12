@@ -113,8 +113,20 @@ public sealed class AppsPage : Page
             _store.Rows.Clear();
             foreach (var a in _storeList.Where(a => (!_onlyBloat.Checked || a.IsBloat) && Matches(a.FriendlyName, a.Name)))
             {
-                var i = _store.Rows.Add(a.FriendlyName, a.Name, a.IsBloat ? "Bloatware" : "");
+                var note = a.Risk switch
+                {
+                    StoreAppRisk.Required => AppsService.RequiredByWindows,
+                    StoreAppRisk.Warn => "Built-in Windows app",
+                    _ => a.IsBloat ? "Bloatware" : "",
+                };
+                var i = _store.Rows.Add(a.FriendlyName, a.Name, Localization.Loc.T(note));
                 _store.Rows[i].Tag = a;
+                if (a.Risk == StoreAppRisk.Required)
+                {
+                    // Shown, but greyed out: it can't be removed.
+                    _store.Rows[i].DefaultCellStyle.ForeColor = Theme.DisabledText;
+                    _store.Rows[i].Cells["pkg"].Style.ForeColor = Theme.DisabledText;
+                }
             }
         }
         else
@@ -122,7 +134,7 @@ public sealed class AppsPage : Page
             _programs.Rows.Clear();
             foreach (var p in _programList.Where(p => Matches(p.DisplayName, p.Publisher)))
             {
-                var i = _programs.Rows.Add(p.DisplayName, p.Publisher, p.Version, p.SizeBytes > 0 ? Format.Bytes(p.SizeBytes) : "", p.Scope);
+                var i = _programs.Rows.Add(p.DisplayName, p.Publisher, p.Version, p.SizeBytes > 0 ? Format.Bytes(p.SizeBytes) : "", Localization.Loc.T(p.Scope));
                 _programs.Rows[i].Tag = p;
             }
         }
@@ -139,23 +151,47 @@ public sealed class AppsPage : Page
             return;
         }
 
+        selected = FilterSelection(selected, force);
+        if (selected.Count == 0) return;
         var names = selected.Select(o => o switch { StoreApp a => a.FriendlyName, InstalledProgram p => p.DisplayName, _ => "" }).ToList();
 
-        // Show exactly which folders will be deleted before anything happens.
-        var folders = selected.OfType<InstalledProgram>().ToDictionary(p => p, AppsService.GetForceRemovalFolders);
-        var folderText = force && !_showStore
-            ? "\n\nFolders that will be permanently deleted:\n" +
-              (folders.Values.Any(f => f.Count > 0) ? string.Join("\n", folders.Values.SelectMany(f => f).Select(f => "  " + f)) : "  (none found)")
-            : "";
+        // Force uninstall: the person picks the leftover folders (their data is never ticked for them).
+        var folders = new Dictionary<InstalledProgram, List<string>>();
+        var folderText = "";
+        if (force && !_showStore)
+        {
+            var leftovers = selected.OfType<InstalledProgram>().SelectMany(AppsService.GetLeftovers).ToList();
+            IReadOnlyList<Leftover> chosen = [];
+            if (leftovers.Count > 0)
+            {
+                using var dlg = new LeftoversDialog(leftovers);
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                chosen = dlg.Chosen;
+            }
+            foreach (var p in selected.OfType<InstalledProgram>())
+                folders[p] = chosen.Where(l => l.Program == p).Select(l => l.Path).ToList();
+            folderText = "\n\nFolders to delete (to the Recycle Bin when possible):\n" +
+                         (chosen.Count > 0 ? string.Join("\n", chosen.Select(l => "  " + l.Path)) : "  (none)");
+        }
 
         var message = force
             ? $"Force-remove {selected.Count} app(s)?\n\n- {string.Join("\n- ", names)}\n\n" +
               (_showStore
                   ? "They are removed for your account only, with all their versions and data. Other users of this PC keep them."
-                  : "The uninstaller runs silently, then the app's processes are closed and its folders, shortcuts and registry entry are deleted. This cannot be undone.")
+                  : "The uninstaller runs silently, then the app's processes are closed and the folders you chose and its shortcuts are deleted. Its entry is removed from the list only if the program is really gone.")
               + folderText
             : $"Uninstall {selected.Count} app(s)?\n\n- {string.Join("\n- ", names)}";
         if (!ConfirmDanger(message)) return;
+
+        var prompts = new UninstallPrompts
+        {
+            KeepWaiting = name => Invoke(() => Localization.Loc.Show(this,
+                $"The uninstaller of {name} is still running.\n\nIt may be waiting for an answer in a window behind this one.\n\nKeep waiting? If you stop waiting, the uninstaller keeps running and WinSolve deletes nothing for this program.",
+                "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes),
+            ConfirmPermanentDelete = dirs => Invoke(() => ConfirmDanger(
+                "These folders can't be moved to the Recycle Bin:\n\n" + string.Join("\n", dirs.Select(d => "  " + d)) +
+                "\n\nDelete them permanently? This cannot be undone.")),
+        };
 
         // Stop if the restore point was cancelled; ask if it failed (the user wanted one before force removal).
         if (force && AppSettings.Current.CreateRestorePoint)
@@ -181,15 +217,63 @@ public sealed class AppsPage : Page
                         await AppsService.RemoveStoreAppAsync(a, log, ct);
                         break;
                     case InstalledProgram p when force:
-                        await AppsService.ForceUninstallAsync(p, folders[p], log, ct);
+                        await AppsService.ForceUninstallAsync(p, folders.GetValueOrDefault(p) ?? [], log, ct, prompts);
                         break;
                     case InstalledProgram p:
-                        await AppsService.UninstallAsync(p, log, ct);
+                        await AppsService.UninstallAsync(p, log, ct, prompts);
                         break;
                 }
                 progress(i + 1, selected.Count);
             }
         });
         await LoadAsync(true);
+    }
+
+    /// <summary>
+    /// Drops what must not be removed (with an explanation) and asks again, naming the consequence,
+    /// for what can be removed but breaks something. Returns what is left to remove.
+    /// </summary>
+    private List<object> FilterSelection(List<object> selected, bool force)
+    {
+        // Store apps Windows needs: never removed.
+        var required = selected.OfType<StoreApp>().Where(a => a.Risk == StoreAppRisk.Required).ToList();
+        if (required.Count > 0)
+            Info("These apps are required by Windows and can't be removed:\n\n- " + string.Join("\n- ", required.Select(a => a.FriendlyName)) +
+                 "\n\nWithout them you couldn't install apps, sign in, open pictures and videos or use the Start menu.");
+
+        // WinSolve itself.
+        var self = selected.OfType<InstalledProgram>().Where(p => AppsService.Classify(p, out _) == ProgramKind.WinSolve).ToList();
+        if (self.Count > 0)
+            Info("WinSolve can't uninstall itself from here. Use Settings > Apps > Installed apps, or WinSolve's uninstaller.");
+
+        // Runtimes and drivers: never forced; the normal uninstaller only after a clear warning.
+        var shared = selected.OfType<InstalledProgram>()
+            .Select(p => (Program: p, Kind: AppsService.Classify(p, out var why), Why: why))
+            .Where(x => x.Kind is ProgramKind.SharedRuntime or ProgramKind.Driver).ToList();
+        if (force && shared.Count > 0)
+            Info("Force uninstall is not available for these, because other programs or devices need them:\n\n- " +
+                 string.Join("\n- ", shared.Select(x => x.Program.DisplayName)) +
+                 "\n\nUse Uninstall to run their own uninstaller.");
+
+        var rest = selected.Where(o => !required.Contains(o) && !self.Contains(o) && !(force && shared.Any(x => x.Program == o))).ToList();
+
+        if (!force && shared.Count > 0 && rest.Count > 0)
+        {
+            var lines = shared.Select(x => $"- {x.Program.DisplayName}\n  {x.Why}");
+            if (!ConfirmDanger("Other programs or devices need these:\n\n" + string.Join("\n", lines) +
+                               "\n\nUninstall them only if you know they are not needed. Continue?"))
+                return [];
+        }
+
+        // Built-in apps: removable, but say what stops working.
+        var warn = rest.OfType<StoreApp>().Where(a => a.Risk == StoreAppRisk.Warn).ToList();
+        if (warn.Count > 0)
+        {
+            var lines = warn.Select(a => $"- {a.FriendlyName}\n  {a.Consequence}");
+            if (!ConfirmDanger("These are built-in Windows apps:\n\n" + string.Join("\n", lines) +
+                               "\n\nRemove them anyway? You can reinstall them from the Microsoft Store."))
+                return [];
+        }
+        return rest;
     }
 }
