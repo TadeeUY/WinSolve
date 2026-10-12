@@ -398,13 +398,29 @@ public sealed class SpacePage : Page
         _menu.Show(owner, location);
     }
 
-    private static readonly string[] ProtectedRoots =
-    [
-        Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-    ];
+    /// <summary>
+    /// Why WinSolve won't delete this by hand, or null. Deleting Windows, a program, a profile or a
+    /// personal folder from a disk map breaks the PC or loses someone's files, so it is blocked
+    /// rather than just warned about.
+    /// </summary>
+    private static string? BlockedReason(string path, bool isFile)
+    {
+        if (SafePath.IsInsideSystemOrProgramFolder(path))
+            return "WinSolve won't delete this: it is part of Windows or of an installed program (it is in Windows, Program Files, ProgramData or a Windows system folder), and deleting it can stop Windows or your apps from working.\n\nTo remove a program, use the Apps page. To free space safely, use the Cleanup page.";
+        if (isFile)
+        {
+            try
+            {
+                if ((File.GetAttributes(path) & FileAttributes.System) != 0)
+                    return "WinSolve won't delete this: it is a Windows system file, and deleting it can stop Windows from starting or working.";
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            return null;
+        }
+        if (SafePath.IsProtectedFromUserDelete(path))
+            return "WinSolve won't delete this folder: it is a Windows folder, a user's profile or personal folder (such as Documents, Desktop, Downloads or AppData), or it contains one. Deleting it would remove files that Windows, your apps or a person need.\n\nOpen it and delete only what you don't need inside.";
+        return null;
+    }
 
     private void Delete(SpaceNode n)
     {
@@ -427,14 +443,15 @@ public sealed class SpacePage : Page
             Main.Navigate("tweaks");
             return;
         }
-        var isProtected = ProtectedRoots.Any(r => r.Length > 0 &&
-            (path.Equals(r, StringComparison.OrdinalIgnoreCase) || path.StartsWith(r + "\\", StringComparison.OrdinalIgnoreCase)));
-        var warning = isProtected
-            ? "\n\nWarning: this is inside a system or program folder. Deleting it can break Windows or applications. To remove programs use the Apps page instead."
-            : "";
+        if (BlockedReason(path, n.IsFile) is { } blocked)
+        {
+            Logger.Write($"Refused to delete {path} from the Space page: it is protected.");
+            Localization.Loc.Show(this, blocked, "Delete", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
 
-        if (Localization.Loc.Show(this, $"Move to the Recycle Bin?\n\n{path}\n({Format.Bytes(n.Size)}){warning}", "Delete",
-                MessageBoxButtons.YesNo, isProtected ? MessageBoxIcon.Warning : MessageBoxIcon.Question) != DialogResult.Yes)
+        if (Localization.Loc.Show(this, $"Move to the Recycle Bin?\n\n{path}\n({Format.Bytes(n.Size)})", "Delete",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
 
         if (RecycleBin.Send(path, Handle))

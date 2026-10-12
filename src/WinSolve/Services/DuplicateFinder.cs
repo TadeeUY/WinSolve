@@ -29,10 +29,75 @@ public static class DuplicateFinder
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        Path.Combine(InteractiveUser.LocalAppData, "Packages"),
+        // App data, per-user programs (AppData\Local\Programs), Store apps and browser profiles.
+        Path.Combine(InteractiveUser.Profile, "AppData"),
+        InteractiveUser.LocalAppData,
+        InteractiveUser.RoamingAppData,
+        InteractiveUser.LocalLow,
         Path.Combine(Path.GetPathRoot(Environment.SystemDirectory)!, "$Recycle.Bin"),
         Path.Combine(Path.GetPathRoot(Environment.SystemDirectory)!, "System Volume Information"),
     ];
+
+    /// <summary>
+    /// Folders whose files belong to a program, game library or code project wherever they are:
+    /// identical files there are normal and each copy is needed.
+    /// </summary>
+    private static readonly HashSet<string> ExcludedFolderNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "AppData", "steamapps", "SteamLibrary", "Steam", "Epic Games", "GOG Games", "GOG Galaxy", "XboxGames", "WindowsApps", "ModifiableWindowsApps",
+        "Origin Games", "EA Games", "Ubisoft Game Launcher", "Battle.net", "Riot Games", "Rockstar Games",
+        "User Data", "node_modules", ".git", ".svn", ".hg", ".venv", "venv", "site-packages", "__pycache__", ".gradle", ".m2", ".nuget", ".cargo", ".rustup",
+        "$Recycle.Bin", "System Volume Information",
+    };
+
+    /// <summary>Programs, libraries and packed app data: never offered as duplicates to delete.</summary>
+    private static readonly HashSet<string> ExcludedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".exe", ".dll", ".sys", ".drv", ".ocx", ".cpl", ".scr", ".efi", ".mui", ".winmd", ".cat", ".inf",
+        ".msi", ".msp", ".msix", ".msixbundle", ".appx", ".appxbundle", ".cab",
+        ".pak", ".asar", ".so", ".dylib", ".jar", ".node", ".pyd", ".lib", ".a", ".vpk", ".ucas", ".utoc", ".bundle", ".assets", ".resS",
+    };
+
+    /// <summary>True for a program/library-type file (by extension).</summary>
+    internal static bool IsExcludedFileType(string path) => ExcludedExtensions.Contains(Path.GetExtension(path));
+
+    /// <summary>True when any folder on the path is a program, game library or code project folder.</summary>
+    internal static bool IsInExcludedFolder(string path)
+    {
+        var folder = Path.GetDirectoryName(path);
+        return folder is not null && folder.Split('\\', StringSplitOptions.RemoveEmptyEntries).Any(ExcludedFolderNames.Contains);
+    }
+
+    /// <summary>
+    /// A copy of the set may be selected automatically only when that is clearly harmless: every copy
+    /// is a personal file (not a program file, not in a program or project folder) inside the person's
+    /// own Desktop, Documents, Downloads, Pictures, Music, Videos or OneDrive. Copies spread over other
+    /// folders may each be needed by a different program or game.
+    /// </summary>
+    internal static bool IsSafeToAutoSelect(IReadOnlyCollection<string> paths, IReadOnlyCollection<string> personalFolders)
+        => paths.Count > 1 && paths.All(p =>
+            !IsExcludedFileType(p) && !IsInExcludedFolder(p) &&
+            personalFolders.Any(f => f.Length > 3 && SafePath.IsSameOrInside(p, f) && !p.TrimEnd('\\').Equals(f.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>The signed-in user's personal folders; empty (nothing is auto-selected) if they can't be read.</summary>
+    internal static List<string> PersonalFolders()
+    {
+        try
+        {
+            var list = new List<string>
+            {
+                InteractiveUser.Desktop, InteractiveUser.Documents, InteractiveUser.Downloads,
+                InteractiveUser.Pictures, InteractiveUser.Music, InteractiveUser.Videos,
+            };
+            list.AddRange(InteractiveUser.OneDriveRoots());
+            return list.Where(p => !string.IsNullOrWhiteSpace(p) && Path.IsPathFullyQualified(p)).Select(p => p.TrimEnd('\\')).ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.Write($"Could not read the personal folders for duplicate selection: {ex.Message}");
+            return [];
+        }
+    }
 
     private static List<DuplicateGroup> Find(SpaceNode root, long minSize, Action<string> status, CancellationToken ct)
     {
@@ -47,9 +112,9 @@ public static class DuplicateFinder
                 var childPath = Path.Combine(path, c.Name);
                 if (c.IsFile)
                 {
-                    if (!c.IsGroup && c.Size >= minSize) files.Add((childPath, c.Size));
+                    if (!c.IsGroup && c.Size >= minSize && !IsExcludedFileType(childPath)) files.Add((childPath, c.Size));
                 }
-                else if (!excluded.Any(e => SafePath.IsSameOrInside(childPath, e)))
+                else if (!ExcludedFolderNames.Contains(c.Name) && !excluded.Any(e => SafePath.IsSameOrInside(childPath, e)))
                 {
                     Walk(c, childPath);
                 }

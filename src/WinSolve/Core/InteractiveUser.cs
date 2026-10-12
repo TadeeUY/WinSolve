@@ -103,6 +103,31 @@ public static class InteractiveUser
         return list.ToArray();
     });
 
+    /// <summary>The profile folder of every account on this PC, including system and service profiles.</summary>
+    internal static List<string> AllProfileFolders()
+    {
+        var list = new List<string>();
+        try
+        {
+            using var profiles = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList");
+            foreach (var sid in profiles?.GetSubKeyNames() ?? [])
+            {
+                try
+                {
+                    using var key = profiles!.OpenSubKey(sid);
+                    if (key?.GetValue("ProfileImagePath") is string p && p.Length > 0)
+                    {
+                        var expanded = Environment.ExpandEnvironmentVariables(p);
+                        if (Path.IsPathFullyQualified(expanded)) list.Add(Path.GetFullPath(expanded).TrimEnd('\\'));
+                    }
+                }
+                catch { }
+            }
+        }
+        catch (Exception ex) { Logger.Write($"Could not read the list of user profiles: {ex.Message}"); }
+        return list;
+    }
+
     /// <summary>Hides other users' file paths and account names in text (logs in a bug report).</summary>
     public static string RedactOtherUsers(string text)
     {
@@ -175,8 +200,79 @@ public static class InteractiveUser
     public static string Desktop => Folder("Desktop", "Desktop", () => Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
     public static string Downloads => Folder("{374DE290-123F-4565-9164-39C4925E467B}", "Downloads",
         () => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"));
+    public static string Pictures => Folder("My Pictures", "Pictures", () => Environment.GetFolderPath(Environment.SpecialFolder.MyPictures));
+    public static string Music => Folder("My Music", "Music", () => Environment.GetFolderPath(Environment.SpecialFolder.MyMusic));
+    public static string Videos => Folder("My Video", "Videos", () => Environment.GetFolderPath(Environment.SpecialFolder.MyVideos));
 
-    /// <summary>The signed-in user's %TEMP%.</summary>
+    // Known folders with no Environment.SpecialFolder: (User Shell Folders value name = KNOWNFOLDERID, default place).
+    private static readonly (string Id, string Relative)[] MoreKnownFolders =
+    [
+        ("{4C5C32FF-BB9D-43b0-B5B4-2D72E54EAAA4}", "Saved Games"),
+        ("{56784854-C6CB-462B-8169-88E350ACB882}", "Contacts"),
+        ("{BFB9D5E0-C6A9-404C-B2B2-AE6DB6AF4968}", "Links"),
+        ("{7D1D3A04-DEBB-4115-95CF-2F29DA2920DA}", "Searches"),
+        ("{A520A1A4-1780-4FF6-BD18-167343C5AF16}", @"AppData\LocalLow"),
+    ];
+
+    public static string LocalLow => Folder(MoreKnownFolders[4].Id, MoreKnownFolders[4].Relative, () => OwnKnownFolder(MoreKnownFolders[4].Id, MoreKnownFolders[4].Relative));
+
+    /// <summary>
+    /// Every personal folder of the signed-in user, where they are now and where Windows puts them by
+    /// default: profile, Desktop, Documents, Downloads, Pictures, Music, Videos, Saved Games,
+    /// Favorites, Contacts, Links, Searches, AppData (Roaming, Local, LocalLow) and OneDrive roots.
+    /// Throws when their account can't be read (callers fail closed).
+    /// </summary>
+    internal static List<string> KnownFolderPaths()
+    {
+        var profile = Profile;
+        var list = new List<string> { profile };
+        string[] defaults = ["Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos", "Favorites", "OneDrive",
+            @"AppData\Roaming", @"AppData\Local", @"AppData\LocalLow", .. MoreKnownFolders.Select(k => k.Relative)];
+        list.AddRange(defaults.Select(d => Path.Combine(profile, d)));
+        list.AddRange([Desktop, Documents, Downloads, Pictures, Music, Videos, RoamingAppData, LocalAppData, LocalLow, Startup, StartMenu]);
+        list.AddRange(MoreKnownFolders.Select(k => Folder(k.Id, k.Relative, () => OwnKnownFolder(k.Id, k.Relative))));
+        if (Other is not { } other)
+        {
+            list.Add(Environment.GetFolderPath(Environment.SpecialFolder.Favorites));
+        }
+        else
+        {
+            // Wherever their registry says these are, even outside the profile (redirected to D:\...).
+            foreach (var name in new[] { "Desktop", "Personal", "My Pictures", "My Music", "My Video", "Favorites", "AppData", "Local AppData", "{374DE290-123F-4565-9164-39C4925E467B}" }
+                         .Concat(MoreKnownFolders.Select(k => k.Id)))
+                if (ReadUserValue(@"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders", name) is { } raw && Expand(raw, other) is { } expanded)
+                    list.Add(expanded);
+        }
+        list.AddRange(OneDriveRoots());
+        return list.Where(p => !string.IsNullOrWhiteSpace(p) && Path.IsPathFullyQualified(p)).ToList();
+    }
+
+    /// <summary>The signed-in user's OneDrive folders (personal and work or school accounts).</summary>
+    internal static List<string> OneDriveRoots()
+    {
+        var list = new List<string>();
+        try
+        {
+            using var root = OpenBase(RegistryHive.CurrentUser, RegistryView.Registry64);
+            using var accounts = root.OpenSubKey(@"Software\Microsoft\OneDrive\Accounts");
+            foreach (var name in accounts?.GetSubKeyNames() ?? [])
+            {
+                using var account = accounts!.OpenSubKey(name);
+                if (account?.GetValue("UserFolder") is string folder && folder.Length > 0) list.Add(folder);
+            }
+        }
+        catch (Exception ex) when (ex is not InvalidOperationException) { }
+        foreach (var name in new[] { "OneDrive", "OneDriveConsumer", "OneDriveCommercial" })
+        {
+            var value = Other is { } o
+                ? ReadUserValue("Environment", name) is { } raw ? Expand(raw, o) : null
+                : Environment.GetEnvironmentVariable(name);
+            if (!string.IsNullOrEmpty(value)) list.Add(value);
+        }
+        return list;
+    }
+
+    /// <summary>The signed-in user's %TEMP% (inside their profile; their default AppData\Local\Temp otherwise).</summary>
     public static string TempPath
     {
         get
@@ -184,8 +280,49 @@ public static class InteractiveUser
             if (IsUnresolved) throw Unresolved();
             if (Other is not { } o) return Path.GetTempPath();
             var value = ReadUserValue(@"Environment", "TEMP");
-            return value is not null && Expand(value, o) is { } expanded ? expanded : Path.Combine(LocalAppData, "Temp");
+            return value is not null && Expand(value, o) is { } expanded && SafePath.IsStrictlyInside(expanded, o.ProfilePath)
+                ? expanded
+                : Path.Combine(LocalAppData, "Temp");
         }
+    }
+
+    /// <summary>
+    /// The signed-in user's temporary folder, when it is safe to empty. %TEMP% can point anywhere
+    /// (C:\, Documents, System32; Windows itself falls back to the profile or Windows folder when it
+    /// is unset), so it is only used when it is a Temp/Tmp folder inside their AppData\Local;
+    /// otherwise their default AppData\Local\Temp is used, or nothing (null) if that isn't safe either.
+    /// </summary>
+    public static string? CleanableTempPath(Action<string> log)
+    {
+        var local = LocalAppData;
+        var temp = TempPath;
+        if (IsCleanableTemp(temp, local)) return SafePath.LongPath(Path.GetFullPath(temp)).TrimEnd('\\');
+
+        var fallback = Path.Combine(local, "Temp");
+        log($"  %TEMP% is {temp}, which is not a temporary folder in your profile; it is left alone.");
+        if (Directory.Exists(fallback) && IsCleanableTemp(fallback, local))
+        {
+            log($"  Cleaning the default temporary folder instead: {fallback}");
+            return SafePath.LongPath(Path.GetFullPath(fallback)).TrimEnd('\\');
+        }
+        log("  Skipped: no temporary folder that is safe to empty was found.");
+        return null;
+    }
+
+    private static bool IsCleanableTemp(string candidate, string localAppData)
+    {
+        if (string.IsNullOrWhiteSpace(candidate) || !Path.IsPathFullyQualified(candidate) || !Path.IsPathFullyQualified(localAppData)) return false;
+        string full, local;
+        try
+        {
+            // Compare long names: Path.GetTempPath can return C:\Users\ADMINI~1\...
+            full = SafePath.LongPath(Path.GetFullPath(candidate)).TrimEnd('\\');
+            local = SafePath.LongPath(Path.GetFullPath(localAppData)).TrimEnd('\\');
+        }
+        catch { return false; }
+        if (!SafePath.IsTempFolderInside(full, local)) return false;
+        if (Other is { } o && !SafePath.IsStrictlyInside(full, SafePath.LongPath(o.ProfilePath))) return false;
+        return !SafePath.IsCriticalFolder(full) && !IsOtherUsersData(full);
     }
 
     private static string Folder(string shellFolderName, string relative, Func<string> own)
@@ -193,8 +330,31 @@ public static class InteractiveUser
         if (IsUnresolved) throw Unresolved();
         if (Other is not { } o) return own();
         var value = ReadUserValue(@"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders", shellFolderName);
-        return value is not null && Expand(value, o) is { } expanded ? expanded : Path.Combine(o.ProfilePath, relative);
+        // Values a standard user can change: only trusted when they stay inside their own profile.
+        return value is not null && Expand(value, o) is { } expanded && SafePath.IsStrictlyInside(expanded, o.ProfilePath)
+            ? expanded
+            : Path.Combine(o.ProfilePath, relative);
     }
+
+    /// <summary>A known folder of the account WinSolve runs as (SHGetKnownFolderPath); its default place if that fails.</summary>
+    private static string OwnKnownFolder(string id, string relative)
+    {
+        try
+        {
+            if (SHGetKnownFolderPath(new Guid(id), KF_FLAG_DONT_VERIFY, IntPtr.Zero, out var p) == 0)
+            {
+                try { return Marshal.PtrToStringUni(p) ?? ""; }
+                finally { Marshal.FreeCoTaskMem(p); }
+            }
+        }
+        catch { }
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), relative);
+    }
+
+    private const uint KF_FLAG_DONT_VERIFY = 0x4000;
+
+    [DllImport("shell32.dll")]
+    private static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid id, uint flags, IntPtr token, out IntPtr path);
 
     private static string? ReadUserValue(string path, string name)
     {

@@ -25,12 +25,13 @@ public static class SafeDelete
     /// <summary>
     /// Deletes the files in <paramref name="root"/> that match <paramref name="pattern"/> (in
     /// subfolders too when <paramref name="recursive"/>). With the "*" pattern, emptied subfolders
-    /// are removed as well. The root itself is kept.
+    /// are removed as well. The root itself is kept. With <paramref name="olderThanUtc"/>, files and
+    /// folders created or modified after that moment are kept (a program may still be using them).
     /// </summary>
-    public static Result DeleteContents(string root, string pattern, bool recursive, CancellationToken ct)
+    public static Result DeleteContents(string root, string pattern, bool recursive, CancellationToken ct, DateTime? olderThanUtc = null)
     {
         using var dir = OpenRoot(root, delete: false);
-        var stats = new Stats();
+        var stats = new Stats { Cutoff = olderThanUtc?.ToFileTimeUtc() ?? 0 };
         Walk(dir, pattern, recursive, removeDirs: pattern == "*", stats, depth: 0, ct);
         return new Result(stats.Freed, stats.Skipped);
     }
@@ -51,6 +52,10 @@ public static class SafeDelete
     {
         public long Freed;
         public int Skipped;
+        public long Cutoff; // FILETIME (UTC); 0 = no age limit
+
+        /// <summary>Created or written at or after the cutoff: kept.</summary>
+        public bool IsRecent(long newest) => Cutoff != 0 && newest >= Cutoff;
     }
 
     // ───────────── Walking ─────────────
@@ -63,6 +68,7 @@ public static class SafeDelete
             var isDir = (entry.Attributes & FileAttributes.Directory) != 0;
             if (isDir && !recursive) continue;
             if (!isDir && !FileSystemName.MatchesSimpleExpression(pattern, entry.Name)) continue;
+            if (!isDir && stats.IsRecent(entry.Newest)) continue; // too new (checked again on the handle)
 
             // Only the access that is needed: DELETE on a folder fails while it is another
             // process's working directory, which must not hide its whole contents.
@@ -76,16 +82,23 @@ public static class SafeDelete
             }
 
             // Trust what the handle says, not the listing: the entry may have been swapped since.
-            var attrs = GetAttributes(child);
-            if (attrs is not { } a || (a & FileAttributes.ReparsePoint) != 0) continue; // a link: never follow or touch
+            // (A folder's times are read here, before deleting its contents updates them.)
+            if (!GetFileInformationByHandle(child, out var info)) continue;
+            var a = (FileAttributes)info.dwFileAttributes;
+            if ((a & FileAttributes.ReparsePoint) != 0) continue; // a link: never follow or touch
             var reallyDir = (a & FileAttributes.Directory) != 0;
             if (reallyDir != isDir) continue;
+            var recent = stats.IsRecent(Newest(info));
 
             if (reallyDir)
             {
                 if (depth >= MaxDepth) continue;
                 Walk(child, pattern, recursive, removeDirs, stats, depth + 1, ct);
-                if (removeDirs) MarkForDeletion(child, a); // fails harmlessly if not empty
+                if (removeDirs && !recent) MarkForDeletion(child, a); // fails harmlessly if not empty
+            }
+            else if (recent)
+            {
+                // Kept: changed since the listing.
             }
             else if (MarkForDeletion(child, a) || DeleteReadOnly(dir, entry.Name, a))
             {
@@ -98,7 +111,8 @@ public static class SafeDelete
         }
     }
 
-    private readonly record struct Entry(string Name, FileAttributes Attributes, long Size);
+    /// <param name="Newest">The later of creation and last-write time (FILETIME, UTC).</param>
+    private readonly record struct Entry(string Name, FileAttributes Attributes, long Size, long Newest);
 
     /// <summary>Lists a directory through its handle (no path lookup that could be redirected).</summary>
     private static List<Entry> List(SafeFileHandle dir)
@@ -116,11 +130,12 @@ public static class SafeDelete
                 {
                     var p = buffer + offset;
                     var next = Marshal.ReadInt32(p, 0);
+                    var newest = Math.Max(Marshal.ReadInt64(p, 8), Marshal.ReadInt64(p, 24)); // CreationTime, LastWriteTime
                     var size = Marshal.ReadInt64(p, 40);
                     var attributes = (FileAttributes)Marshal.ReadInt32(p, 56);
                     var nameBytes = Marshal.ReadInt32(p, 60);
                     var name = Marshal.PtrToStringUni(p + 68, nameBytes / 2);
-                    if (name is not ("." or "..")) entries.Add(new Entry(name, attributes, size));
+                    if (name is not ("." or "..")) entries.Add(new Entry(name, attributes, size, newest));
                     if (next == 0) break;
                     offset += next;
                 }
@@ -240,8 +255,26 @@ public static class SafeDelete
 
     // ───────────── Helpers ─────────────
 
-    private static FileAttributes? GetAttributes(SafeFileHandle h)
+    internal static FileAttributes? GetAttributes(SafeFileHandle h)
         => GetFileInformationByHandle(h, out var info) ? (FileAttributes)info.dwFileAttributes : null;
+
+    /// <summary>The later of creation and last-write time (FILETIME, UTC).</summary>
+    private static long Newest(BY_HANDLE_FILE_INFORMATION info)
+        => Math.Max(((long)info.ftCreationHigh << 32) | info.ftCreationLow, ((long)info.ftLastWriteHigh << 32) | info.ftLastWriteLow);
+
+    /// <summary>
+    /// True when an open handle is the file or folder at <paramref name="expectedPath"/>, not one
+    /// reached through a junction or symbolic link somewhere along the path.
+    /// </summary>
+    internal static bool IsAtPath(SafeFileHandle h, string expectedPath)
+    {
+        var actual = FinalPath(h);
+        var expected = ResolveDrive(LongPath(Path.GetFullPath(expectedPath).TrimEnd('\\')));
+        return actual is not null && string.Equals(actual.TrimEnd('\\'), expected.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Number of names (hard links) of an open file; 0 if unknown.</summary>
+    internal static uint LinkCount(SafeFileHandle h) => GetFileInformationByHandle(h, out var info) ? info.nNumberOfLinks : 0;
 
     private static string? FinalPath(SafeFileHandle h)
     {
