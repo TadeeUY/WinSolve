@@ -10,6 +10,19 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 13, 4),
+        [
+            new("\uE74D", "Safer cleanup: temporary files are only removed from real temp folders and only when they are over a day old; your personal and Windows folders can never be emptied or deleted.",
+                "Limpieza más segura: los temporales solo se borran de carpetas temporales reales y si tienen más de un día; tus carpetas personales y las de Windows nunca se pueden vaciar ni borrar."),
+            new("\uE7F8", "Drivers: a clean install saves your current driver first and puts it back if anything goes wrong; repairing devices asks first and never removes network, disk, keyboard or mouse devices; old drivers are kept until after a restart.",
+                "Drivers: la instalación limpia guarda tu driver actual y lo vuelve a poner si algo sale mal; reparar dispositivos pregunta antes y nunca quita los de red, disco, teclado o mouse; los drivers viejos se guardan hasta después de reiniciar."),
+            new("\uE895", "Apps: parts Windows needs (Store, codecs, runtimes) can't be removed by mistake, and after a forced uninstall you choose which leftover folders go (to the Recycle Bin).",
+                "Apps: lo que Windows necesita (Store, códecs, componentes) no se puede quitar por error, y después de una desinstalación forzada eliges qué carpetas sobrantes se borran (a la Papelera)."),
+            new("\uE713", "Undo now puts back the exact settings you had, and DNS, Windows Update, network reset and Windows features ask before changing anything.",
+                "Deshacer ahora vuelve exactamente a lo que tenías, y DNS, Windows Update, el reinicio de red y las características de Windows preguntan antes de cambiar algo."),
+            new("\uE7E8", "Startup apps: removed entries can be restored, and Windows Security can't be turned off from here.",
+                "Apps de inicio: las entradas quitadas se pueden restaurar y la Seguridad de Windows no se puede desactivar desde aquí."),
+        ]),
         new(new Version(0, 13, 3),
         [
             new("\uE74D", "Uninstalling WinSolve now also removes its scheduled maintenance task.",
