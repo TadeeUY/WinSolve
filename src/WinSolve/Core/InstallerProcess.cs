@@ -22,6 +22,9 @@ public sealed class InstallerCancelledException(bool stillRunning) : OperationCa
     public bool StillRunning { get; } = stillRunning;
 }
 
+/// <summary>The installer was still running when WinSolve stopped waiting for it (90 minutes).</summary>
+public sealed class InstallerStillRunningException() : Exception("The installer was still running after 90 minutes.");
+
 public static class InstallerProcess
 {
     /// <summary>Apps that installers start when they finish and that stay open.</summary>
@@ -97,6 +100,10 @@ public static class InstallerProcess
             if (DateTime.Now > deadline)
             {
                 log("  Stopped waiting after 90 minutes; check that the installer has finished.");
+                // Callers that drain on cancel act on the PC after the install (driver rollback):
+                // tell them the setup may still be working instead of returning as if it ended.
+                if (drainOnCancel is not null && RunningInJob(job).Any(n => !StaysRunning.Contains(n)))
+                    throw new InstallerStillRunningException();
                 break;
             }
             var running = RunningInJob(job).Where(n => !StaysRunning.Contains(n)).ToList();

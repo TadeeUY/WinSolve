@@ -122,5 +122,6 @@ public static partial class Spanish
         ["Windows' boot check list has an unexpected format, so WinSolve doesn't change it."] = "La lista de comprobaciones de arranque de Windows tiene un formato inesperado, así que WinSolve no la cambia.",
         ["Another check of {0} is already scheduled for the next restart. Restart once to let it run, then schedule the surface scan again."] =
             "Ya hay otra comprobación de {0} programada para el próximo reinicio. Reinicia una vez para que se ejecute y luego vuelve a programar el examen de superficie.",
+        ["The installer was still running after 90 minutes."] = "El instalador seguía en marcha después de 90 minutos.",
     };
 }

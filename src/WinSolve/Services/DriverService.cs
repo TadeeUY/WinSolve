@@ -585,7 +585,7 @@ public static class DriverService
                 log(ex is OperationCanceledException
                     ? "The installation was stopped after the old driver was removed."
                     : $"The installation failed after the old driver was removed: {ex.Message}");
-                if (ex is InstallerCancelledException { StillRunning: true })
+                if (ex is InstallerCancelledException { StillRunning: true } or InstallerStillRunningException)
                 {
                     // Never install the old driver while the vendor's setup is still installing.
                     log($"The installer is still running, so the previous driver is not put back automatically. If the screen stays on the basic driver, in Device Manager choose the display adapter > Update driver > Browse my computer and pick {backup}");
