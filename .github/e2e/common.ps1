@@ -34,7 +34,7 @@ function Run-Setup([string]$exe, [string]$arguments, [string]$log) {
     return $p.ExitCode
 }
 
-function Log-Text { Get-Content "$env:ProgramData\WinSolve\logs\*" -Raw -ErrorAction SilentlyContinue | Out-String }
+function Log-Text { Get-ChildItem "$env:ProgramData\WinSolve\logs" -File -ErrorAction SilentlyContinue | Sort-Object Name | Get-Content -Raw | Out-String }
 
 # Opens WinSolve, waits for its window, takes a screenshot and closes it.
 function Test-Launch([string]$exe, [string]$name) {

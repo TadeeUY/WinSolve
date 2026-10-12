@@ -65,7 +65,7 @@ public class DriverE2ETests(ITestOutputHelper output)
         var left = StagedTestPackages();
         Assert.Single(left);
         Assert.Equal(newest.Inf, left[0].Inf, StringComparer.OrdinalIgnoreCase);
-        Assert.Empty((await DriverStoreCleaner.FindAsync()).Where(d => d.OriginalName.Equals(TestInf, StringComparison.OrdinalIgnoreCase)));
+        Assert.DoesNotContain(await DriverStoreCleaner.FindAsync(), d => d.OriginalName.Equals(TestInf, StringComparison.OrdinalIgnoreCase));
     }
 
     [E2EFact]
