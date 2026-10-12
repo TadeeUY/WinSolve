@@ -183,6 +183,13 @@ public sealed class OptimizePage : Page
         _results.Add(Theme.Paragraph("Memory and process counts vary with what you have open; boot time is measured by Windows on the next restart."));
     }
 
+    /// <summary>Asks a question from the optimizer's background thread, on the UI thread (No if the page is gone).</summary>
+    private bool AskFromWorker(string message)
+    {
+        try { return !IsDisposed && (bool)Invoke(() => ConfirmDanger(message)); }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException) { return false; }
+    }
+
     private async Task StartAsync()
     {
         if (!AppSettings.Current.UseCustomOneClick && AppSettings.Current.Level == OptimizationLevel.Maximum
@@ -203,7 +210,7 @@ public sealed class OptimizePage : Page
         {
             // Asked on the UI thread; the run waits for the answer.
             summary = await OneClickOptimizer.RunAsync(log, progress, ct,
-                message => !IsDisposed && (bool)Invoke(() => ConfirmDanger(message)));
+                AskFromWorker);
         });
 
         if (summary is { } s)

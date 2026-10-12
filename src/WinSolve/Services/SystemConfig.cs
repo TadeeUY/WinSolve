@@ -23,6 +23,12 @@ public sealed class DnsAdapter
     /// <summary>The IPv4 address comes from DHCP (false: static IP).</summary>
     public bool Dhcp { get; set; }
 
+    /// <summary>
+    /// No IPv4 settings of its own (e.g. the network card bound to a Hyper-V external switch,
+    /// whose traffic goes through the vEthernet adapter): skipped.
+    /// </summary>
+    public bool NoIp { get; set; }
+
     /// <summary>Connected to a domain network (DNS is the organization's; never changed).</summary>
     public bool Domain { get; set; }
 
@@ -93,7 +99,14 @@ public static class DnsService
     public static async Task<List<DnsAdapter>> GetAdaptersAsync(CancellationToken ct = default)
     {
         var r = await ProcessRunner.PowerShellAsync("""
-            $out = foreach ($a in @(Get-NetAdapter -Physical -ErrorAction Stop | Where-Object Status -eq 'Up')) {
+            $physical = @(Get-NetAdapter -Physical -ErrorAction Stop | Where-Object Status -eq 'Up')
+            # A Hyper-V external switch carries the traffic through a vEthernet adapter: include those
+            # that have IPv4 and a default gateway (not the internal "Default Switch" or WSL ones).
+            $virtual = @(Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Status -eq 'Up' -and $_.Name -like 'vEthernet*' } | Where-Object {
+                $c = Get-NetIPConfiguration -InterfaceIndex $_.ifIndex -ErrorAction SilentlyContinue
+                $c -and $c.IPv4Address -and $c.IPv4DefaultGateway
+            })
+            $out = foreach ($a in @($physical + $virtual)) {
                 $ip = Get-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
                 $profiles = @(Get-NetConnectionProfile -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue)
                 $v4 = @((Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses | Where-Object { $_ })
@@ -102,7 +115,7 @@ public static class DnsService
                 $k6 = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\$($a.InterfaceGuid)" -ErrorAction SilentlyContinue).NameServer
                 [pscustomobject]@{
                     Name = "$($a.Name)"; Index = [int]$a.ifIndex; Guid = "$($a.InterfaceGuid)"
-                    Dhcp = ("$($ip.Dhcp)" -eq 'Enabled')
+                    Dhcp = ("$($ip.Dhcp)" -eq 'Enabled'); NoIp = ($null -eq $ip)
                     Domain = (@($profiles | Where-Object { "$($_.NetworkCategory)" -eq 'DomainAuthenticated' }).Count -gt 0)
                     V4 = [string[]]$v4; V6 = [string[]]$v6
                     ManualV4 = [bool]"$k4".Trim(); ManualV6 = [bool]"$k6".Trim()
@@ -300,12 +313,13 @@ public static class UpdatePolicy
     public static void ApplyDefault()
     {
         var hklm = RegistryHive.LocalMachine;
-        var restored = SecurityValues.Count(v => TweakBackup.TryRestore(Owner, hklm, v.Path, v.Name));
-        if (restored == 0 && DeferralSet())
+        var restored = 0;
+        foreach (var (path, name, value) in SecurityValues)
         {
-            // Applied by an older version (nothing saved): remove only the deferral values, which
-            // nothing else in WinSolve sets.
-            foreach (var (path, name, _) in SecurityValues.Where(v => v.Name.StartsWith("Defer", StringComparison.Ordinal)))
+            if (TweakBackup.TryRestore(Owner, hklm, path, name)) restored++;
+            // Nothing saved (applied by an older version): a deferral value still at what Security
+            // sets is removed; nothing else in WinSolve sets those. The other two belong to tweaks too.
+            else if (name.StartsWith("Defer", StringComparison.Ordinal) && Reg.ValueEquals(Reg.Get(hklm, path, name), value))
                 Reg.Delete(hklm, path, name);
         }
         TweakBackup.Forget(Owner, SecurityValues.Select(v => (hklm, v.Path, v.Name)));
@@ -469,10 +483,15 @@ public static class PowerPlans
             $prev = '{{plan}}'
             if ($prev -and (powercfg /list | Out-String) -match $prev) {
                 powercfg /setactive $prev
-                if ('{{saved?.Overlay}}') { powercfg /overlaysetactive '{{saved?.Overlay}}' }
+                if ($LASTEXITCODE) { "powercfg /setactive $prev failed ($LASTEXITCODE)."; exit $LASTEXITCODE }
+                if ('{{saved?.Overlay}}') {
+                    powercfg /overlaysetactive '{{saved?.Overlay}}'
+                    if ($LASTEXITCODE) { "The power mode could not be restored ($LASTEXITCODE)." }
+                }
                 "Previous power plan restored ($prev)."
             } else {
                 powercfg /setactive {{BalancedGuid}}
+                if ($LASTEXITCODE) { "powercfg /setactive failed ($LASTEXITCODE)."; exit $LASTEXITCODE }
                 'Balanced plan active.'
             }
             """;
@@ -513,7 +532,12 @@ public static class PowerPlans
             if ($ids -contains $active -or $active -eq '{{UltimateTemplateGuid}}') {
             {{RestoreScript(saved, [UltimateGuid, UltimateTemplateGuid])}}
             }
-            foreach ($id in $ids) { powercfg /delete $id; "Removed $id" }
+            $failed = 0
+            foreach ($id in $ids) {
+                powercfg /delete $id
+                if ($LASTEXITCODE) { "Could not remove $id ($LASTEXITCODE)."; $failed = $LASTEXITCODE } else { "Removed $id" }
+            }
+            if ($failed) { exit $failed }
             """, log, ct);
         if (!r.Success) throw new InvalidOperationException($"powercfg (exit code {r.ExitCode})");
         // The saved plan has been used (or still applies to another WinSolve plan): keep it unless restored.

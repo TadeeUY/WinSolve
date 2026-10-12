@@ -27,6 +27,8 @@ public static partial class Spanish
         ["Desktop"] = "Escritorio",
         ["Documents"] = "Documentos",
         ["Pictures"] = "Imágenes",
+        ["Music"] = "Música",
+        ["Videos"] = "Vídeos",
 
         // ── Organization-managed PCs ──
         ["This PC is joined to an organization's domain."] = "Este PC está unido al dominio de una organización.",
@@ -58,7 +60,12 @@ public static partial class Spanish
         ["{0}: back to its previous DNS servers ({1})"] = "{0}: vuelve a sus servidores DNS anteriores ({1})",
         ["{0}: DNS servers from the router (DHCP)"] = "{0}: servidores DNS del router (DHCP)",
         ["{0}: kept as it is ({1}). It has a static IP address, so without these servers it would have no DNS."] = "{0}: se queda como está ({1}). Tiene una IP fija, así que sin estos servidores se quedaría sin DNS.",
-        ["Nothing to change:"] = "No hay nada que cambiar:",
+        ["Not changed, because they have no IP settings of their own (for example, used by a Hyper-V virtual switch): {0}"] = "No se cambian porque no tienen configuración IP propia (por ejemplo, los usa un conmutador virtual de Hyper-V): {0}",
+        ["powercfg /setactive {0} failed ({1})."] = "powercfg /setactive {0} falló ({1}).",
+        ["powercfg /setactive failed ({0})."] = "powercfg /setactive falló ({0}).",
+        ["The power mode could not be restored ({0})."] = "No se pudo restaurar el modo de energía ({0}).",
+        ["Could not remove {0} ({1})."] = "No se pudo eliminar {0} ({1}).",
+        ["Nothing to change:"] ="No hay nada que cambiar:",
         ["Restore the DNS settings of these adapters?"] = "¿Restaurar la configuración DNS de estos adaptadores?",
         ["Change the DNS servers to {0} on these adapters?"] = "¿Cambiar los servidores DNS a {0} en estos adaptadores?",
         ["Their current settings are saved first: choose Default (DHCP) later to put them back."] = "Antes se guarda su configuración actual: elige Predeterminado (DHCP) más tarde para volver a ella.",

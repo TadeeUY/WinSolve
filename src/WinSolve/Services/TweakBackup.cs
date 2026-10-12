@@ -227,19 +227,17 @@ public static class TweakBackup
 
     /// <summary>
     /// Call before writing the given values: saves each one's current state the first time it is
-    /// changed. Values that already have the target are skipped (Undo then uses the default).
-    /// Never throws: without a backup Undo falls back to the default values.
+    /// changed. When every value already has its target (already applied), nothing is saved and
+    /// Undo uses the defaults; otherwise every value is saved, including one that happens to
+    /// match already, so Undo puts back exactly what was there.
+    /// Never throws for the store: without a backup Undo falls back to the default values.
     /// </summary>
     public static void Remember(string owner, IEnumerable<(RegistryHive Hive, string Path, string Name, object Target)> values)
     {
-        var entries = new List<KeyValuePair<string, StoredValue>>();
-        foreach (var (hive, path, name, target) in values)
-        {
-            var current = ReadCurrent(hive, path, name); // may throw (unresolved user): nothing is written then
-            if (!current.Absent && Reg.ValueEquals(current.ToObject(), target)) continue;
-            entries.Add(new(Key(owner, hive, path, name), current));
-        }
-        if (entries.Count == 0) return;
+        var current = values.Select(v => (v.Hive, v.Path, v.Name, v.Target,
+            Value: ReadCurrent(v.Hive, v.Path, v.Name))).ToList(); // may throw (unresolved user): nothing is written then
+        if (current.All(c => !c.Value.Absent && Reg.ValueEquals(c.Value.ToObject(), c.Target))) return;
+        var entries = current.Select(c => new KeyValuePair<string, StoredValue>(Key(owner, c.Hive, c.Path, c.Name), c.Value)).ToList();
         try { Store.RecordIfMissing(entries); }
         catch (Exception ex) { Logger.Write($"Could not save the previous values for {owner}: {ex.Message}. Undo will use the Windows defaults."); }
     }
