@@ -311,6 +311,12 @@ public static class TaskCatalog
             ConfirmWarning = () => "Updates already downloaded are downloaded again and the update history in Settings starts empty. Don't run it while Windows is installing updates.",
             Run = async ctx =>
             {
+                if (UpdateInProgress() is { } busy)
+                {
+                    ctx.Log($"  Not reset: {busy}. Restart the PC first, then run it again if updates still fail.");
+                    ctx.CommandErrors++;
+                    return;
+                }
                 string[] services = ["wuauserv", "bits", "cryptsvc", "msiserver"];
                 await StopServices(ctx, services);
                 foreach (var dir in new[] { Path.Combine(Win, "SoftwareDistribution"), Path.Combine(Win, "System32", "catroot2") })

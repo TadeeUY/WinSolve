@@ -343,7 +343,9 @@ public static class DriverService
     /// </summary>
     private static async Task EnsureRestorePointAsync(string description, Func<string, bool> confirm, Action<string> log, CancellationToken ct)
     {
-        if (await TaskCatalog.CreateRestorePoint(new TaskContext(log, ct), description)) return;
+        var point = await TaskCatalog.CreateRestorePointAsync(new TaskContext(log, ct), description);
+        if (point.ProtectionTurnedOn) log(TaskCatalog.ProtectionTurnedOnMessage(point.Drive));
+        if (point.Created) return;
         if (!confirm("A restore point could not be created (System Protection may be turned off).\n\nContinue without a restore point?"))
         {
             log("Stopped: no restore point could be created. Nothing was changed.");

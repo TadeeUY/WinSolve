@@ -322,6 +322,12 @@ public static class UpdatePolicy
             else if (name.StartsWith("Defer", StringComparison.Ordinal) && Reg.ValueEquals(Reg.Get(hklm, path, name), value))
                 Reg.Delete(hklm, path, name);
         }
+        // Applied by an older version (nothing saved at all): like before, the driver and restart
+        // values Security set are removed too, or drivers would stay blocked with "Default" shown.
+        if (restored == 0)
+            foreach (var (path, name, value) in SecurityValues)
+                if (!name.StartsWith("Defer", StringComparison.Ordinal) && Reg.ValueEquals(Reg.Get(hklm, path, name), value))
+                    Reg.Delete(hklm, path, name);
         TweakBackup.Forget(Owner, SecurityValues.Select(v => (hklm, v.Path, v.Name)));
         Logger.Write($"Windows Update policy: default settings restored ({restored} saved value(s) put back).");
     }

@@ -123,5 +123,6 @@ public static partial class Spanish
         ["Another check of {0} is already scheduled for the next restart. Restart once to let it run, then schedule the surface scan again."] =
             "Ya hay otra comprobación de {0} programada para el próximo reinicio. Reinicia una vez para que se ejecute y luego vuelve a programar el examen de superficie.",
         ["The installer was still running after 90 minutes."] = "El instalador seguía en marcha después de 90 minutos.",
+        ["Not reset: {0}. Restart the PC first, then run it again if updates still fail."] = "No se reinició: {0}. Reinicia la PC primero y vuelve a ejecutarlo si las actualizaciones siguen fallando.",
     };
 }
