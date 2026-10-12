@@ -36,7 +36,8 @@ public sealed class StartupPage : Page
         _grid.CellContentClick += (_, e) =>
         {
             if (e.ColumnIndex != 0 || e.RowIndex < 0) return;
-            if (_grid.Rows[e.RowIndex].Tag is StartupItem { IsProtected: true } p)
+            // Windows Security can't be turned off; turning it back on is always allowed.
+            if (_grid.Rows[e.RowIndex].Tag is StartupItem { BlocksDisable: true, Enabled: true } p)
             {
                 Info($"WinSolve won't turn off or remove '{p.Name}'.\n\n{p.ProtectedReason}");
                 return;
@@ -52,6 +53,7 @@ public sealed class StartupPage : Page
             try
             {
                 await StartupService.SetEnabledAsync(item, enabled);
+                row.Cells[0].ReadOnly = item.BlocksDisable && item.Enabled;
                 Logger.Write($"Startup: '{item.Name}' {(enabled ? "enabled" : "disabled")}");
             }
             catch (Exception ex)
@@ -78,7 +80,8 @@ public sealed class StartupPage : Page
         _grid.Rows.Clear();
         foreach (var item in items)
         {
-            var note = item.IsProtected ? "Protected"
+            var note = item.BlocksDisable ? "Windows Security"
+                : item.IsProtected ? "Windows component"
                 : item.RunsAsSystem ? "Runs as SYSTEM"
                 : item.IsMachineWide ? "All users"
                 : "";
@@ -87,8 +90,8 @@ public sealed class StartupPage : Page
             row.Tag = item;
             if (item.IsProtected)
             {
-                // Can't be turned off or removed: say why on hover and on click.
-                row.Cells[0].ReadOnly = true;
+                // Can't be removed (Windows Security can't be turned off either): say why on hover and on click.
+                row.Cells[0].ReadOnly = item.BlocksDisable && item.Enabled;
                 row.DefaultCellStyle.ForeColor = Theme.DisabledText;
                 foreach (DataGridViewCell c in row.Cells) c.ToolTipText = Loc.T(item.ProtectedReason);
             }

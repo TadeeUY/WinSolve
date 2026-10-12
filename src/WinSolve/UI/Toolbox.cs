@@ -322,7 +322,8 @@ internal sealed class LockedFileDialog : ToolDialog
             case KillVerdict.Explorer:
                 // Killing Explorer leaves no taskbar or desktop; restarting it releases the file and brings them back.
                 if (!Ask("Windows Explorer (the taskbar, desktop and folder windows) is using it.\n\nRestart Explorer instead of closing it? Open folder windows will close.", danger: true)) return;
-                await TaskCatalog.ExplorerRestart(new TaskContext(Logger.Write, default));
+                try { await TaskCatalog.ExplorerRestart(new TaskContext(Logger.Write, default)); }
+                catch (Exception ex) { Tell(ex.Message, warning: true); }
                 Scan();
                 return;
         }

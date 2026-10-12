@@ -93,7 +93,8 @@ public static partial class Spanish
         // ── Startup ──
         ["Disable is instant and reversible (same as Task Manager). Remove deletes the startup entry (WinSolve keeps a backup you can restore); the program stays installed."] = "Desactivar es instantáneo y reversible (igual que el Administrador de tareas). Quitar borra la entrada de inicio (WinSolve guarda una copia que puedes restaurar); el programa sigue instalado.",
         ["Restore removed..."] = "Restaurar quitadas...",
-        ["Protected"] = "Protegida",
+        ["Windows Security"] = "Seguridad de Windows",
+        ["Windows component"] = "Componente de Windows",
         ["Runs as SYSTEM"] = "Se ejecuta como SYSTEM",
         ["Windows Security (Microsoft Defender) needs it to show its icon and warnings."] = "Seguridad de Windows (Microsoft Defender) la necesita para mostrar su icono y sus avisos.",
         ["Part of Windows."] = "Parte de Windows.",
@@ -110,7 +111,7 @@ public static partial class Spanish
         ["Restore removed startup entries"] = "Restaurar entradas de inicio quitadas",
         ["WinSolve saves every startup entry before removing it. Choose one to put it back."] = "WinSolve guarda cada entrada de inicio antes de quitarla. Elige una para volver a ponerla.",
         ["No removed entries to restore."] = "No hay entradas quitadas para restaurar.",
-        ["Removed"] = "Quitada",
+        ["Removed on"] = "Fecha de borrado",
         ["Restore"] = "Restaurar",
         ["Restored."] = "Restaurado.",
         ["Select one or more entries first."] = "Primero elige una o más entradas.",

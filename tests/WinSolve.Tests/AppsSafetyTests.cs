@@ -48,6 +48,12 @@ public class StoreAppRiskTests
         Assert.False(string.IsNullOrWhiteSpace(why));
     }
 
+    [Theory]
+    [InlineData("MicrosoftWindows.Client.WebExperience")] // Widgets
+    [InlineData("MicrosoftWindows.CrossDevice")]
+    public void Optional_Windows_packages_stay_removable(string name)
+        => Assert.NotEqual(StoreAppRisk.Required, AppsService.ClassifyStoreApp(name, out _));
+
     [Fact]
     public void Bloatware_is_not_required_or_warned()
     {
@@ -233,6 +239,22 @@ public class StartupProtectionTests
         Assert.Null(StartupService.ProtectionReasonFor("x", @"C:\Windows\System32\rundll32.exe C:\ProgramData\bad\x.dll,Run", Win, Pf, Pd));
         Assert.Null(StartupService.ProtectionReasonFor("x", @"""C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"" -File C:\x.ps1", Win, Pf, Pd));
         Assert.Null(StartupService.ProtectionReasonFor("Steam", @"""C:\Program Files (x86)\Steam\steam.exe"" -silent", Win, Pf, Pd));
+        // Driver tray apps in the DriverStore belong to the vendor.
+        Assert.Null(StartupService.ProtectionReasonFor("RtkAudUService",
+            @"""C:\Windows\System32\DriverStore\FileRepository\realtekservice.inf_amd64_x\RtkAudUService64.exe"" -background", Win, Pf, Pd));
+    }
+
+    [Fact]
+    public void Only_Windows_Security_blocks_turning_off_and_it_can_always_be_turned_back_on()
+    {
+        StartupItem Item(string? reason) => new()
+        {
+            Name = "x", Command = "x", Location = "x", Source = StartupSource.Registry, ProtectedReason = reason,
+        };
+        Assert.True(Item(StartupService.DefenderReason).BlocksDisable);
+        Assert.False(Item(StartupService.WindowsReason).BlocksDisable);
+        Assert.True(Item(StartupService.WindowsReason).IsProtected); // still can't be removed
+        Assert.False(Item(null).IsProtected);
     }
 
     [Theory]

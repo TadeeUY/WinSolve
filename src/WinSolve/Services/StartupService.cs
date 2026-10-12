@@ -29,9 +29,12 @@ public sealed class StartupItem
 
     public bool Enabled { get; set; }
 
-    /// <summary>Why WinSolve won't remove or disable it (Windows Security, a Windows component); null when it may.</summary>
+    /// <summary>Why WinSolve won't remove it (Windows Security, a Windows component); null when it may.</summary>
     public string? ProtectedReason { get; set; }
     public bool IsProtected => ProtectedReason is not null;
+
+    /// <summary>Windows Security: can't be turned off either (turning it back on is always allowed).</summary>
+    public bool BlocksDisable => ProtectedReason == StartupService.DefenderReason;
 
     /// <summary>Starts for every user of the PC, or runs as SYSTEM: disabling is the safer choice.</summary>
     public bool IsMachineWide => RunsAsSystem || (Source != StartupSource.ScheduledTask && Hive == RegistryHive.LocalMachine);
@@ -240,7 +243,9 @@ public static class StartupService
             || expanded.Contains(Path.Combine(programData, "Microsoft", "Windows Defender"), StringComparison.OrdinalIgnoreCase))
             return DefenderReason;
 
+        // Driver tray apps (Realtek, Waves, Intel...) live in the DriverStore: they are the vendor's, not Windows'.
         if (Executable(expanded) is { } exe && Path.IsPathFullyQualified(exe) && SafePath.IsSameOrInside(exe, windowsDir)
+            && !SafePath.IsSameOrInside(exe, Path.Combine(windowsDir, "System32", "DriverStore"))
             && !CommandHosts.Contains(Path.GetFileName(exe)))
             return WindowsReason;
         return null;
@@ -297,7 +302,9 @@ public static class StartupService
 
     public static async Task SetEnabledAsync(StartupItem item, bool enabled)
     {
-        ThrowIfProtected(item);
+        // Windows components can be turned off (like in Task Manager); Windows Security can't.
+        // Turning anything back on is always allowed (e.g. Security's icon after malware disabled it).
+        if (!enabled && item.BlocksDisable) throw new InvalidOperationException(item.ProtectedReason);
         if (item.Source == StartupSource.ScheduledTask)
         {
             var verb = enabled ? "Enable-ScheduledTask" : "Disable-ScheduledTask";

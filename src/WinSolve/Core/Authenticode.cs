@@ -21,9 +21,10 @@ public static class Authenticode
             var name = cert.GetNameInfo(X509NameType.SimpleName, false);
             var org = SubjectField(cert.Subject, "O");
             signer = name;
-            if (!Verify(file)) return false;
-            return allowedSigners.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase)
-                                           || string.Equals(a, org, StringComparison.OrdinalIgnoreCase));
+            // Name first: the full trust check (with revocation) only runs for a signer we'd accept.
+            if (!allowedSigners.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase)
+                                         || string.Equals(a, org, StringComparison.OrdinalIgnoreCase))) return false;
+            return Verify(file);
         }
         catch
         {

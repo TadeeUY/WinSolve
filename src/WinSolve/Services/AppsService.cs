@@ -154,13 +154,18 @@ public static class AppsService
         "Microsoft.Windows.NarratorQuickStart", "Microsoft.CredDialogHost", "Microsoft.ECApp", "Microsoft.BioEnrollment",
         "Microsoft.MicrosoftEdge", "Microsoft.MicrosoftEdge.Stable", "Microsoft.MicrosoftEdgeDevToolsClient",
         "Windows.PrintDialog", "Windows.CBSPreview", "windows.immersivecontrolpanel", "NcsiUwpApp",
+        // Windows 11 shell parts (Start, taskbar, File Explorer, setup). Widgets (Client.WebExperience)
+        // and Phone Link's CrossDevice stay removable.
+        "MicrosoftWindows.Client.CBS", "MicrosoftWindows.Client.Core", "MicrosoftWindows.Client.FileExp", "MicrosoftWindows.UndockedDevKit",
+        "MicrosoftWindows.Client.AIX", "MicrosoftWindows.Client.OOBE", "MicrosoftWindows.Client.Photon", "MicrosoftWindows.Client.LKG",
+        "MicrosoftWindows.LKG.DesktopSpotlight", "MicrosoftWindows.LKG.TwinSxS", "MicrosoftWindows.LKG.SpeechRuntime",
     };
 
     /// <summary>Frameworks and Windows parts that come in many versioned names.</summary>
     private static readonly string[] RequiredStorePrefixes =
     [
         "Microsoft.VCLibs", "Microsoft.NET.Native", "Microsoft.UI.Xaml", "Microsoft.WindowsAppRuntime", "Microsoft.WinAppRuntime",
-        "Microsoft.Services.Store.Engagement", "Microsoft.DirectXRuntime", "MicrosoftWindows.",
+        "Microsoft.Services.Store.Engagement", "Microsoft.DirectXRuntime",
     ];
 
     /// <summary>Built-in apps that can go, but only after the person reads what stops working.</summary>
@@ -986,9 +991,14 @@ public static class AppsService
         return known;
     }
 
+    /// <summary>
+    /// Only folders the Recycle Bin really takes (fixed drive, bin on, big enough): for those,
+    /// RecycleBin.Send never asks its own "delete permanently?" question. Everything else goes
+    /// through the one confirmation in <see cref="UninstallPrompts.ConfirmPermanentDelete"/>.
+    /// </summary>
     private static bool CanRecycle(string dir)
     {
-        try { return new DriveInfo(Path.GetPathRoot(dir)!).DriveType == DriveType.Fixed; }
+        try { return new DriveInfo(Path.GetPathRoot(dir)!).DriveType == DriveType.Fixed && RecycleBin.WhyNotRecyclable(dir) is null; }
         catch { return false; }
     }
 

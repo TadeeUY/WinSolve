@@ -6,7 +6,7 @@ namespace WinSolve.UI;
 /// <summary>Lists startup entries removed by WinSolve (backed up first) and puts them back.</summary>
 internal sealed class StartupRestoreDialog : ToolDialog
 {
-    private readonly DataGridView _grid = Grid(("name", "Name", 160), ("loc", "Location", 140), ("cmd", "Command", 240), ("when", "Removed", 90));
+    private readonly DataGridView _grid = Grid(("name", "Name", 160), ("loc", "Location", 140), ("cmd", "Command", 240), ("when", "Removed on", 90));
 
     /// <summary>True when at least one entry was restored (the caller refreshes its list).</summary>
     public bool Restored { get; private set; }
