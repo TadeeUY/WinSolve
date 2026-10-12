@@ -142,6 +142,25 @@ public class TweakSafetyTests
     }
 
     [Fact]
+    public void Services_backup_that_is_not_an_object_is_reported_as_damaged()
+    {
+        Assert.ThrowsAny<System.Text.Json.JsonException>(() => TweakCatalog.ParseServicesBackup("[1,2]"));
+        Assert.ThrowsAny<System.Text.Json.JsonException>(() => TweakCatalog.ParseServicesBackup("42"));
+        Assert.ThrowsAny<System.Text.Json.JsonException>(() => TweakCatalog.ParseServicesBackup("{ broken"));
+    }
+
+    [Fact]
+    public void Known_folder_move_covers_music_and_videos()
+    {
+        var moved = TweakCatalog.FoldersInsideOneDrive(new Dictionary<string, string>
+        {
+            ["My Music"] = @"C:\Users\Ana\OneDrive\Music",
+            ["{35286A68-3C57-41A1-BBB1-0EAE73D76C95}"] = @"C:\Users\Ana\OneDrive\Videos",
+        }, [@"C:\Users\Ana\OneDrive"], @"C:\Users\Ana");
+        Assert.Equal(new[] { "Music", "Videos" }, moved);
+    }
+
+    [Fact]
     public void Sc_start_modes_include_delayed_auto()
     {
         Assert.Equal("delayed-auto", TweakCatalog.ScStartMode(2, delayed: true));

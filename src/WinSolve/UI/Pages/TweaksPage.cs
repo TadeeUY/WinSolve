@@ -21,7 +21,9 @@ public sealed class TweaksPage : Page
     private readonly List<(WindowsFeature Feature, CheckBox Toggle)> _features = [];
     private readonly Label _featureStatus = Theme.Label("", Theme.Small, Theme.Muted);
     private readonly Segmented _presets = new();
-    private readonly FlatBtn _save;
+    private readonly FlatBtn _save, _undo;
+    // Save / Undo running (they await before opening their dialog, so a second click could start another run).
+    private bool _running;
     // Preference switches flipped by the user, waiting for Save (id -> wanted state).
     private readonly Dictionary<string, bool> _pending = [];
     private Dictionary<string, bool> _states = [];
@@ -44,12 +46,13 @@ public sealed class TweaksPage : Page
             "max" => TweakCatalog.MaximumPreset,
             _ => TweakCatalog.StandardPreset,
         }, fromPreset: true);
-        _save = Theme.Button("Save", async (_, _) => await SaveAsync(), primary: true, glyph: "\uE74E");
+        _undo = Theme.Button("Undo selected tweaks", async (_, _) => await GuardedAsync(() => RunSelectedAsync(undo: true)), glyph: "\uE7A7");
+        _save = Theme.Button("Save", async (_, _) => await GuardedAsync(SaveAsync), primary: true, glyph: "\uE74E");
         AddRow(Theme.Row(
             _presets,
             Theme.Button("Clear", (_, _) => Select([])),
             _save,
-            Theme.Button("Undo selected tweaks", async (_, _) => await RunSelectedAsync(undo: true), glyph: "\uE7A7")));
+            _undo));
         AddRow(_selection);
 
         var columns = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0) };
@@ -165,6 +168,20 @@ public sealed class TweaksPage : Page
     }
 
     /// <summary>Applies the selected tweaks and the changed preferences after one confirmation.</summary>
+    /// <summary>Runs Save or Undo one at a time, with both buttons disabled meanwhile.</summary>
+    private async Task GuardedAsync(Func<Task> work)
+    {
+        if (_running) return;
+        _running = true;
+        _save.Enabled = _undo.Enabled = false;
+        try { await work(); }
+        finally
+        {
+            _running = false;
+            if (!IsDisposed) _save.Enabled = _undo.Enabled = true;
+        }
+    }
+
     private async Task SaveAsync()
     {
         var work = Selected().Where(t => t.IsAction || !t.SafeIsApplied())
@@ -245,11 +262,21 @@ public sealed class TweaksPage : Page
     }
 
     /// <summary>Asks a Yes/No question (default No) from a background thread, on the UI thread over the open RunDialog.</summary>
-    private bool AskFromWorker(string message) => !IsDisposed && (bool)Invoke(() =>
+    private bool AskFromWorker(string message)
     {
-        IWin32Window owner = Application.OpenForms.OfType<RunDialog>().LastOrDefault() ?? (IWin32Window)this;
-        return Loc.Show(owner, message, "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
-    });
+        try
+        {
+            return !IsDisposed && (bool)Invoke(() =>
+            {
+                IWin32Window owner = Application.OpenForms.OfType<RunDialog>().LastOrDefault() ?? (IWin32Window)this;
+                return Loc.Show(owner, message, "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+            });
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+        {
+            return false; // the page went away: don't continue without a restore point
+        }
+    }
 
     private async Task RunSelectedAsync(bool undo)
     {
@@ -394,9 +421,12 @@ public sealed class TweaksPage : Page
             }
 
             var domain = adapters.Where(a => a.Domain).ToList();
-            var eligible = adapters.Where(a => !a.Domain).ToList();
-            var domainNote = domain.Count == 0 ? ""
-                : "\n\n" + string.Format(Loc.T("Not changed, because they are on a network managed by your organization (domain): {0}"), string.Join(", ", domain.Select(a => a.Name)));
+            var noIp = adapters.Where(a => a.NoIp && !a.Domain).ToList();
+            var eligible = adapters.Where(a => !a.Domain && !a.NoIp).ToList();
+            var domainNote = (domain.Count == 0 ? ""
+                    : "\n\n" + string.Format(Loc.T("Not changed, because they are on a network managed by your organization (domain): {0}"), string.Join(", ", domain.Select(a => a.Name))))
+                + (noIp.Count == 0 ? ""
+                    : "\n\n" + string.Format(Loc.T("Not changed, because they have no IP settings of their own (for example, used by a Hyper-V virtual switch): {0}"), string.Join(", ", noIp.Select(a => a.Name))));
             if (eligible.Count == 0)
             {
                 Info(Loc.T("There is no connected network adapter whose DNS WinSolve can change.") + domainNote);

@@ -283,6 +283,8 @@ public static partial class TweakCatalog
     {
         var result = new Dictionary<string, ServiceBackup>(StringComparer.OrdinalIgnoreCase);
         using var doc = JsonDocument.Parse(json);
+        // Any other shape (array, number...) is a damaged file, reported like unparsable JSON.
+        if (doc.RootElement.ValueKind != JsonValueKind.Object) throw new JsonException("The backup is not a JSON object.");
         foreach (var p in doc.RootElement.EnumerateObject())
         {
             if (p.Value.ValueKind == JsonValueKind.Number && p.Value.TryGetInt32(out var start))
@@ -352,20 +354,31 @@ public static partial class TweakCatalog
         CanUndo = () => File.Exists(ServicesBackupPath) || ServicesAreManual(),
         Apply = () =>
         {
-            // Save the original startup types once, so Undo can restore them exactly. Nothing is
-            // changed if the backup can't be written.
-            Dictionary<string, ServiceBackup>? backup = null;
-            if (File.Exists(ServicesBackupPath))
+            // Save each service's original startup type before its first change, so Undo can
+            // restore it exactly; services installed since the last run are added to the backup.
+            // Nothing is changed if the backup can't be read (I/O error) or written.
+            var backup = new Dictionary<string, ServiceBackup>(StringComparer.OrdinalIgnoreCase);
+            var exists = File.Exists(ServicesBackupPath);
+            if (exists)
             {
                 try { backup = ParseServicesBackup(File.ReadAllText(ServicesBackupPath)); }
-                catch (Exception ex) when (ex is JsonException or IOException) { Logger.Write($"services-backup.json could not be read: {ex.Message}"); }
+                catch (JsonException ex)
+                {
+                    // Damaged: keep it aside and start a fresh backup of the current startup types.
+                    var aside = ServicesBackupPath + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture);
+                    File.Move(ServicesBackupPath, aside, overwrite: true);
+                    Logger.Write($"services-backup.json was damaged ({ex.Message}); kept it as {aside} and saved the current startup types.");
+                    exists = false;
+                }
             }
-            else
+            var added = false;
+            foreach (var (name, _) in ManualServices)
             {
-                var original = ManualServices.Where(s => ServiceStart(s.Name) is not null)
-                    .ToDictionary(s => s.Name, s => new ServiceBackup(ServiceStart(s.Name)!.Value, ServiceDelayed(s.Name)));
-                WriteAtomically(ServicesBackupPath, JsonSerializer.Serialize(original));
+                if (backup.ContainsKey(name) || ServiceStart(name) is not { } st) continue;
+                backup[name] = new ServiceBackup(st, ServiceDelayed(name));
+                added = true;
             }
+            if (added || !exists) WriteAtomically(ServicesBackupPath, JsonSerializer.Serialize(backup));
 
             var errors = new List<string>();
             foreach (var (name, start) in ManualServices)
@@ -374,7 +387,7 @@ public static partial class TweakCatalog
 
             // Older versions also set IP Helper to Manual: put it back as it was.
             foreach (var name in LegacyManualServices)
-                if (backup?.GetValueOrDefault(name) is { } b && ServiceStart(name) is { } now && now != b.Start
+                if (backup.GetValueOrDefault(name) is { } b && ServiceStart(name) is { } now && now != b.Start
                     && SetServiceStart(name, b.Start, b.Delayed) is { } error)
                     errors.Add(error);
 
@@ -416,6 +429,8 @@ public static partial class TweakCatalog
     [
         ("Desktop", "Desktop"), ("Personal", "Documents"), ("{F42EE2D3-909F-4907-8871-4C22FC0BF756}", "Documents"),
         ("My Pictures", "Pictures"), ("{0DDD015D-B06C-45D5-8C4C-F59713854639}", "Pictures"),
+        ("My Music", "Music"), ("{A0C69A99-21C8-4671-8703-7934162FCF1D}", "Music"),
+        ("My Video", "Videos"), ("{35286A68-3C57-41A1-BBB1-0EAE73D76C95}", "Videos"),
     ];
 
     private static string OneDriveRemovedFlag => TweakBackup.UserFlag("adv-onedrive-remove", "removed");
