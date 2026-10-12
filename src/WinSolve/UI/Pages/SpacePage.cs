@@ -454,7 +454,7 @@ public sealed class SpacePage : Page
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
 
-        if (RecycleBin.Send(path, Handle))
+        if (RecycleBin.Send(path, Handle, knownSize: n.Size))
         {
             Logger.Write($"Moved to Recycle Bin: {path} ({Format.Bytes(n.Size)})");
             ActivityLog.Cleaned(n.Size, "disk space");

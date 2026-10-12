@@ -150,7 +150,8 @@ public static class InteractiveUser
     public static bool IsOtherUsersData(string path)
     {
         string full;
-        try { full = Path.GetFullPath(path).TrimEnd('\\'); }
+        // No \\?\ prefix or 8.3 short names (C:\Users\BOB~1) that would slip past the comparison.
+        try { full = (SafePath.Normalize(path) ?? Path.GetFullPath(path)).TrimEnd('\\'); }
         catch { return false; }
         foreach (var profile in OtherProfileFolders.Value)
             if (SafePath.IsSameOrInside(full, profile)) return true;
@@ -245,6 +246,42 @@ public static class InteractiveUser
         }
         list.AddRange(OneDriveRoots());
         return list.Where(p => !string.IsNullOrWhiteSpace(p) && Path.IsPathFullyQualified(p)).ToList();
+    }
+
+    /// <summary>
+    /// Desktop, Documents, Downloads, Pictures, Music and Videos for read-only scans (duplicates,
+    /// large files): where they really are, even redirected outside the profile (D:\Docs), as long as
+    /// that is not a drive root, a Windows/program folder or another user's folder. Places WinSolve
+    /// writes to or deletes from keep using the stricter properties (inside the profile only).
+    /// </summary>
+    internal static List<string> PersonalFoldersForReading()
+    {
+        if (IsUnresolved) throw Unresolved();
+        (string Name, Func<string> Strict)[] folders =
+        [
+            ("Desktop", () => Desktop), ("Personal", () => Documents), ("{374DE290-123F-4565-9164-39C4925E467B}", () => Downloads),
+            ("My Pictures", () => Pictures), ("My Music", () => Music), ("My Video", () => Videos),
+        ];
+        var list = new List<string>();
+        foreach (var (name, strict) in folders)
+        {
+            if (Other is { } o && ReadUserValue(@"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders", name) is { } raw
+                && Expand(raw, o) is { } expanded && IsReadableUserFolder(expanded))
+                list.Add(expanded);
+            else
+                list.Add(strict());
+        }
+        return list;
+    }
+
+    /// <summary>A folder a scan may read: fully qualified, not a drive root, not Windows/programs, not another user's.</summary>
+    private static bool IsReadableUserFolder(string path)
+    {
+        if (SafePath.Normalize(path) is not { } full) return false;
+        full = full.TrimEnd('\\');
+        var root = Path.GetPathRoot(full)?.TrimEnd('\\') ?? "";
+        return full.Length > root.Length + 1 && !SafePath.IsInsideSystemOrProgramFolder(full) && !IsOtherUsersData(full)
+               && !AllProfileFolders().Any(p => SafePath.IsSameOrInside(p, full)); // not a profile, nor C:\Users holding them
     }
 
     /// <summary>The signed-in user's OneDrive folders (personal and work or school accounts).</summary>

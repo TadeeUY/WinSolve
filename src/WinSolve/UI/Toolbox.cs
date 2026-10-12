@@ -967,10 +967,11 @@ internal sealed class ForgottenDialog : ToolDialog
         if (files.Count == 0) { Tell("Select one or more files first."); return; }
         if (!Ask(string.Format(Loc.T("Send {0} file(s) ({1}) to the Recycle Bin?"), files.Count, Format.Bytes(files.Sum(f => f.Size))))) return;
         long freed = 0;
+        var permanent = RecycleBin.ConfirmBatch(files.Select(f => (f.Path, f.Size)), this); // asked once, not per file
         foreach (var f in files)
         {
             if (InteractiveUser.IsOtherUsersData(f.Path)) continue;
-            if (RecycleBin.Send(f.Path, Handle))
+            if (RecycleBin.Send(f.Path, Handle, askPermanent: false, knownSize: f.Size, permanentApproved: permanent.Contains(f.Path)))
             {
                 freed += f.Size;
                 foreach (DataGridViewRow r in _files.Rows) if (ReferenceEquals(r.Tag, f)) { _files.Rows.Remove(r); break; }

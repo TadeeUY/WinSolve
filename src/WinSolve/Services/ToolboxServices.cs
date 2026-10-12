@@ -309,10 +309,25 @@ public static class SecureDelete
             }
         }
 
+        // The person's own folders, also where they are redirected (D:\Users\me\Documents, D:\OneDrive).
+        List<string> personal;
+        try
+        {
+            var profile = InteractiveUser.Profile.TrimEnd('\\');
+            // Registry values can say anything: never a drive root, Windows/program folders or C:\Users.
+            personal = [profile, .. InteractiveUser.KnownFolderPaths()
+                .Select(f => SafePath.Normalize(f)?.TrimEnd('\\'))
+                .OfType<string>()
+                .Where(f => f.Length > (Path.GetPathRoot(f)?.TrimEnd('\\').Length ?? 0) + 1
+                            && !SafePath.IsInsideSystemOrProgramFolder(f)
+                            && !(SafePath.IsSameOrInside(profile, f) && !f.Equals(profile, StringComparison.OrdinalIgnoreCase)))];
+        }
+        catch (InvalidOperationException) { personal = []; }
+
         foreach (var p in paths)
         {
-            if (string.IsNullOrWhiteSpace(p) || !Path.IsPathFullyQualified(p)) continue;
-            var full = Path.GetFullPath(p);
+            // Plain long form: no \\?\ prefix or 8.3 names that would slip past the checks.
+            if (SafePath.Normalize(p) is not { } full) continue;
             if (InteractiveUser.IsOtherUsersData(full))
             {
                 log($"Skipped {full}: it belongs to another user of this PC.");
@@ -332,10 +347,15 @@ public static class SecureDelete
             else if (File.Exists(full))
             {
                 var parent = Path.GetDirectoryName(full)!;
-                if ((SafePath.IsProtectedFolder(parent) && !SafePath.IsSameOrInside(parent, InteractiveUser.Profile))
-                    || InsideProgramOrSystemFolder(full))
+                if (InsideProgramOrSystemFolder(full))
                 {
                     log($"Skipped {full}: inside a system or program folder.");
+                    continue;
+                }
+                // A file in one of the person's own folders is fine, even right in Documents.
+                if (SafePath.IsProtectedFolder(parent) && !personal.Any(f => SafePath.IsSameOrInside(parent, f)))
+                {
+                    log($"Skipped {full}: it is in a protected folder (a drive's top level, the Users folder or another key Windows folder), not in your own folders.");
                     continue;
                 }
                 if (SafePath.HasReparsePoint(parent))

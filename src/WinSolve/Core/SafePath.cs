@@ -56,9 +56,13 @@ public static class SafePath
         string SystemDrive,
         bool UserFoldersUnknown = false);
 
-    /// <summary>Windows' own folders at the root of a drive (boot, recovery, restore points, Recycle Bin).</summary>
+    /// <summary>
+    /// Windows' own folders at the root of a drive (boot, recovery, restore points, Recycle Bin, and
+    /// Store apps and games installed to another drive: WindowsApps, WpSystem).
+    /// </summary>
     internal static readonly string[] DriveSystemFolders =
-        ["$Recycle.Bin", "System Volume Information", "Recovery", "Boot", "$WinREAgent", "Config.Msi", "$Windows.~BT", "$Windows.~WS", "$SysReset"];
+        ["$Recycle.Bin", "System Volume Information", "Recovery", "Boot", "$WinREAgent", "Config.Msi", "$Windows.~BT", "$Windows.~WS", "$SysReset",
+         "WindowsApps", "WpSystem"];
 
     // Computed once: the signed-in user doesn't change while WinSolve runs.
     private static readonly Lazy<ProtectionRules> Rules = new(BuildRules);
@@ -144,10 +148,8 @@ public static class SafePath
     /// <summary>Inside (or one of) Windows, Program Files (x86), ProgramData or a drive's Windows system folders.</summary>
     public static bool IsInsideSystemOrProgramFolder(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)) return true;
-        string full;
-        try { full = Path.GetFullPath(path).TrimEnd('\\'); }
-        catch { return true; }
+        if (Normalize(path) is not { } normalized) return true;
+        var full = normalized.TrimEnd('\\');
         string[] roots =
         [
             Environment.GetFolderPath(Environment.SpecialFolder.Windows),
@@ -160,12 +162,32 @@ public static class SafePath
 
     private static bool Check(string path, bool anyFirstLevel, bool systemAreas)
     {
-        // A relative path would resolve against the working folder (System32 when elevated).
-        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)) return true;
-        string full;
-        try { full = Path.GetFullPath(path); }
-        catch { return true; }
-        return IsProtected(full, Rules.Value, anyFirstLevel, systemAreas);
+        return Normalize(path) is not { } full || IsProtected(full, Rules.Value, anyFirstLevel, systemAreas);
+    }
+
+    /// <summary>
+    /// The path in the plain form the checks compare against: no \\?\ prefix, "." and ".." resolved,
+    /// and 8.3 short names expanded (C:\PROGRA~2, C:\Users\ADMINI~1). Null for a relative path, which
+    /// would resolve against the working folder (System32 when elevated), or an invalid one.
+    /// </summary>
+    internal static string? Normalize(string? path)
+    {
+        if (StripDevicePrefix(path) is not { } plain || !Path.IsPathFullyQualified(plain)) return null;
+        try { return LongPath(Path.GetFullPath(plain)); }
+        catch { return null; }
+    }
+
+    /// <summary>\\?\C:\x and \\.\C:\x become C:\x, \\?\UNC\server\share becomes \\server\share. Pure.</summary>
+    internal static string? StripDevicePrefix(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        foreach (var prefix in new[] { @"\\?\", @"\\.\", @"\??\" })
+        {
+            if (!path.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            var rest = path[prefix.Length..];
+            return rest.StartsWith(@"UNC\", StringComparison.OrdinalIgnoreCase) ? @"\\" + rest[4..] : rest;
+        }
+        return path;
     }
 
     /// <summary>The checks on a full path, without touching the disk (unit-tested with made-up rules).</summary>
@@ -198,8 +220,11 @@ public static class SafePath
     {
         var root = Path.GetPathRoot(full)?.TrimEnd('\\');
         if (string.IsNullOrEmpty(root) || full.TrimEnd('\\').Length <= root.Length + 1) return false;
-        var first = full[(root.Length + 1)..].Split('\\')[0];
-        return DriveSystemFolders.Contains(first, StringComparer.OrdinalIgnoreCase);
+        var parts = full[(root.Length + 1)..].Split('\\');
+        if (DriveSystemFolders.Contains(parts[0], StringComparer.OrdinalIgnoreCase)) return true;
+        // Store apps: <drive>\Program Files\WindowsApps on any drive.
+        return parts.Length > 1 && parts[0].Equals("Program Files", StringComparison.OrdinalIgnoreCase)
+               && parts[1].Equals("WindowsApps", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -254,7 +279,12 @@ public static class SafePath
         {
             var buffer = new char[32768];
             var len = GetLongPathNameW(path, buffer, (uint)buffer.Length);
-            return len > 0 && len < buffer.Length ? new string(buffer, 0, (int)len) : path;
+            if (len > 0 && len < buffer.Length) return new string(buffer, 0, (int)len);
+            // Doesn't exist (yet): expand the part that does (C:\PROGRA~2\missing).
+            if (!path.Contains('~')) return path;
+            var parent = Path.GetDirectoryName(path.TrimEnd('\\'));
+            if (string.IsNullOrEmpty(parent) || parent.Length >= path.TrimEnd('\\').Length) return path;
+            return Path.Combine(LongPath(parent), Path.GetFileName(path.TrimEnd('\\')));
         }
         catch { return path; }
     }
