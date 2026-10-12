@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 14, 0),
+        [
+            new("\uE9D9", "The PC report now says how good your PC is: a score out of 100, a bar for the processor, memory, storage and graphics, what it is good for and which upgrade would help most.",
+                "El informe del PC ahora dice qué tan buena es tu PC: una nota sobre 100, una barra para procesador, memoria, almacenamiento y gráficos, para qué sirve y qué mejora conviene más."),
+        ]),
         new(new Version(0, 13, 4),
         [
             new("\uE74D", "Safer cleanup: temporary files are only removed from real temp folders and only when they are over a day old; your personal and Windows folders can never be emptied or deleted.",
