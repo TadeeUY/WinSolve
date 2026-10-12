@@ -1,8 +1,15 @@
 namespace WinSolve.Localization;
 
 /// <summary>Spanish UI strings. Keys are the English source text; {0}, {1}... are placeholders.</summary>
-public static class Spanish
+public static partial class Spanish
 {
+    // Strings of the safety fixes live in their own files (Spanish.Safety*.cs) and are merged here.
+    static Spanish()
+    {
+        foreach (var extra in new[] { SafetyCleanup, SafetyDrivers, SafetyTweaks, SafetyApps })
+            foreach (var (key, value) in extra) Table[key] = value;
+    }
+
     public static readonly Dictionary<string, string> Table = new(StringComparer.Ordinal)
     {
         // ── Navigation and common ──

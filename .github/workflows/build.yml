@@ -15,6 +15,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -67,15 +69,14 @@ jobs:
           if ($setupVersion -ne $version) { throw "Version mismatch: app $version, setup $setupVersion." }
           $tag = "v$version"
           # A tag that doesn't match the app's version would make every install see an "update" forever.
-          if ("${{ github.ref }}".StartsWith('refs/tags/') -and "${{ github.ref_name }}" -ne $tag) {
-            throw "Tag ${{ github.ref_name }} does not match the app version $version."
+          if ($env:GITHUB_REF.StartsWith('refs/tags/') -and $env:GITHUB_REF_NAME -ne $tag) {
+            throw "Tag $($env:GITHUB_REF_NAME) does not match the app version $version."
           }
           gh release view $tag --repo ${{ github.repository }} *> $null
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "Release $tag exists; updating its files."
-            gh release upload $tag out/setup/WinSolveSetup.exe out/setup/WinSolveSetup.exe.sha256 out/portable/WinSolve-Portable.exe --clobber --repo ${{ github.repository }}
-            # Only two downloads: the installer and the portable app.
-            gh release delete-asset $tag WinSolve.exe --yes --repo ${{ github.repository }} 2>$null
+            # A published version is never replaced: work in progress keeps the same version
+            # and only a new version number publishes a new release.
+            Write-Host "Release $tag already exists; nothing is published. Bump the version to release."
             $global:LASTEXITCODE = 0
           } else {
             gh release create $tag out/setup/WinSolveSetup.exe out/setup/WinSolveSetup.exe.sha256 out/portable/WinSolve-Portable.exe `
