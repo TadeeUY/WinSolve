@@ -143,7 +143,34 @@ public static class SafePath
     /// Folders a person must not delete by hand (Space page): <see cref="IsProtectedFolder"/>, except
     /// that first-level folders of drives other than the Windows one (D:\Photos) may go.
     /// </summary>
-    public static bool IsProtectedFromUserDelete(string path) => Check(path, anyFirstLevel: false, systemAreas: true);
+    public static bool IsProtectedFromUserDelete(string path)
+        => Check(path, anyFirstLevel: false, systemAreas: true)
+           || (Normalize(path) is { } full && UserWindowsAreas.Value.Any(a => IsSameOrInside(full.TrimEnd('\\'), a)));
+
+    /// <summary>
+    /// Folders in the signed-in user's AppData that Windows manages (Store app data, the winget
+    /// stubs, the keys that protect saved passwords): deleting them by hand breaks Start, Store
+    /// apps or loses secrets. Cleanups of known caches inside them are not affected.
+    /// </summary>
+    private static readonly Lazy<string[]> UserWindowsAreas = new(() =>
+    {
+        try
+        {
+            return new[]
+                {
+                    Path.Combine(InteractiveUser.LocalAppData, "Packages"),
+                    Path.Combine(InteractiveUser.LocalAppData, "Microsoft"),
+                    Path.Combine(InteractiveUser.RoamingAppData, "Microsoft"),
+                    Path.Combine(InteractiveUser.LocalLow, "Microsoft"),
+                }
+                .Select(a => Normalize(a)?.TrimEnd('\\')).OfType<string>().ToArray();
+        }
+        catch (Exception ex)
+        {
+            Logger.Write($"Could not read the signed-in user's AppData folders: {ex.Message}");
+            return [];
+        }
+    });
 
     /// <summary>Inside (or one of) Windows, Program Files (x86), ProgramData or a drive's Windows system folders.</summary>
     public static bool IsInsideSystemOrProgramFolder(string path)

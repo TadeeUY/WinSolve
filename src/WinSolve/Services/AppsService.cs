@@ -998,6 +998,9 @@ public static class AppsService
     /// </summary>
     private static bool CanRecycle(string dir)
     {
+        // Elevated with another account's password, recycling runs as the signed-in (standard) user,
+        // who can't delete machine-wide folders: those go straight to the permanent-delete question.
+        if (InteractiveUser.IsDifferent && !SafePath.IsUserWritableLocation(dir)) return false;
         try { return new DriveInfo(Path.GetPathRoot(dir)!).DriveType == DriveType.Fixed && RecycleBin.WhyNotRecyclable(dir) is null; }
         catch { return false; }
     }
