@@ -204,7 +204,11 @@ public static class TaskCatalog
             Id = "perf-high-power-plan", Category = TaskCategory.Performance,
             Title = "Power plan: High performance",
             Description = "Activates the High performance plan. Uses more power; not recommended on battery.",
-            Run = ctx => Cmd(ctx, "powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c || (powercfg -duplicatescheme 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c & powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c)"),
+            Run = async ctx =>
+            {
+                await PowerPlans.RememberActivePlanAsync(ctx.Log, ctx.Token, PowerPlans.HighPerformanceGuid);
+                await Cmd(ctx, "powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c || (powercfg -duplicatescheme 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c & powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c)");
+            },
         },
         new()
         {
@@ -213,7 +217,7 @@ public static class TaskCatalog
             Description = "Creates and activates the hidden Ultimate Performance plan. Intended for desktops.",
             // Found by GUID, not by name: plan names are translated, and a missed match used to
             // create a new copy of the plan on every run.
-            Run = ctx => Ps(ctx, $$"""
+            Run = async ctx => { await PowerPlans.RememberActivePlanAsync(ctx.Log, ctx.Token, PowerPlans.UltimateGuid); await Ps(ctx, $$"""
                 $template = 'e9a42b02-d5df-448d-aa00-03f14749eb61'
                 $mine = '{{PowerPlans.UltimateGuid}}'
                 $list = powercfg /list | Out-String
@@ -231,7 +235,7 @@ public static class TaskCatalog
                     }
                 }
                 if ($id) { powercfg /setactive $id; "Active plan: $id" } else { 'Could not create the Ultimate Performance plan.'; exit 1 }
-                """),
+                """); },
         },
         new()
         {
@@ -240,6 +244,8 @@ public static class TaskCatalog
             Description = "Keeps the Balanced plan but switches the power mode slider to Best performance.",
             Run = async ctx =>
             {
+                // Remember the plan in use, so it can be put back (Tweaks > Restore previous plan).
+                await PowerPlans.RememberActivePlanAsync(ctx.Log, ctx.Token, PowerPlans.BalancedGuid);
                 await Cmd(ctx, "powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e");
                 await Cmd(ctx, "powercfg /overlaysetactive ded574b5-45a0-4f42-8737-46345c09c238");
             },
@@ -648,27 +654,126 @@ public static class TaskCatalog
         ctx.Log("  Explorer restarted.");
     }
 
-    /// <summary>Creates a System Restore point, lifting the one-per-24h limit first.</summary>
-    public static async Task<bool> CreateRestorePoint(TaskContext ctx, string description = "WinSolve")
+    /// <summary>
+    /// Lets Explorer and other windows pick up changed settings (file extensions, hidden files...)
+    /// without restarting Explorer: file association and shell state change notifications.
+    /// </summary>
+    public static void RefreshShell(TaskContext ctx)
     {
-        ctx.Log("Creating a restore point...");
         try
         {
-            Reg.Set(RegistryHive.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore",
-                "SystemRestorePointCreationFrequency", 0, RegistryValueKind.DWord);
+            SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, IntPtr.Zero, IntPtr.Zero);
+            foreach (var area in new[] { "ShellState", "Environment" })
+                SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, IntPtr.Zero, area, SMTO_ABORTIFHUNG, 1000, out _);
+            ctx.Log("  Explorer notified of the changes.");
+        }
+        catch (Exception ex)
+        {
+            ctx.Log($"  Could not notify Explorer: {ex.Message}");
+        }
+    }
+
+    private const int SHCNE_ASSOCCHANGED = 0x08000000;
+    private const uint SHCNF_IDLIST = 0x0000;
+    private static readonly IntPtr HWND_BROADCAST = new(0xFFFF);
+    private const uint WM_SETTINGCHANGE = 0x001A;
+    private const uint SMTO_ABORTIFHUNG = 0x0002;
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll")]
+    private static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, string lParam, uint flags, uint timeout, out IntPtr result);
+
+    /// <summary>Outcome of <see cref="CreateRestorePointAsync"/>.</summary>
+    public sealed record RestorePointResult(bool Created, bool ProtectionTurnedOn, string Drive);
+
+    private const string SystemRestoreKey = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore";
+    private const string FrequencyValue = "SystemRestorePointCreationFrequency";
+
+    /// <summary>
+    /// True when System Protection is on for the drive. Windows lists the protected volumes in
+    /// SPP\Clients as "...:(C%3A)".
+    /// </summary>
+    private static bool SystemProtectionOn(string drive)
+    {
+        try
+        {
+            using var hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+            using var key = hklm.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\SPP\Clients");
+            var marker = "(" + drive.TrimEnd(':', '\\') + "%3A)";
+            return key?.GetValue("{09F7EDC5-294E-4180-AF6A-FB0E6A0E9513}") switch
+            {
+                string[] volumes => volumes.Any(v => v.Contains(marker, StringComparison.OrdinalIgnoreCase)),
+                string volume => volume.Contains(marker, StringComparison.OrdinalIgnoreCase),
+                _ => false,
+            };
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Creates a System Restore point. Lifts the one-per-24h limit only for this call (the previous
+    /// setting is put back) and turns System Protection on for the system drive when it is off,
+    /// which is reported in the result so the user can be told.
+    /// </summary>
+    public static async Task<RestorePointResult> CreateRestorePointAsync(TaskContext ctx, string description = "WinSolve")
+    {
+        ctx.Log("Creating a restore point...");
+        var hklm = RegistryHive.LocalMachine;
+        StoredValue? previousFrequency = null;
+        try
+        {
+            var current = TweakBackup.ReadCurrent(hklm, SystemRestoreKey, FrequencyValue);
+            if (current.Absent || !Reg.ValueEquals(current.ToObject(), 0))
+            {
+                previousFrequency = current;
+                Reg.Set(hklm, SystemRestoreKey, FrequencyValue, 0, RegistryValueKind.DWord);
+            }
         }
         catch (Exception ex)
         {
             ctx.Log($"  Warning: {ex.Message}");
         }
 
-        var r = await ProcessRunner.PowerShellAsync(
-            $"Enable-ComputerRestore -Drive '{SystemDrive}\\' -ErrorAction SilentlyContinue; " +
-            $"Checkpoint-Computer -Description '{description.Replace("'", "''")}' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop; 'OK'",
-            l => ctx.Log("  " + l), ctx.Token);
+        var protectionWasOn = SystemProtectionOn(SystemDrive);
+        ProcessResult r;
+        try
+        {
+            if (!protectionWasOn) ctx.Log($"  System Protection is off on {SystemDrive}; turning it on to create the restore point.");
+            r = await ProcessRunner.PowerShellAsync(
+                (protectionWasOn ? "" : $"Enable-ComputerRestore -Drive '{SystemDrive}\\' -ErrorAction Stop; ") +
+                $"Checkpoint-Computer -Description '{description.Replace("'", "''")}' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop; 'OK'",
+                l => ctx.Log("  " + l), ctx.Token);
+        }
+        finally
+        {
+            if (previousFrequency is not null)
+            {
+                try { TweakBackup.Write(hklm, SystemRestoreKey, FrequencyValue, previousFrequency); }
+                catch (Exception ex) { ctx.Log($"  Warning: {ex.Message}"); }
+            }
+        }
 
         var ok = r.Success && r.Output.Contains("OK");
+        var turnedOn = !protectionWasOn && SystemProtectionOn(SystemDrive);
+        if (turnedOn)
+        {
+            ctx.Log($"  System Protection was turned on for {SystemDrive}.");
+            Logger.Write($"System Protection was off on {SystemDrive}; WinSolve turned it on to create a restore point.");
+        }
         ctx.Log(ok ? "  Restore point created." : "  Could not create a restore point (is System Protection turned off?).");
-        return ok;
+        return new RestorePointResult(ok, turnedOn, SystemDrive);
     }
+
+    /// <summary>Tells the user that System Protection was turned on to create a restore point.</summary>
+    public static string ProtectionTurnedOnMessage(string drive)
+        => string.Format(Localization.Loc.T("System Protection was turned off on {0}. WinSolve turned it on to create the restore point; restore points use some disk space. You can turn it off again in System Properties > System Protection."), drive);
+
+    /// <summary>Creates a System Restore point; true on success (see <see cref="CreateRestorePointAsync"/>).</summary>
+    public static async Task<bool> CreateRestorePoint(TaskContext ctx, string description = "WinSolve")
+        => (await CreateRestorePointAsync(ctx, description)).Created;
 }

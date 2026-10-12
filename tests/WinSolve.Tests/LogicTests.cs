@@ -79,10 +79,13 @@ public class OptimizationPlannerTests
     }
 
     [Fact]
-    public void Low_ram_blocks_background_apps()
+    public void Background_apps_are_never_blocked_automatically()
     {
-        Assert.Contains("perf-background-apps", Ids(OptimizationPlanner.Build(DeviceKind.PC, OptimizationLevel.Balanced, Hw(ram: 8))));
-        Assert.DoesNotContain("perf-background-apps", Ids(OptimizationPlanner.Build(DeviceKind.PC, OptimizationLevel.Balanced, Hw(ram: 32))));
+        foreach (var level in Enum.GetValues<OptimizationLevel>())
+        {
+            Assert.DoesNotContain("perf-background-apps", Ids(OptimizationPlanner.Build(DeviceKind.PC, level, Hw(ram: 4))));
+            Assert.DoesNotContain("perf-background-apps", Ids(OptimizationPlanner.Build(DeviceKind.PC, level, Hw(ram: 32))));
+        }
     }
 
     [Fact]

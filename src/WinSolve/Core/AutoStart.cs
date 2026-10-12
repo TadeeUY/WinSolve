@@ -1,3 +1,6 @@
+using System.Security;
+using System.Security.Principal;
+
 namespace WinSolve.Core;
 
 /// <summary>
@@ -18,6 +21,42 @@ public static class AutoStart
     /// </summary>
     public static bool IsAllowed => !Edition.IsPortable && !SafePath.IsUserWritableLocation(Environment.ProcessPath ?? Application.ExecutablePath);
 
+    /// <summary>
+    /// Task definition: at this account's sign-in, elevated, also on battery power and with no
+    /// time limit (schtasks /create defaults would skip it on battery, stop it when unplugged and
+    /// end it after 72 hours).
+    /// </summary>
+    internal static string TaskXml(string exe, string userSid) => $"""
+        <?xml version="1.0" encoding="UTF-16"?>
+        <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+          <RegistrationInfo><Description>Starts WinSolve in the notification area when you sign in.</Description></RegistrationInfo>
+          <Triggers>
+            <LogonTrigger><Enabled>true</Enabled><UserId>{SecurityElement.Escape(userSid)}</UserId><Delay>PT30S</Delay></LogonTrigger>
+          </Triggers>
+          <Principals>
+            <Principal id="Author"><UserId>{SecurityElement.Escape(userSid)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal>
+          </Principals>
+          <Settings>
+            <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+            <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+            <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+            <AllowHardTerminate>true</AllowHardTerminate>
+            <StartWhenAvailable>false</StartWhenAvailable>
+            <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+            <IdleSettings><StopOnIdleEnd>false</StopOnIdleEnd><RestartOnIdle>false</RestartOnIdle></IdleSettings>
+            <AllowStartOnDemand>true</AllowStartOnDemand>
+            <Enabled>true</Enabled>
+            <Hidden>false</Hidden>
+            <RunOnlyIfIdle>false</RunOnlyIfIdle>
+            <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+            <Priority>7</Priority>
+          </Settings>
+          <Actions Context="Author">
+            <Exec><Command>{SecurityElement.Escape(exe)}</Command><Arguments>--tray</Arguments></Exec>
+          </Actions>
+        </Task>
+        """;
+
     public static async Task<bool> SetAsync(bool enabled)
     {
         var exe = Environment.ProcessPath ?? Application.ExecutablePath;
@@ -26,10 +65,25 @@ public static class AutoStart
             Logger.Write($"Start with Windows refused: {exe} is in a user-writable location.");
             return false;
         }
-        var r = enabled
-            ? await ProcessRunner.RunAsync("schtasks.exe",
-                $"/create /f /tn \"{TaskName}\" /sc onlogon /rl highest /delay 0000:30 /tr \"\\\"{exe}\\\" --tray\"")
-            : await ProcessRunner.RunAsync("schtasks.exe", $"/delete /f /tn \"{TaskName}\"");
+        ProcessResult r;
+        if (enabled)
+        {
+            // The account WinSolve runs as (an administrator), as schtasks /create used before.
+            var sid = WindowsIdentity.GetCurrent().User!.Value;
+            // Staged where only administrators can write, so the definition can't be swapped before import.
+            var file = Path.Combine(SafePath.CreateAdminOnlyFolder("Tasks"), "autostart.xml");
+            try
+            {
+                await File.WriteAllTextAsync(file, TaskXml(exe, sid), System.Text.Encoding.Unicode);
+                r = await ProcessRunner.RunAsync("schtasks.exe", $"/create /f /tn \"{TaskName}\" /xml \"{file}\"");
+            }
+            finally
+            {
+                try { Directory.Delete(Path.GetDirectoryName(file)!, true); } catch { }
+            }
+        }
+        else
+            r = await ProcessRunner.RunAsync("schtasks.exe", $"/delete /f /tn \"{TaskName}\"");
         Logger.Write($"Start with Windows {(enabled ? "enabled" : "disabled")}: {r.Output.Trim()}");
         return r.Success;
     }

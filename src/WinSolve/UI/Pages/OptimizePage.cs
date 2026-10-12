@@ -122,7 +122,8 @@ public sealed class OptimizePage : Page
 
         var lines = new List<string>();
         if (!custom) lines.AddRange(OneClickOptimizer.CurrentPlan().Reasons.Select(r => "• " + r));
-        if (AppSettings.Current.CreateRestorePoint) lines.Add("• A System Restore point is created first, so every change can be undone.");
+        if (AppSettings.Current.CreateRestorePoint)
+            lines.Add("• A System Restore point is created first, so settings changes can be undone. Deleted files (temporary files, caches) can't be brought back.");
         lines.Add($"• {pendingTweaks.Count} tweak(s) to apply ({tweaks.Count - pendingTweaks.Count} already applied)" +
                   (pendingTweaks.Count > 0 ? ": " + string.Join(", ", pendingTweaks.Select(t => Localization.Loc.T(t.Title)).Take(6)) + (pendingTweaks.Count > 6 ? ", ..." : "") : ""));
         lines.Add($"• {tasks.Count} task(s): " + string.Join(", ", tasks.Select(t => Localization.Loc.T(t.Title))));
@@ -188,19 +189,32 @@ public sealed class OptimizePage : Page
             && OneClickOptimizer.CurrentDevice == DeviceKind.Laptop
             && !Confirm("Maximum performance on a laptop increases power draw and heat and shortens battery life. Continue?"))
             return;
-        if (!Confirm("Start the optimization? You can keep using the PC while it runs.")) return;
+        // Policy tweaks on a PC an organization manages: always warn, whatever the confirm setting.
+        var policyWarning = await Task.Run(() => ManagedPc.PolicyWarning(OneClickOptimizer.SelectedTweaks().Where(t => !t.SafeIsApplied()).ToList()));
+        if (policyWarning.Length > 0)
+        {
+            if (!ConfirmDanger(policyWarning + "\n\n" + Localization.Loc.T("Continue?"))) return;
+        }
+        else if (!Confirm("Start the optimization? You can keep using the PC while it runs.")) return;
 
         _runner.Clear();
         OptimizeSummary? summary = null;
         await _runner.RunAsync("Optimizing", async (log, progress, ct) =>
         {
-            summary = await OneClickOptimizer.RunAsync(log, progress, ct);
+            // Asked on the UI thread; the run waits for the answer.
+            summary = await OneClickOptimizer.RunAsync(log, progress, ct,
+                message => !IsDisposed && (bool)Invoke(() => ConfirmDanger(message)));
         });
 
         if (summary is { } s)
         {
             _runner.Log($"Done. {s.TasksOk} task(s) completed, {s.TweaksApplied} tweak(s) applied, {Format.Bytes(s.FreedBytes)} freed."
                         + (s.TasksFailed > 0 ? $" {s.TasksFailed} task(s) or tweak(s) reported errors (see the log above)." : ""));
+            if (s.ProtectionTurnedOnDrive is { } drive) Info(TaskCatalog.ProtectionTurnedOnMessage(drive));
+            if (s.ExplorerRestartSuggested
+                && Localization.Loc.Show(this, "Some changes appear after restarting Explorer (open folder windows will close). Restart Explorer now?", "WinSolve",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) == DialogResult.Yes)
+                await TaskCatalog.ExplorerRestart(new TaskContext(_runner.Log, default));
             if (s.RebootRecommended) AskReboot(this);
         }
         OnShown();

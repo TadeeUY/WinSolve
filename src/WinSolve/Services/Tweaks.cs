@@ -43,6 +43,20 @@ public sealed class Tweak
     /// <summary>Whether Undo has something to restore (default: the tweak is applied).</summary>
     public Func<bool>? CanUndo { get; init; }
 
+    /// <summary>
+    /// Writes Group Policy / MDM (PolicyManager) values. On a PC an organization manages these can
+    /// be overwritten by, or conflict with, its settings, so the user is warned first.
+    /// </summary>
+    public bool TouchesPolicies { get; init; }
+
+    /// <summary>False when the tweak doesn't apply to this PC (e.g. OneDrive isn't installed); it is then hidden.</summary>
+    public Func<bool>? IsAvailable { get; init; }
+
+    public bool SafeIsAvailable()
+    {
+        try { return IsAvailable?.Invoke() ?? true; } catch { return false; }
+    }
+
     /// <summary>Current state, never throws.</summary>
     public bool SafeIsApplied()
     {
@@ -82,27 +96,45 @@ public static partial class TweakCatalog
 
     public static Tweak? Find(string id) => All.FirstOrDefault(t => t.Id == id);
 
-    /// <summary>Builds a tweak from one or more registry values.</summary>
+    /// <summary>
+    /// Builds a tweak from one or more registry values. Apply remembers each value as it was
+    /// (see <see cref="TweakBackup"/>) and Undo puts that back; only when nothing was recorded
+    /// (applied by an older version, or the backup is unreadable) does Undo write the default
+    /// (<see cref="RegValue.Off"/>, or delete the value).
+    /// </summary>
     private static Tweak RegTweak(string id, string category, string title, string description,
-        RegValue[] values, bool recommended = false, bool explorer = false, bool reboot = false) => new()
+        RegValue[] values, bool recommended = false, bool explorer = false, bool reboot = false,
+        string? warning = null, Action? afterRevert = null) => new()
     {
-        Id = id, Category = category, Title = title, Description = description,
+        Id = id, Category = category, Title = title, Description = description, Warning = warning,
         Recommended = recommended, NeedsExplorerRestart = explorer, NeedsReboot = reboot,
         AllUsers = values.Any(v => v.Hive is RegistryHive.LocalMachine or RegistryHive.Users),
+        TouchesPolicies = values.Any(v => IsPolicyPath(v.Path)),
         IsApplied = () => values.All(v => Reg.ValueEquals(Reg.Get(v.Hive, v.Path, v.Name), v.On)),
         Apply = () =>
         {
+            TweakBackup.Remember(id, values.Select(v => (v.Hive, v.Path, v.Name, v.On)));
             foreach (var v in values) Reg.Set(v.Hive, v.Path, v.Name, v.On, v.Kind);
         },
         Revert = () =>
         {
             foreach (var v in values)
             {
+                if (TweakBackup.TryRestore(id, v.Hive, v.Path, v.Name)) continue;
                 if (v.Off is null) Reg.Delete(v.Hive, v.Path, v.Name);
                 else Reg.Set(v.Hive, v.Path, v.Name, v.Off, v.Kind);
             }
+            // Only once every value is back: a failed Undo can be retried with the same backup.
+            TweakBackup.Forget(id, values.Select(v => (v.Hive, v.Path, v.Name)));
+            afterRevert?.Invoke();
         },
     };
+
+    /// <summary>Group Policy or MDM-managed location.</summary>
+    internal static bool IsPolicyPath(string path)
+        => path.Contains(@"\Policies\", StringComparison.OrdinalIgnoreCase)
+           || path.StartsWith(@"Policies\", StringComparison.OrdinalIgnoreCase)
+           || path.Contains("PolicyManager", StringComparison.OrdinalIgnoreCase);
 
     private static RegValue D(RegistryHive hive, string path, string name, int on, int? off)
         => new(hive, path, name, on, off);
@@ -167,6 +199,14 @@ public static partial class TweakCatalog
 
     private static bool IsWindows11 => Environment.OSVersion.Version.Build >= 22000;
 
+    /// <summary>Runs powercfg and fails with its message when it reports an error.</summary>
+    private static void Powercfg(string arguments)
+    {
+        var r = ProcessRunner.RunAsync("powercfg.exe", arguments).GetAwaiter().GetResult();
+        if (!r.Success)
+            throw new InvalidOperationException($"powercfg {arguments} failed (exit code {r.ExitCode}): {r.Output.Trim()}");
+    }
+
     private static List<Tweak> Build()
     {
         var list = new List<Tweak>
@@ -207,7 +247,9 @@ public static partial class TweakCatalog
                 [D(HKCU, @"Software\Policies\Microsoft\Windows\Explorer", "DisableSearchBoxSuggestions", 1, null)],
                 explorer: true),
             RegTweak("priv-copilot", "Privacy", "Disable Copilot",
-                "Hides and disables Windows Copilot.",
+                // The newer Copilot app is an ordinary Store app this policy doesn't cover; there is
+                // no simple supported policy for it, so the description says so instead.
+                "Turns off the Windows Copilot sidebar for your account. The newer Copilot app is a regular app this setting doesn't remove: uninstall it from Apps if you don't want it.",
                 [
                     // Per user only: the machine-wide policy would turn it off for every account.
                     D(HKCU, @"Software\Policies\Microsoft\Windows\WindowsCopilot", "TurnOffWindowsCopilot", 1, null),
@@ -285,11 +327,15 @@ public static partial class TweakCatalog
                 "Useful when Windows replaces your GPU (or other) drivers with generic versions.",
                 [D(HKLM, @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate", "ExcludeWUDriversInQualityUpdate", 1, null)]),
             RegTweak("sys-bsod-details", "System", "Detailed blue screens",
-                "Shows technical parameters on blue screens and disables the automatic restart so you can read them.",
-                [
-                    D(HKLM, @"SYSTEM\CurrentControlSet\Control\CrashControl", "DisplayParameters", 1, null),
-                    D(HKLM, @"SYSTEM\CurrentControlSet\Control\CrashControl", "AutoReboot", 0, 1),
-                ]),
+                "Shows technical parameters on blue screens. The PC still restarts automatically afterwards (the details are also saved in the crash dump).",
+                [D(HKLM, @"SYSTEM\CurrentControlSet\Control\CrashControl", "DisplayParameters", 1, null)],
+                // Older versions also turned off the automatic restart, which can leave a server or
+                // unattended PC stuck on a blue screen: Undo turns it back on.
+                afterRevert: () =>
+                {
+                    if (Reg.ValueEquals(Reg.Get(HKLM, @"SYSTEM\CurrentControlSet\Control\CrashControl", "AutoReboot"), 0))
+                        Reg.Set(HKLM, @"SYSTEM\CurrentControlSet\Control\CrashControl", "AutoReboot", 1, RegistryValueKind.DWord);
+                }),
             new Tweak
             {
                 Id = "sys-hibernation-off", Category = "System",
@@ -297,8 +343,8 @@ public static partial class TweakCatalog
                 Description = "Frees the space used by hiberfil.sys (roughly the size of your RAM). Also disables Fast Startup.",
                 IsApplied = () => !File.Exists(Path.Combine(Path.GetPathRoot(Environment.SystemDirectory)!, "hiberfil.sys"))
                                   && Reg.ValueEquals(Reg.Get(HKLM, @"SYSTEM\CurrentControlSet\Control\Power", "HibernateEnabled"), 0),
-                Apply = () => ProcessRunner.RunAsync("powercfg.exe", "/hibernate off").GetAwaiter().GetResult(),
-                Revert = () => ProcessRunner.RunAsync("powercfg.exe", "/hibernate on").GetAwaiter().GetResult(),
+                Apply = () => Powercfg("/hibernate off"),
+                Revert = () => Powercfg("/hibernate on"),
             },
         };
 
