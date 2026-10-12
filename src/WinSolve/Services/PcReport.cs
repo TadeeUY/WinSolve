@@ -114,8 +114,10 @@ public static class PcReport
         int.TryParse(os?.Str("BuildNumber"), out var build);
         List<string> gpus;
         try { gpus = DriverService.GetGpus().Select(g => g.Name).ToList(); } catch { gpus = []; }
+        var maker = $"{cs?.Str("Manufacturer")} {cs?.Str("Model")}";
+        var virtualMachine = System.Text.RegularExpressions.Regex.IsMatch(maker, @"Virtual Machine|VMware|VirtualBox|innotek|QEMU|KVM|Parallels|Xen", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         return new PcSpecs(cpuName, threads, ramGb, systemDisk?.MediaType ?? "", systemDisk?.BusType ?? "",
-            systemDisk?.Health ?? HealthLevel.Unknown, free, gpus, build);
+            systemDisk?.Health ?? HealthLevel.Unknown, free, gpus, build, virtualMachine);
     }
 
     /// <summary>"How good is this PC": overall score, one bar per part, what it's good for and what to upgrade.</summary>
@@ -156,7 +158,7 @@ public static class PcReport
         var bios = Wmi.Query("SELECT Manufacturer, SMBIOSBIOSVersion, ReleaseDate FROM Win32_BIOS").FirstOrDefault();
         static string Date(string dmtf)
         {
-            try { return System.Management.ManagementDateTimeConverter.ToDateTime(dmtf).ToString("d"); } catch { return "—"; }
+            try { return System.Management.ManagementDateTimeConverter.ToDateTime(dmtf).ToString("d", Loc.Culture); } catch { return "—"; }
         }
 
         sb.Append(RatingCard(ReadSpecs(os, cs, systemDisk), E));
@@ -189,12 +191,18 @@ public static class PcReport
         foreach (var m in modules)
         {
             var speed = m.Get<uint>("ConfiguredClockSpeed") is > 0 and var c ? c : m.Get<uint>("Speed");
-            memRows.Add((m.Str("DeviceLocator"), $"{Format.Bytes((long)m.Get<ulong>("Capacity"))}  ·  {speed} MT/s  ·  {m.Str("Manufacturer")} {m.Str("PartNumber")}".Trim()));
+            // Virtual machines and some boards report no speed or "None" as the part number: leave those out.
+            var parts = new List<string> { Format.Bytes((long)m.Get<ulong>("Capacity")) };
+            if (speed > 0) parts.Add($"{speed} MT/s");
+            var make = string.Join(" ", new[] { m.Str("Manufacturer"), m.Str("PartNumber") }
+                .Select(x => x.Trim()).Where(x => x.Length > 0 && !x.Equals("None", StringComparison.OrdinalIgnoreCase) && !x.Equals("Unknown", StringComparison.OrdinalIgnoreCase)));
+            if (make.Length > 0) parts.Add(make);
+            memRows.Add((m.Str("DeviceLocator"), string.Join("  ·  ", parts)));
         }
         Section("Memory", memRows);
 
         foreach (var gpu in DriverService.GetGpus())
-            Section("Graphics", [("Model", gpu.Name), ("Driver", $"{gpu.FriendlyVersion} ({gpu.DriverDate:d})")]);
+            Section("Graphics", [("Model", gpu.Name), ("Driver", $"{gpu.FriendlyVersion} ({gpu.DriverDate?.ToString("d", Loc.Culture)})")]);
 
         foreach (var d in disks)
             Section("Drive",

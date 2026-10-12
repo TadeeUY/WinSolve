@@ -1499,5 +1499,7 @@ public static partial class Spanish
         ["Integrated graphics: fine for video and light games."] = "Gráficos integrados: bien para video y juegos livianos.",
         ["Basic graphics: video and office work only."] = "Gráficos básicos: solo video y oficina.",
         ["The score compares this PC with today's computers: processor, memory, storage and graphics. It is a guide, not a benchmark."] = "La nota compara esta PC con las computadoras actuales: procesador, memoria, almacenamiento y gráficos. Es una guía, no una prueba de rendimiento.",
+        ["The processor is the slowest part: a faster processor (or a newer PC) is what would make the biggest difference."] = "El procesador es la parte más lenta: un procesador más rápido (o una PC más nueva) es lo que más se notaría.",
+        ["This is a virtual machine: the scores reflect the processors, memory and graphics assigned to it, not the physical computer."] = "Es una máquina virtual: la nota refleja los procesadores, la memoria y los gráficos que tiene asignados, no la computadora física.",
     };
 }

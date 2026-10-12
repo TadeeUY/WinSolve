@@ -6,7 +6,7 @@ namespace WinSolve.Services;
 public sealed record PcSpecs(
     string CpuName, int Threads, double RamGb,
     string SystemDiskMedia, string SystemDiskBus, HealthLevel SystemDiskHealth,
-    double SystemFreePercent, IReadOnlyList<string> GpuNames, int WindowsBuild);
+    double SystemFreePercent, IReadOnlyList<string> GpuNames, int WindowsBuild, bool IsVirtualMachine = false);
 
 public sealed record RatingPart(string Name, int Score, string Detail);
 
@@ -67,6 +67,10 @@ public static class PcRating
             tips.Add("Windows 10 no longer gets free security updates (since October 2025): move to Windows 11 if the PC supports it.");
         if (CpuGenerationPenalty(s.CpuName) >= 15)
             tips.Add("The processor is several generations old: it is the part that limits this PC the most in the long run.");
+        else if (cpu < 40 && !s.IsVirtualMachine)
+            tips.Add("The processor is the slowest part: a faster processor (or a newer PC) is what would make the biggest difference.");
+        if (s.IsVirtualMachine)
+            tips.Add("This is a virtual machine: the scores reflect the processors, memory and graphics assigned to it, not the physical computer.");
         if (tips.Count == 0) tips.Add("Nothing urgent: this PC is in good shape. Keep Windows and drivers up to date.");
 
         var weakest = parts.MinBy(p => p.Score)!;

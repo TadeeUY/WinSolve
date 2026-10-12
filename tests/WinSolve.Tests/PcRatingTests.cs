@@ -45,6 +45,16 @@ public class PcRatingTests
         Assert.StartsWith("Back up your files now", r.Tips[0]);
     }
 
+    [Fact]
+    public void A_slow_processor_is_always_mentioned_and_virtual_machines_are_explained()
+    {
+        var slow = PcRating.Rate(Pc("Intel(R) Celeron(R) N4020 CPU @ 1.10GHz", 2, 16, "SSD", "NVMe", "Intel(R) UHD Graphics 600"));
+        Assert.Contains(slow.Tips, t => t.StartsWith("The processor is the slowest part"));
+        var vm = PcRating.Rate(new PcSpecs("Intel(R) Xeon(R) Platinum 8573C", 4, 16, "SSD", "NVMe", HealthLevel.Good, 20, ["Microsoft Hyper-V Video"], 26100, IsVirtualMachine: true));
+        Assert.Contains(vm.Tips, t => t.StartsWith("This is a virtual machine"));
+        Assert.DoesNotContain(vm.Tips, t => t.StartsWith("Nothing urgent"));
+    }
+
     [Theory]
     [InlineData("Intel(R) Core(TM) i7-4770 CPU", 25)]
     [InlineData("Intel(R) Core(TM) i7-870 CPU", 35)]
@@ -79,6 +89,8 @@ public class PcRatingTests
             PcRating.Rate(Pc("AMD Ryzen 7 7800X3D", 16, 32, "SSD", "NVMe", "NVIDIA GeForce RTX 4070")),
             PcRating.Rate(Pc("Intel(R) Core(TM) i3-4130", 4, 4, "HDD", "SATA", "Intel(R) HD Graphics", HealthLevel.Caution, 5, 19045)),
             PcRating.Rate(Pc("Intel(R) Core(TM) i5-10400", 12, 12, "SSD", "SATA", "NVIDIA GeForce GTX 1650", HealthLevel.Bad)),
+            PcRating.Rate(new PcSpecs("Intel(R) Celeron(R) N4020", 2, 4, "SSD", "SATA", HealthLevel.Good, 50, ["Microsoft Hyper-V Video"], 26100, IsVirtualMachine: true)),
+            PcRating.Rate(Pc("Intel(R) Celeron(R) N4020", 2, 16, "SSD", "NVMe", "Intel(R) UHD Graphics 600")),
         };
         foreach (var r in samples)
         {
