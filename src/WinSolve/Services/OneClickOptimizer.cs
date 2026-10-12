@@ -106,6 +106,12 @@ public static class OneClickOptimizer
         {
             ct.ThrowIfCancellationRequested();
             log($"> {task.Title}");
+            if (task.ConfirmWarning is not null)
+            {
+                // Its warning has to be confirmed first: run it from Cleanup & repair instead.
+                log("  Skipped: this task needs your confirmation. Run it from Cleanup & repair.");
+                continue;
+            }
             try
             {
                 var errorsBefore = ctx.CommandErrors;

@@ -240,11 +240,26 @@ public static class DiskRepairService
             // drive with the page file or profiles: write the same boot entry chkdsk writes.
             try
             {
-                const string sessionManager = @"SYSTEM\CurrentControlSet\Control\Session Manager";
-                var entries = (Reg.Get(RegistryHive.LocalMachine, sessionManager, "BootExecute") as string[] ?? ["autocheck autochk *"]).ToList();
-                var at = entries.FindIndex(e => e.Trim().Equals("autocheck autochk *", StringComparison.OrdinalIgnoreCase));
-                entries.Insert(at < 0 ? 0 : at, $@"autocheck autochk /r \??\{letter}:");
-                Reg.Set(RegistryHive.LocalMachine, sessionManager, "BootExecute", entries.ToArray(), RegistryValueKind.MultiString);
+                using var key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64)
+                    .OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Session Manager", writable: true);
+                // Only a normal multi-string value is edited; anything else is left exactly as it is.
+                if (key is null || !key.GetValueNames().Contains("BootExecute", StringComparer.OrdinalIgnoreCase)
+                    || key.GetValueKind("BootExecute") != RegistryValueKind.MultiString
+                    || key.GetValue("BootExecute", null, RegistryValueOptions.DoNotExpandEnvironmentNames) is not string[] current)
+                {
+                    log("Windows' boot check list has an unexpected format, so WinSolve doesn't change it.");
+                }
+                else if (IsCheckScheduled(current, letter, surfaceScan: false))
+                {
+                    log($"Another check of {drive} is already scheduled for the next restart. Restart once to let it run, then schedule the surface scan again.");
+                }
+                else
+                {
+                    var entries = current.ToList();
+                    var at = entries.FindIndex(e => e.Trim().Equals("autocheck autochk *", StringComparison.OrdinalIgnoreCase));
+                    entries.Insert(at < 0 ? 0 : at, $@"autocheck autochk /r \??\{letter}:");
+                    key.SetValue("BootExecute", entries.ToArray(), RegistryValueKind.MultiString);
+                }
             }
             catch (Exception ex) { log($"Could not schedule the scan: {ex.Message}"); }
         }

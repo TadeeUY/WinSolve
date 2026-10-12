@@ -112,5 +112,15 @@ public static partial class Spanish
         ["Windows usually retries it by itself. If it keeps failing, WinSolve will suggest resetting Windows Update."] =
             "Windows suele reintentarlo por sí solo. Si sigue fallando, WinSolve te sugerirá restablecer Windows Update.",
         ["Windows updates keep failing to install"] = "Las actualizaciones de Windows siguen fallando al instalarse",
+        ["Skipped: this task needs your confirmation. Run it from Cleanup & repair."] = "Omitida: esta tarea necesita tu confirmación. Ejecútala desde Limpieza y reparación.",
+
+        // ── Review fixes ──
+        ["Waiting for the installer to close before going on (it is not stopped mid-install)..."] = "Esperando a que el instalador se cierre antes de seguir (no se detiene a mitad de la instalación)...",
+        ["The installer is still running, so the previous driver is not put back automatically. If the screen stays on the basic driver, in Device Manager choose the display adapter > Update driver > Browse my computer and pick {0}"] =
+            "El instalador sigue en marcha, así que el driver anterior no se vuelve a poner automáticamente. Si la pantalla se queda con el driver básico, en el Administrador de dispositivos elige el adaptador de pantalla > Actualizar controlador > Buscar en mi equipo y selecciona {0}",
+        ["A {0} driver is active, so the backup is not reinstalled. Backup: {1}"] = "Hay un driver de {0} activo, así que no se reinstala la copia. Copia: {1}",
+        ["Windows' boot check list has an unexpected format, so WinSolve doesn't change it."] = "La lista de comprobaciones de arranque de Windows tiene un formato inesperado, así que WinSolve no la cambia.",
+        ["Another check of {0} is already scheduled for the next restart. Restart once to let it run, then schedule the surface scan again."] =
+            "Ya hay otra comprobación de {0} programada para el próximo reinicio. Reinicia una vez para que se ejecute y luego vuelve a programar el examen de superficie.",
     };
 }

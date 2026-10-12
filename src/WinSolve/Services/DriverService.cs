@@ -296,7 +296,8 @@ public static class DriverService
         }
         catch
         {
-            try { Directory.Delete(folder, recursive: true); } catch { }
+            // The <time> folder too: an empty one must not count as a backup when pruning.
+            try { Directory.Delete(Path.GetDirectoryName(folder)!, recursive: true); } catch { }
             throw;
         }
         log($"Backup complete: {packages.Count} driver package(s) saved in {folder}");
@@ -311,8 +312,16 @@ public static class DriverService
         {
             var root = DriverBackupRoot;
             if (!Directory.Exists(root) || SafePath.HasReparsePoint(root)) return;
-            foreach (var dir in new DirectoryInfo(root).EnumerateDirectories("*", SafePath.NoLinks(recursive: false))
-                         .OrderByDescending(d => d.CreationTimeUtc).Skip(keep))
+            static bool HasDrivers(DirectoryInfo d)
+            {
+                try { return d.EnumerateFiles("*.inf", SafePath.NoLinks(recursive: true)).Any(); }
+                catch { return true; } // unreadable: never counted as empty
+            }
+            var dirs = new DirectoryInfo(root).EnumerateDirectories("*", SafePath.NoLinks(recursive: false)).ToList();
+            // Leftovers of failed backups: removed, never counted among the kept ones.
+            foreach (var empty in dirs.Where(d => !HasDrivers(d)))
+                try { Directory.Delete(empty.FullName, recursive: true); } catch { }
+            foreach (var dir in dirs.Where(HasDrivers).OrderByDescending(d => d.CreationTimeUtc).Skip(keep))
                 try { Directory.Delete(dir.FullName, recursive: true); } catch { }
         }
         catch { }
@@ -558,7 +567,7 @@ public static class DriverService
                 if (vendor == GpuVendor.Nvidia)
                 {
                     log("Installing silently with a clean profile (-s -clean -noreboot). This takes a few minutes; the screen will flicker...");
-                    var code = await InstallerProcess.RunAndWaitAsync(safeCopy, "-s -clean -noreboot -noeula", log, ct);
+                    var code = await InstallerProcess.RunAndWaitAsync(safeCopy, "-s -clean -noreboot -noeula", log, ct, InstallerDrain);
                     log($"NVIDIA installer finished (exit code {code?.ToString() ?? "unknown"}).");
                 }
                 else
@@ -566,7 +575,7 @@ public static class DriverService
                     log(vendor == GpuVendor.Amd
                         ? "The AMD installer is opening. Choose 'Factory Reset' if it is offered, then follow the steps. WinSolve waits until it finishes."
                         : "The installer is opening. If it offers a clean installation, choose it. WinSolve waits until it finishes.");
-                    await InstallerProcess.RunAndWaitAsync(safeCopy, null, log, ct);
+                    await InstallerProcess.RunAndWaitAsync(safeCopy, null, log, ct, InstallerDrain);
                     log("Installer finished.");
                 }
             }
@@ -576,7 +585,19 @@ public static class DriverService
                 log(ex is OperationCanceledException
                     ? "The installation was stopped after the old driver was removed."
                     : $"The installation failed after the old driver was removed: {ex.Message}");
-                await PutBackupBackAsync(vendor, backup, log);
+                if (ex is InstallerCancelledException { StillRunning: true })
+                {
+                    // Never install the old driver while the vendor's setup is still installing.
+                    log($"The installer is still running, so the previous driver is not put back automatically. If the screen stays on the basic driver, in Device Manager choose the display adapter > Update driver > Browse my computer and pick {backup}");
+                }
+                else if (NoVendorDriverActive(SafeDriverState(vendor)))
+                {
+                    await PutBackupBackAsync(vendor, backup, log);
+                }
+                else
+                {
+                    log($"A {VendorLabel(vendor)} driver is active, so the backup is not reinstalled. Backup: {backup}");
+                }
                 throw;
             }
         }
@@ -602,6 +623,15 @@ public static class DriverService
         }
         log(outcome.Message);
         return outcome;
+    }
+
+    /// <summary>After a cancel, the installer is given this long to close by itself before WinSolve goes on.</summary>
+    private static readonly TimeSpan InstallerDrain = TimeSpan.FromMinutes(15);
+
+    private static List<AdapterState> SafeDriverState(GpuVendor vendor)
+    {
+        try { return DriverState(vendor); }
+        catch { return []; }
     }
 
     private static string VendorLabel(GpuVendor vendor) => vendor switch { GpuVendor.Nvidia => "NVIDIA", GpuVendor.Amd => "AMD", GpuVendor.Intel => "Intel", _ => "graphics" };
