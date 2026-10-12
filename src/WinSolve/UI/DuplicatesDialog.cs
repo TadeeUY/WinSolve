@@ -147,11 +147,13 @@ public sealed class DuplicatesDialog : Form
                 "Duplicate files", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
 
+        // Asked once for the whole selection, not once per file that can't be recycled.
+        var permanent = RecycleBin.ConfirmBatch(sel.Select(f => (f.Path, f.Size)), this);
         var failed = 0;
         var moved = new HashSet<DuplicateFile>();
         foreach (var f in sel)
         {
-            if (RecycleBin.Send(f.Path, Handle))
+            if (RecycleBin.Send(f.Path, Handle, askPermanent: false, knownSize: f.Size, permanentApproved: permanent.Contains(f.Path)))
             {
                 moved.Add(f);
                 Logger.Write($"Duplicate moved to Recycle Bin: {f.Path}");

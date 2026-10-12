@@ -68,7 +68,9 @@ public static class SafeDelete
             var isDir = (entry.Attributes & FileAttributes.Directory) != 0;
             if (isDir && !recursive) continue;
             if (!isDir && !FileSystemName.MatchesSimpleExpression(pattern, entry.Name)) continue;
-            if (!isDir && stats.IsRecent(entry.Newest)) continue; // too new (checked again on the handle)
+            // Too new: kept, and a recent folder is not even entered (an installer that is running
+            // extracts files that keep their old dates). Checked again on the handle below.
+            if (stats.IsRecent(entry.Newest)) continue;
 
             // Only the access that is needed: DELETE on a folder fails while it is another
             // process's working directory, which must not hide its whole contents.
@@ -88,17 +90,13 @@ public static class SafeDelete
             if ((a & FileAttributes.ReparsePoint) != 0) continue; // a link: never follow or touch
             var reallyDir = (a & FileAttributes.Directory) != 0;
             if (reallyDir != isDir) continue;
-            var recent = stats.IsRecent(Newest(info));
+            if (stats.Cutoff != 0 && stats.IsRecent(Newest(child, info))) continue; // changed since the listing
 
             if (reallyDir)
             {
                 if (depth >= MaxDepth) continue;
                 Walk(child, pattern, recursive, removeDirs, stats, depth + 1, ct);
-                if (removeDirs && !recent) MarkForDeletion(child, a); // fails harmlessly if not empty
-            }
-            else if (recent)
-            {
-                // Kept: changed since the listing.
+                if (removeDirs) MarkForDeletion(child, a); // fails harmlessly if not empty
             }
             else if (MarkForDeletion(child, a) || DeleteReadOnly(dir, entry.Name, a))
             {
@@ -111,7 +109,7 @@ public static class SafeDelete
         }
     }
 
-    /// <param name="Newest">The later of creation and last-write time (FILETIME, UTC).</param>
+    /// <param name="Newest">The latest of creation, last-write and change time (FILETIME, UTC).</param>
     private readonly record struct Entry(string Name, FileAttributes Attributes, long Size, long Newest);
 
     /// <summary>Lists a directory through its handle (no path lookup that could be redirected).</summary>
@@ -130,7 +128,7 @@ public static class SafeDelete
                 {
                     var p = buffer + offset;
                     var next = Marshal.ReadInt32(p, 0);
-                    var newest = Math.Max(Marshal.ReadInt64(p, 8), Marshal.ReadInt64(p, 24)); // CreationTime, LastWriteTime
+                    var newest = Math.Max(Marshal.ReadInt64(p, 8), Math.Max(Marshal.ReadInt64(p, 24), Marshal.ReadInt64(p, 32))); // creation, last-write, change
                     var size = Marshal.ReadInt64(p, 40);
                     var attributes = (FileAttributes)Marshal.ReadInt32(p, 56);
                     var nameBytes = Marshal.ReadInt32(p, 60);
@@ -258,9 +256,15 @@ public static class SafeDelete
     internal static FileAttributes? GetAttributes(SafeFileHandle h)
         => GetFileInformationByHandle(h, out var info) ? (FileAttributes)info.dwFileAttributes : null;
 
-    /// <summary>The later of creation and last-write time (FILETIME, UTC).</summary>
-    private static long Newest(BY_HANDLE_FILE_INFORMATION info)
-        => Math.Max(((long)info.ftCreationHigh << 32) | info.ftCreationLow, ((long)info.ftLastWriteHigh << 32) | info.ftLastWriteLow);
+    /// <summary>The latest of creation, last-write and change time (FILETIME, UTC).</summary>
+    private static long Newest(SafeFileHandle h, BY_HANDLE_FILE_INFORMATION info)
+    {
+        var newest = Math.Max(((long)info.ftCreationHigh << 32) | info.ftCreationLow, ((long)info.ftLastWriteHigh << 32) | info.ftLastWriteLow);
+        // The change time (metadata, e.g. a file moved in) is only in FILE_BASIC_INFO.
+        if (GetFileInformationByHandleEx(h, FileBasicInfo, out var basic,(uint)Marshal.SizeOf<FILE_BASIC_INFO>()))
+            newest = Math.Max(newest, Math.Max(basic.ChangeTime, Math.Max(basic.CreationTime, basic.LastWriteTime)));
+        return newest;
+    }
 
     /// <summary>
     /// True when an open handle is the file or folder at <paramref name="expectedPath"/>, not one
@@ -384,6 +388,9 @@ public static class SafeDelete
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GetFileInformationByHandleEx(SafeFileHandle h, int infoClass, IntPtr buffer, uint size);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetFileInformationByHandleEx(SafeFileHandle h, int infoClass, out FILE_BASIC_INFO info, uint size);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GetFileInformationByHandle(SafeFileHandle h, out BY_HANDLE_FILE_INFORMATION info);

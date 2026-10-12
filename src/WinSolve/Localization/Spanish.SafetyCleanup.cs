@@ -17,7 +17,12 @@ public static partial class Spanish
         ["Skipped the Windows Update cache: {0}."] = "Se omitió la caché de Windows Update: {0}.",
         ["Windows is waiting for a restart to finish installing updates"] = "Windows espera un reinicio para terminar de instalar actualizaciones",
         ["Windows Update is waiting for a restart"] = "Windows Update espera un reinicio",
-        ["updates or programs are being installed right now"] = "se están instalando actualizaciones o programas en este momento",
+        ["Windows is installing updates right now"] = "Windows está instalando actualizaciones en este momento",
+        ["Windows Update is installing updates right now"] = "Windows Update está instalando actualizaciones en este momento",
+        ["{0} of the selected files can't be moved to the Recycle Bin: {1}."] = "{0} de los archivos seleccionados no se pueden mover a la papelera: {1}.",
+        ["Delete them permanently? They can't be restored afterwards. (No skips them.)"] = "¿Eliminarlos para siempre? Después no se podrán recuperar. (No los omite.)",
+        ["Skipped {0}: it is in a protected folder (a drive's top level, the Users folder or another key Windows folder), not in your own folders."] =
+            "Se omitió {0}: está en una carpeta protegida (la raíz de una unidad, la carpeta Users u otra carpeta clave de Windows), no en tus propias carpetas.",
 
         // ── Recycle Bin ──
         ["'{0}' can't be moved to the Recycle Bin: {1}."] = "'{0}' no se puede mover a la papelera: {1}.",

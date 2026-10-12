@@ -84,11 +84,8 @@ public static class DuplicateFinder
     {
         try
         {
-            var list = new List<string>
-            {
-                InteractiveUser.Desktop, InteractiveUser.Documents, InteractiveUser.Downloads,
-                InteractiveUser.Pictures, InteractiveUser.Music, InteractiveUser.Videos,
-            };
+            // Where they really are, even redirected outside the profile (D:\Docs).
+            var list = InteractiveUser.PersonalFoldersForReading();
             list.AddRange(InteractiveUser.OneDriveRoots());
             return list.Where(p => !string.IsNullOrWhiteSpace(p) && Path.IsPathFullyQualified(p)).Select(p => p.TrimEnd('\\')).ToList();
         }

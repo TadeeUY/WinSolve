@@ -79,6 +79,39 @@ public class CleanupSafetyTests
     }
 
     [Theory]
+    [InlineData(@"\\?\C:\Users\ana", @"C:\Users\ana")]
+    [InlineData(@"\\.\C:\Windows", @"C:\Windows")]
+    [InlineData(@"\??\C:\Windows", @"C:\Windows")]
+    [InlineData(@"\\?\UNC\server\share\x", @"\\server\share\x")]
+    [InlineData(@"\\?\unc\server\share", @"\\server\share")]
+    [InlineData(@"C:\Users\ana", @"C:\Users\ana")]
+    [InlineData(@"\\server\share", @"\\server\share")]
+    public void Device_prefixes_are_removed(string path, string expected)
+        => Assert.Equal(expected, SafePath.StripDevicePrefix(path));
+
+    [Fact]
+    public void Prefixed_short_and_relative_paths_are_still_protected()
+    {
+        var win = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        Assert.True(SafePath.IsProtectedFolder(@"\\?\" + profile));
+        Assert.True(SafePath.IsInsideSystemOrProgramFolder(@"\\?\" + Path.Combine(win, "System32")));
+        Assert.Null(SafePath.Normalize(@"\\.\PhysicalDrive0"));
+        Assert.Null(SafePath.Normalize("Windows"));
+        // 8.3 names (when the volume has them) expand to the real folder.
+        var shortWin = Path.Combine(Path.GetPathRoot(win)!, "WINDOWS~1");
+        if (Directory.Exists(shortWin)) Assert.True(SafePath.IsInsideSystemOrProgramFolder(shortWin));
+    }
+
+    [Theory]
+    [InlineData(@"D:\WindowsApps\Game_1.0", true)]
+    [InlineData(@"E:\WpSystem\S-1-5-21-1\AppData", true)]
+    [InlineData(@"D:\Program Files\WindowsApps\Pkg", true)]
+    [InlineData(@"D:\Program Files\Vendor", false)]
+    public void Store_app_folders_on_any_drive_are_system_folders(string path, bool expected)
+        => Assert.Equal(expected, SafePath.InDriveSystemFolder(path));
+
+    [Theory]
     [InlineData(@"C:\Users\ana\AppData\Local\Temp", true)]
     [InlineData(@"C:\Users\ana\AppData\Local\temp\", true)]
     [InlineData(@"C:\Users\ana\AppData\Local\Tmp", true)]
@@ -181,19 +214,42 @@ public sealed class TempAgeTests : IDisposable
         try { Directory.Delete(_root, recursive: true); } catch { }
     }
 
+    /// <summary>Dates creation, write and change time three days back (.NET can't set the change time).</summary>
     private static void MakeOld(string path, bool directory)
     {
-        var old = DateTime.Now.AddDays(-3);
-        if (directory)
-        {
-            Directory.SetCreationTime(path, old);
-            Directory.SetLastWriteTime(path, old);
-        }
-        else
-        {
-            File.SetCreationTime(path, old);
-            File.SetLastWriteTime(path, old);
-        }
+        _ = directory;
+        using var h = CreateFileW(path, 0x0100 /* FILE_WRITE_ATTRIBUTES */, 7, IntPtr.Zero, 3 /* OPEN_EXISTING */, 0x02000000 /* BACKUP_SEMANTICS */, IntPtr.Zero);
+        Assert.False(h.IsInvalid);
+        var old = DateTime.UtcNow.AddDays(-3).ToFileTimeUtc();
+        var info = new BasicInfo { CreationTime = old, LastWriteTime = old, ChangeTime = old };
+        Assert.True(SetFileInformationByHandle(h, 0 /* FileBasicInfo */, ref info, (uint)System.Runtime.InteropServices.Marshal.SizeOf<BasicInfo>()));
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct BasicInfo
+    {
+        public long CreationTime, LastAccessTime, LastWriteTime, ChangeTime;
+        public uint FileAttributes;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle h, int infoClass, ref BasicInfo info, uint size);
+
+    [Fact]
+    public void A_recent_folder_is_not_entered()
+    {
+        // An installer extracting into a new folder: the files keep their old dates.
+        var fresh = Directory.CreateDirectory(Path.Combine(_root, "installer")).FullName;
+        var extracted = Path.Combine(fresh, "setup.dll");
+        File.WriteAllText(extracted, "x");
+        MakeOld(extracted, directory: false);
+
+        SafeDelete.DeleteContents(_root, "*", recursive: true, default, DateTime.UtcNow.AddHours(-24));
+
+        Assert.True(File.Exists(extracted));
     }
 
     [Fact]

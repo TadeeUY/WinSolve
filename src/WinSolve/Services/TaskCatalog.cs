@@ -616,11 +616,25 @@ public static class TaskCatalog
         }
         catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException) { }
 
-        foreach (var name in new[] { "TrustedInstaller", "TiWorker", "msiexec" })
+        // TiWorker only runs while Windows installs or services components.
+        var workers = System.Diagnostics.Process.GetProcessesByName("TiWorker");
+        foreach (var p in workers) p.Dispose();
+        if (workers.Length > 0) return "Windows is installing updates right now";
+
+        // Windows Update's own answer to "is an installation running?".
+        object? installer = null;
+        try
         {
-            var running = System.Diagnostics.Process.GetProcessesByName(name);
-            foreach (var p in running) p.Dispose();
-            if (running.Length > 0) return "updates or programs are being installed right now";
+            if (Type.GetTypeFromProgID("Microsoft.Update.Installer") is { } type && (installer = Activator.CreateInstance(type)) is not null
+                && type.InvokeMember("IsBusy", System.Reflection.BindingFlags.GetProperty, null, installer, null) is true)
+                return "Windows Update is installing updates right now";
+        }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or System.Reflection.TargetInvocationException
+                                       or MissingMethodException or UnauthorizedAccessException or InvalidCastException) { }
+        finally
+        {
+            if (installer is not null && System.Runtime.InteropServices.Marshal.IsComObject(installer))
+                System.Runtime.InteropServices.Marshal.ReleaseComObject(installer);
         }
         return null;
     }

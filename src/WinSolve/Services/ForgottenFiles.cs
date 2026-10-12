@@ -27,11 +27,23 @@ public static class ForgottenFiles
         }
     }
 
+    /// <summary>Personal folders redirected outside the profile (Documents on D:\Docs), for the large-file search.</summary>
+    private static IEnumerable<string> RedirectedRoots()
+    {
+        var profile = InteractiveUser.Profile;
+        var outside = InteractiveUser.PersonalFoldersForReading()
+            .Where(f => !SafePath.IsSameOrInside(f, profile) && Directory.Exists(f) && !SafePath.HasReparsePoint(f))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        // Not one inside another: its files would be listed twice.
+        return outside.Where(f => !outside.Any(o => !o.Equals(f, StringComparison.OrdinalIgnoreCase) && SafePath.IsSameOrInside(f, o)));
+    }
+
     public static List<ForgottenFile> FindLarge(long minSize, TimeSpan notUsedFor, Action<string> status, CancellationToken ct)
     {
         var cutoff = DateTime.Now - notUsedFor;
         var list = new List<ForgottenFile>();
-        foreach (var root in Roots())
+        foreach (var root in Roots().Concat(RedirectedRoots()))
         {
             status(root);
             foreach (var f in new DirectoryInfo(root).EnumerateFiles("*", SafePath.NoLinks(recursive: true)))

@@ -27,17 +27,25 @@ public static class RecycleBin
 
     /// <summary>
     /// Moves a file or folder to the Recycle Bin. Something that can't go there (network or removable
-    /// drive, bin turned off, larger than the bin) is only deleted permanently if the person agrees.
+    /// drive, bin turned off, larger than the bin) is only deleted permanently if the person agrees:
+    /// asked here when <paramref name="askPermanent"/> (and there is a window or a UI thread to ask
+    /// on), or already agreed for a whole batch (<paramref name="permanentApproved"/>, see
+    /// <see cref="ConfirmBatch"/>). Otherwise it is left alone and false is returned.
+    /// <paramref name="knownSize"/> spares walking a folder to measure it.
     /// </summary>
-    public static bool Send(string path, IntPtr owner)
+    public static bool Send(string path, IntPtr owner, bool askPermanent = true, long? knownSize = null, bool permanentApproved = false)
     {
         if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)) return false;
         var permanent = false;
-        if (WhyNotRecyclable(path) is { } reason)
+        if (WhyNotRecyclable(path, knownSize) is { } reason)
         {
             Logger.Write($"{path} can't go to the Recycle Bin: {reason}");
+            // Never an ownerless box from a background thread: nobody may see it, or it pops up anywhere.
+            var canAsk = askPermanent && (owner != IntPtr.Zero || Application.MessageLoop);
+            if (!permanentApproved && !canAsk) return false;
             var window = owner == IntPtr.Zero ? null : new Owner(owner);
-            if (Localization.Loc.Show(window, $"'{path}' can't be moved to the Recycle Bin: {reason}.\n\nDelete it permanently? It can't be restored afterwards.",
+            if (!permanentApproved &&
+                Localization.Loc.Show(window, $"'{path}' can't be moved to the Recycle Bin: {reason}.\n\nDelete it permanently? It can't be restored afterwards.",
                     "Delete permanently", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
                 return false;
             permanent = true;
@@ -95,7 +103,7 @@ public static class RecycleBin
     /// Why Windows would delete this permanently instead of recycling it (in English, translated
     /// when shown), or null when it can go to the Recycle Bin as far as can be told.
     /// </summary>
-    internal static string? WhyNotRecyclable(string path)
+    internal static string? WhyNotRecyclable(string path, long? knownSize = null)
     {
         try
         {
@@ -113,7 +121,7 @@ public static class RecycleBin
             if (PolicyDisablesBin()) return "the Recycle Bin is turned off on this PC";
             var (nuke, maxBytes) = BinSettings(root);
             if (nuke) return "the Recycle Bin is turned off for this drive";
-            if (maxBytes > 0 && SizeExceeds(full, maxBytes)) return "it is larger than the Recycle Bin of this drive";
+            if (maxBytes > 0 && (knownSize is { } size ? size > maxBytes : SizeExceeds(full, maxBytes))) return "it is larger than the Recycle Bin of this drive";
             return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -163,17 +171,42 @@ public static class RecycleBin
     }
 
     /// <summary>True when the file or folder is larger than <paramref name="limit"/> (stops counting once it is).</summary>
+    /// <remarks>
+    /// Callers usually know the size (pass it as knownSize). Without it a folder is measured for at
+    /// most a second; past that the shell's own warning (FOF_WANTNUKEWARNING) still covers it.
+    /// </remarks>
     private static bool SizeExceeds(string full, long limit)
     {
         if (File.Exists(full)) return new FileInfo(full).Length > limit;
         if (!Directory.Exists(full)) return false;
         long total = 0;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         foreach (var f in new DirectoryInfo(full).EnumerateFiles("*", SafePath.NoLinks(recursive: true)))
         {
             try { total += f.Length; } catch (IOException) { }
             if (total > limit) return true;
+            if (watch.ElapsedMilliseconds > 1000) return false;
         }
         return false;
+    }
+
+    /// <summary>
+    /// For deleting many files at once: finds those that can't go to the Recycle Bin and asks once
+    /// whether to delete them permanently. Returns the paths agreed to (pass permanentApproved for
+    /// them, askPermanent: false for the rest).
+    /// </summary>
+    public static HashSet<string> ConfirmBatch(IEnumerable<(string Path, long Size)> items, IWin32Window owner)
+    {
+        var reasons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (path, size) in items)
+            if (WhyNotRecyclable(path, size) is { } reason) reasons[path] = reason;
+        if (reasons.Count == 0) return [];
+        Logger.Write($"{reasons.Count} selected item(s) can't go to the Recycle Bin: {string.Join("; ", reasons.Values.Distinct())}");
+        var why = string.Join("; ", reasons.Values.Distinct().Select(Localization.Loc.T));
+        return Localization.Loc.Show(owner, $"{reasons.Count} of the selected files can't be moved to the Recycle Bin: {why}.\n\nDelete them permanently? They can't be restored afterwards. (No skips them.)",
+                   "Delete permanently", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes
+            ? reasons.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : [];
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
