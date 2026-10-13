@@ -150,5 +150,10 @@ public static partial class Spanish
         ["Media wearout indicator"] = "Indicador de desgaste",
         ["Total LBAs written"] = "Total de LBA escritos",
         ["Total LBAs read"] = "Total de LBA leídos",
+        ["A task is still running. Exiting now stops it half-way.\n\nExit anyway?"] = "Todavía hay una tarea en curso. Si sales ahora, se detendrá a medias.\n\n¿Salir de todos modos?",
+        ["WinSolve is still running a task. Wait until it finishes, then update."] = "WinSolve todavía está ejecutando una tarea. Espera a que termine y luego actualiza.",
+        ["The battery report could not be created."] = "No se pudo crear el informe de la batería.",
+        ["Looking for devices with problems..."] = "Buscando dispositivos con problemas...",
+        ["Moving to the Recycle Bin... {0} of {1}"] = "Moviendo a la Papelera de reciclaje... {0} de {1}",
     };
 }
