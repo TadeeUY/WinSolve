@@ -88,6 +88,13 @@ public sealed class UninstallPrompts
 
     /// <summary>These folders can't go to the Recycle Bin: true to delete them permanently.</summary>
     public Func<IReadOnlyList<string>, bool>? ConfirmPermanentDelete { get; init; }
+
+    /// <summary>
+    /// The uninstaller of the named program (second argument: its file) is not signed and sits in a
+    /// folder that programs without administrator rights can change: true to run it elevated anyway.
+    /// Not set means no.
+    /// </summary>
+    public Func<string, string, bool>? ConfirmUnverifiedUninstaller { get; init; }
 }
 
 /// <summary>Store apps and desktop programs: list, uninstall and force-remove.</summary>
@@ -577,7 +584,7 @@ public static class AppsService
     /// it keeps running either way. Only the Cancel button stops it.
     /// </remarks>
     private static async Task<UninstallerResult> RunUninstallerAsync(InstalledProgram p, (string Exe, string Args) cmd, Action<string> log,
-        TimeSpan askAfter, Func<string, bool>? keepWaiting, CancellationToken ct)
+        TimeSpan askAfter, UninstallPrompts? prompts, CancellationToken ct)
     {
         // Our own token, connected to Cancel only while we wait: once we stop waiting, a later
         // Cancel (for another program) must not stop this uninstaller.
@@ -616,9 +623,11 @@ public static class AppsService
             }
             else
             {
+                if (!MayRunElevated(p, cmd.Exe, prompts, log, out var held))
+                    return new UninstallerResult(RunOutcome.NotStarted, null);
                 log($"> {cmd.Exe} {cmd.Args}");
                 killsOnCancel = true;
-                wait = RunElevatedAsync(cmd, log, own.Token);
+                wait = RunElevatedAsync(cmd, held, log, own.Token);
             }
 
             while (true)
@@ -635,7 +644,7 @@ public static class AppsService
                     return new UninstallerResult(RunOutcome.Exited, code);
                 }
                 ct.ThrowIfCancellationRequested();
-                if (keepWaiting?.Invoke(p.DisplayName) == true)
+                if (prompts?.KeepWaiting?.Invoke(p.DisplayName) == true)
                 {
                     log("Still waiting for the uninstaller...");
                     continue;
@@ -653,8 +662,50 @@ public static class AppsService
         }
     }
 
-    private static async Task<int?> RunElevatedAsync((string Exe, string Args) cmd, Action<string> log, CancellationToken ct)
-        => (await ProcessRunner.RunAsync(cmd.Exe, cmd.Args, log, ct)).ExitCode;
+    /// <summary>Runs the uninstaller elevated; <paramref name="held"/> keeps it from being swapped until it exits.</summary>
+    private static async Task<int?> RunElevatedAsync((string Exe, string Args) cmd, FileStream? held, Action<string> log, CancellationToken ct)
+    {
+        try { return (await ProcessRunner.RunAsync(cmd.Exe, cmd.Args, log, ct)).ExitCode; }
+        finally { held?.Dispose(); }
+    }
+
+    /// <summary>
+    /// The uninstall command of a machine-wide (HKLM) entry runs with administrator rights, but its
+    /// file may live where programs without those rights can replace it (ProgramData\Vendor, a
+    /// profile). There it must have a valid signature, or the person confirms it; with another
+    /// account's administrator password it is never run. The file is then held open (read sharing
+    /// only) so it can't be swapped before it starts; dispose <paramref name="held"/> after it exits.
+    /// </summary>
+    private static bool MayRunElevated(InstalledProgram p, string exe, UninstallPrompts? prompts, Action<string> log, out FileStream? held)
+    {
+        held = null;
+        if (IsMsiexec(exe)) return true;
+        var path = ProcessRunner.Resolve(exe);
+        if (Path.IsPathFullyQualified(path) && SafePath.Normalize(path) is { } full && !SafePath.IsUserWritableLocation(full)) return true;
+
+        if (InteractiveUser.IsDifferent)
+        {
+            log($"The uninstaller of {p.DisplayName} is in a folder that programs without administrator rights can change ({path}), so WinSolve won't run it with another account's administrator password. Uninstall it while signed in to an administrator account.");
+            return false;
+        }
+        try { held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read); }
+        catch { held = null; } // missing or in use: starting it fails or is checked below anyway
+        if (held is not null && Authenticode.IsTrusted(path))
+        {
+            log($"Signature verified: {path}");
+            return true;
+        }
+        if (prompts?.ConfirmUnverifiedUninstaller?.Invoke(p.DisplayName, path) == true)
+        {
+            log($"Running the unsigned uninstaller because you confirmed it: {path}");
+            if (held is null) try { held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read); } catch { }
+            return true;
+        }
+        held?.Dispose();
+        held = null;
+        log($"The uninstaller of {p.DisplayName} was not started: it is not signed and is in a folder that programs without administrator rights can change ({path}).");
+        return false;
+    }
 
     private static async Task<int?> WaitAsUserAsync(Process proc, string exe, HashSet<int> before, DateTime started, CancellationToken ct)
     {
@@ -677,7 +728,7 @@ public static class AppsService
             log("This program has no usable uninstall command. Use Force uninstall instead.");
             return;
         }
-        var r = await RunUninstallerAsync(p, cmd, log, TimeSpan.FromMinutes(30), prompts?.KeepWaiting, ct);
+        var r = await RunUninstallerAsync(p, cmd, log, TimeSpan.FromMinutes(30), prompts, ct);
         if (r.Outcome == RunOutcome.Exited) log("Uninstaller finished.");
     }
 
@@ -868,7 +919,7 @@ public static class AppsService
                 log("The program's uninstaller is missing; skipping it.");
             else
             {
-                uninstaller = await RunUninstallerAsync(p, silent, log, TimeSpan.FromMinutes(5), prompts?.KeepWaiting, ct);
+                uninstaller = await RunUninstallerAsync(p, silent, log, TimeSpan.FromMinutes(5), prompts, ct);
                 if (uninstaller.Value.Outcome == RunOutcome.StoppedWaiting)
                 {
                     log("Nothing was deleted. Run Force uninstall again after the uninstaller finishes.");

@@ -249,6 +249,7 @@ public sealed class DriversPage : Page
 
     private async Task CleanInstallFromFile(GpuInfo gpu)
     {
+        if (Pickers.PickersBlocked(this)) return;
         using var dlg = new OpenFileDialog
         {
             Title = Localization.Loc.T($"Select the {gpu.VendorName} driver installer"),
@@ -265,6 +266,14 @@ public sealed class DriversPage : Page
         }
 
         var signed = DriverService.HasValidSignature(dlg.FileName, gpu.Vendor, out var signer);
+        if (!signed && InteractiveUser.IsDifferent)
+        {
+            // Another account's administrator password was typed: never run an unverified file with it.
+            Localization.Loc.Show(this, $"This file is not digitally signed by {gpu.VendorName} (signer: {signer ?? "none"}).\n\n" +
+                "WinSolve is running with another account's administrator password, so it only installs drivers signed by the manufacturer. Download the installer from the manufacturer's website and try again.",
+                "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         if (!signed && !ConfirmDanger($"This file is not digitally signed by {gpu.VendorName} (signer: {signer ?? "none"}).\n\n" +
                                       "It will run with administrator rights. Only continue if you are sure it is a genuine driver installer. Continue anyway?"))
             return;
@@ -280,7 +289,7 @@ public sealed class DriversPage : Page
 
         DriverService.InstallOutcome? outcome = null;
         var ok = await _runner.RunAsync($"{gpu.VendorName} clean install", async (log, _, ct) =>
-            outcome = await DriverService.CleanInstallAsync(gpu.Vendor, dlg.FileName, requireVendorSignature: signed, expectedVersion: null, AskFromWork, log, ct));
+            outcome = await DriverService.CleanInstallAsync(gpu.Vendor, dlg.FileName, requireVendorSignature: signed || InteractiveUser.IsDifferent, expectedVersion: null, AskFromWork, log, ct));
         _gpus = DriverService.GetGpus();
         Render();
         ShowOutcome(ok, outcome);

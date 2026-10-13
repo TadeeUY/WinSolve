@@ -62,8 +62,27 @@ public static class UpdateService
         if (setup is null) return null;
 
         return new UpdateInfo(latest, tag, setup, sha,
-            root.GetProperty("html_url").GetString() ?? $"https://github.com/{Repository}/releases",
+            SafeReleaseUrl(root.TryGetProperty("html_url", out var html) && html.ValueKind == JsonValueKind.String ? html.GetString() : null),
             root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "");
+    }
+
+    private const string ReleasesPage = $"https://github.com/{Repository}/releases";
+
+    /// <summary>
+    /// The release page link from the API, opened with the shell: kept only when it is an https
+    /// link to this repository's releases on github.com, otherwise the releases page. Pure.
+    /// </summary>
+    internal static string SafeReleaseUrl(string? htmlUrl)
+    {
+        if (string.IsNullOrWhiteSpace(htmlUrl) || !Uri.TryCreate(htmlUrl, UriKind.Absolute, out var uri)) return ReleasesPage;
+        var path = uri.AbsolutePath;
+        var prefix = $"/{Repository}/releases";
+        var ok = uri.Scheme == Uri.UriSchemeHttps && uri.IsDefaultPort && uri.UserInfo.Length == 0
+                 && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)
+                 && path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                 && (path.Length == prefix.Length || path[prefix.Length] == '/')
+                 && !path.Contains("/../", StringComparison.Ordinal) && !path.Contains('\\');
+        return ok ? uri.AbsoluteUri : ReleasesPage;
     }
 
     /// <summary>Automatic check when WinSolve starts and every few hours while it runs.</summary>

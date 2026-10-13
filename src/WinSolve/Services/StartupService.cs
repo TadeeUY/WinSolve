@@ -360,7 +360,8 @@ public static class StartupService
                 case StartupSource.Folder:
                     if (SafePath.HasReparsePoint(Path.GetDirectoryName(item.FilePath)!))
                         throw new InvalidOperationException("The Startup folder is a link; refusing to delete through it.");
-                    if (File.Exists(item.FilePath)) File.Delete(item.FilePath);
+                    // Through a handle on the entry itself: the folder can't be swapped for a link in between.
+                    SafeDelete.DeleteFile(item.FilePath);
                     Reg.Delete(item.Hive, item.ApprovedKey, item.Name);
                     break;
 
