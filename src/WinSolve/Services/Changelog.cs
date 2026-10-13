@@ -10,6 +10,17 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 15, 0),
+        [
+            new("\uE72E", "Safer when someone uses another account's administrator password: file pickers, unsigned installers and risky uninstallers are blocked, and WinSolve's own folders are better protected.",
+                "Más seguro cuando alguien usa la contraseña de administrador de otra cuenta: se bloquean las ventanas para elegir archivos, los instaladores sin firma y los desinstaladores riesgosos, y las carpetas de WinSolve quedan mejor protegidas."),
+            new("\uE895", "Updates wait until running tasks finish, and closing WinSolve asks first while something is in progress.",
+                "Las actualizaciones esperan a que terminen las tareas en curso, y cerrar WinSolve pregunta antes si hay algo en marcha."),
+            new("\uE945", "Smoother: moving many files to the Recycle Bin and the Hardware > Devices tab no longer freeze the window.",
+                "Más fluido: mandar muchos archivos a la Papelera y la pestaña Hardware > Dispositivos ya no congelan la ventana."),
+            new("\uE8C1", "Spanish everywhere: about 90 more messages translated, including the step-by-step logs.",
+                "Español en todos lados: unos 90 mensajes más traducidos, incluidos los registros paso a paso."),
+        ]),
         new(new Version(0, 14, 1),
         [
             new("\uE9D9", "The PC report has a simpler, tidier design: the score, a card for each part and the recommendations on the first page, the specifications on their own pages. It comes out in the app's language.",
