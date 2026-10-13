@@ -691,7 +691,7 @@ public sealed class MainForm : Form
                 TaskCategory.Security => "\uE83D", _ => "\uE945",
             }, "Task", () =>
             {
-                if (!AppSettings.Current.ConfirmActions || Localization.Loc.Show(this, $"Run '{Localization.Loc.T(task.Title)}'?", "WinSolve",
+                if (!AppSettings.Current.ConfirmActions || Localization.Loc.Show(this, $"Run '{task.Title}'?", "WinSolve",
                         MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                     RunDialog.RunTasks(this, task.Title, [task]);
             }, t.Category.ToString()));

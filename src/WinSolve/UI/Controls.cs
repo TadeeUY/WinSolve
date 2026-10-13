@@ -440,7 +440,7 @@ public sealed class TaskRunnerView : TableLayoutPanel
                 catch (Exception ex) { log($"ERROR  {t.Title}: {ex.Message}"); }
                 progress(i + 1, tasks.Count);
             }
-            log($"Done. {(ctx.FreedBytes > 0 ? $"Freed {Format.Bytes(ctx.FreedBytes)}. " : "")}{(ctx.RebootRecommended ? "Restart the PC to finish." : "")}");
+            log($"Done. {(ctx.FreedBytes > 0 ? $"Freed {Format.Bytes(ctx.FreedBytes)}. " : "")}{(ctx.RebootRecommended ? "Restart the PC to finish." : "")}".TrimEnd());
             Services.ActivityLog.Cleaned(ctx.FreedBytes, "tasks");
             done?.Invoke(ctx);
         });

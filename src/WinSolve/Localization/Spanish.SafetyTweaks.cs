@@ -7,11 +7,11 @@ public static partial class Spanish
     {
         // ── Tweak descriptions and warnings ──
         ["Turns off the Windows Copilot sidebar for your account. The newer Copilot app is a regular app this setting doesn't remove: uninstall it from Apps if you don't want it."] = "Desactiva la barra lateral de Windows Copilot en tu cuenta. La app de Copilot más nueva es una app normal que este ajuste no quita: desinstálala desde Aplicaciones si no la quieres.",
-        ["Shows technical parameters on blue screens. The PC still restarts automatically afterwards (the details are also saved in the crash dump)."] = "Muestra datos técnicos en los pantallazos azules. El PC se sigue reiniciando solo después (los detalles también se guardan en el volcado de memoria).",
+        ["Shows technical parameters on blue screens. The PC still restarts automatically afterwards (the details are also saved in the crash dump)."] = "Muestra datos técnicos en los pantallazos azules. La PC se sigue reiniciando sola después (los detalles también se guardan en el volcado de memoria).",
         ["Turns off Edge's sidebar, shopping assistant, startup boost, first-run screens, recommendations and diagnostic data (Edge stays installed). These are policies, so Edge will show \"Managed by your organization\"."] = "Desactiva la barra lateral, el asistente de compras, el arranque acelerado, las pantallas de bienvenida, las recomendaciones y los datos de diagnóstico de Edge (Edge sigue instalado). Son directivas, así que Edge mostrará \"Administrado por tu organización\".",
         ["Turns IPv6 off on every adapter. Only useful for specific network problems. Requires a restart."] = "Apaga IPv6 en todos los adaptadores. Solo sirve para problemas de red puntuales. Requiere reiniciar.",
         ["Microsoft doesn't support disabling IPv6, and parts of Windows expect it. It breaks DirectAccess, Always On VPN and IP-HTTPS, can leave you without internet on providers that use DS-Lite, 464XLAT or IPv6-only connections, and breaks Xbox features that use Teredo. Requires a restart."] = "Microsoft no admite desactivar IPv6 y partes de Windows cuentan con él. Rompe DirectAccess, Always On VPN e IP-HTTPS, puede dejarte sin internet con proveedores que usan DS-Lite, 464XLAT o conexiones solo IPv6, y rompe funciones de Xbox que usan Teredo. Requiere reiniciar.",
-        ["Only for PCs that dual-boot with Linux set to keep the hardware clock in UTC. On any other PC the clock will be off by your time zone's difference from UTC."] = "Solo para PCs con arranque dual con un Linux que guarda el reloj del hardware en UTC. En cualquier otro PC la hora quedará desfasada tanto como la diferencia de tu zona horaria con UTC.",
+        ["Only for PCs that dual-boot with Linux set to keep the hardware clock in UTC. On any other PC the clock will be off by your time zone's difference from UTC."] = "Solo para PCs con arranque dual con un Linux que guarda el reloj del hardware en UTC. En cualquier otra PC la hora quedará desfasada tanto como la diferencia de tu zona horaria con UTC.",
 
         // ── Services to Manual ──
         ["Some services could not be changed:"] = "Algunos servicios no se pudieron cambiar:",
@@ -31,8 +31,8 @@ public static partial class Spanish
         ["Videos"] = "Vídeos",
 
         // ── Organization-managed PCs ──
-        ["This PC is joined to an organization's domain."] = "Este PC está unido al dominio de una organización.",
-        ["This PC is managed by an organization (device management)."] = "Este PC lo administra una organización (administración de dispositivos).",
+        ["This PC is joined to an organization's domain."] = "Esta PC está unida al dominio de una organización.",
+        ["This PC is managed by an organization (device management)."] = "Esta PC la administra una organización (administración de dispositivos).",
         ["These tweaks change policy settings, which the organization can overwrite or which can conflict with its own settings:"] = "Estos ajustes cambian directivas, que la organización puede sobrescribir o que pueden chocar con su propia configuración:",
 
         // ── Restore points ──
@@ -79,9 +79,9 @@ public static partial class Spanish
         ["ERROR {0}: {1}"] = "ERROR {0}: {1}",
 
         // ── Windows Update ──
-        ["Windows Home ignores the update delay policies: on this PC only the driver and automatic restart settings take effect."] = "Windows Home ignora las directivas para retrasar actualizaciones: en este PC solo se aplican los ajustes de drivers y de reinicio automático.",
+        ["Windows Home ignores the update delay policies: on this PC only the driver and automatic restart settings take effect."] = "Windows Home ignora las directivas para retrasar actualizaciones: en esta PC solo se aplican los ajustes de drivers y de reinicio automático.",
         ["Apply the Windows Update security settings?"] = "¿Aplicar la configuración de seguridad de Windows Update?",
-        ["Feature updates are delayed by a year and security updates by 4 days, drivers aren't installed through Windows Update and the PC doesn't restart by itself while someone is signed in."] = "Las actualizaciones de funciones se retrasan un año y las de seguridad 4 días, los drivers no se instalan desde Windows Update y el PC no se reinicia solo mientras alguien tenga la sesión iniciada.",
+        ["Feature updates are delayed by a year and security updates by 4 days, drivers aren't installed through Windows Update and the PC doesn't restart by itself while someone is signed in."] = "Las actualizaciones de funciones se retrasan un año y las de seguridad 4 días, los drivers no se instalan desde Windows Update y la PC no se reinicia solo mientras alguien tenga la sesión iniciada.",
         ["Go back to the default Windows Update settings?"] = "¿Volver a la configuración predeterminada de Windows Update?",
         ["Only the settings that 'Security settings' changed are put back as they were before."] = "Solo se devuelven a como estaban los ajustes que cambió 'Configuración de seguridad'.",
 
@@ -98,8 +98,8 @@ public static partial class Spanish
         // ── Power plans ──
         ["Restore previous plan"] = "Restaurar plan anterior",
         ["Restoring the previous power plan"] = "Restaurando el plan de energía anterior",
-        ["There is no saved power plan: WinSolve hasn't switched plans on this PC (or the previous one is already back)."] = "No hay ningún plan de energía guardado: WinSolve no ha cambiado de plan en este PC (o el anterior ya está de vuelta).",
-        ["No saved power plan: WinSolve hasn't switched plans on this PC."] = "No hay plan de energía guardado: WinSolve no ha cambiado de plan en este PC.",
+        ["There is no saved power plan: WinSolve hasn't switched plans on this PC (or the previous one is already back)."] = "No hay ningún plan de energía guardado: WinSolve no ha cambiado de plan en esta PC (o el anterior ya está de vuelta).",
+        ["No saved power plan: WinSolve hasn't switched plans on this PC."] = "No hay plan de energía guardado: WinSolve no ha cambiado de plan en esta PC.",
         ["Current power plan saved ({0})."] = "Plan de energía actual guardado ({0}).",
         ["Could not save the current power plan: {0}"] = "No se pudo guardar el plan de energía actual: {0}",
         ["Previous power plan restored ({0})."] = "Plan de energía anterior restaurado ({0}).",

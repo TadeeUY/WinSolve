@@ -36,7 +36,7 @@ public static partial class Spanish
         ["The new {0} driver did not install and the previous driver could not be put back automatically. In Device Manager choose the display adapter > Update driver > Browse my computer and pick {1}, or run the installer again."] =
             "El driver nuevo de {0} no se instaló y no se pudo volver a poner el anterior automáticamente. En el Administrador de dispositivos elige el adaptador de pantalla > Actualizar controlador > Buscar en mi equipo y selecciona {1}, o ejecuta de nuevo el instalador.",
         ["The previous graphics driver is active again."] = "El driver gráfico anterior vuelve a estar activo.",
-        ["The previous graphics driver was reinstalled; restart the PC to load it."] = "Se reinstaló el driver gráfico anterior; reinicia el PC para cargarlo.",
+        ["The previous graphics driver was reinstalled; restart the PC to load it."] = "Se reinstaló el driver gráfico anterior; reinicia la PC para cargarlo.",
         ["Could not reinstall the previous graphics driver automatically. Its backup is in {0}"] = "No se pudo reinstalar automáticamente el driver gráfico anterior. Su copia está en {0}",
         ["Could not reinstall the previous graphics driver automatically ({0}). Its backup is in {1}"] = "No se pudo reinstalar automáticamente el driver gráfico anterior ({0}). Su copia está en {1}",
         ["Remove every {0} graphics driver package?"] = "¿Quitar todos los paquetes de drivers gráficos de {0}?",
@@ -82,7 +82,7 @@ public static partial class Spanish
         ["The repair of {0} could not be scheduled. Nothing will run at restart."] = "No se pudo programar la reparación de {0}. No se ejecutará nada al reiniciar.",
         ["A surface scan of {0} was already scheduled."] = "Ya había un examen de superficie de {0} programado.",
         ["Could not schedule the scan: {0}"] = "No se pudo programar el examen: {0}",
-        ["The surface scan of {0} will run on the next restart (it can take hours, do not turn the PC off)."] = "El examen de superficie de {0} se ejecutará en el próximo reinicio (puede tardar horas, no apagues el PC).",
+        ["The surface scan of {0} will run on the next restart (it can take hours, do not turn the PC off)."] = "El examen de superficie de {0} se ejecutará en el próximo reinicio (puede tardar horas, no apagues la PC).",
         ["The surface scan of {0} could not be scheduled. Nothing will run at restart."] = "No se pudo programar el examen de superficie de {0}. No se ejecutará nada al reiniciar.",
         ["{0} is in use by Windows (page file, user profiles or programs): the repair will run on the next restart."] = "Windows está usando {0} (archivo de paginación, perfiles de usuario o programas): la reparación se ejecutará en el próximo reinicio.",
         ["{0} is in use by Windows (page file, user profiles or programs): the surface scan will run on the next restart."] = "Windows está usando {0} (archivo de paginación, perfiles de usuario o programas): el examen de superficie se ejecutará en el próximo reinicio.",

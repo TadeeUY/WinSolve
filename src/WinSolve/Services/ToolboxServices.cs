@@ -989,7 +989,7 @@ public static class RestorePoints
                 ParseDmtf(r.Str("CreationTime")),
                 r.Get<uint>("RestorePointType") switch
                 {
-                    0 => "App installed", 1 => "App removed", 10 => "Driver installed", 12 => "Settings changed", 13 => "Cancelled",
+                    0 => "App installed", 1 => "App removed", 10 => "Driver installed", 12 => "Settings changed", 13 => "Canceled",
                     _ => "Restore point",
                 }))
             .OrderByDescending(p => p.Created)

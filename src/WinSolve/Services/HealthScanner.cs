@@ -69,7 +69,8 @@ public static class HealthScanner
             {
                 Severity = IssueSeverity.Critical,
                 Title = $"Drive in bad health: {d.Model}",
-                Detail = string.Join(" ", d.Findings) + " Back up your data as soon as possible.",
+                // One line each, so every finding is translated.
+                Detail = string.Join("\n", d.Findings.Append("Back up your data as soon as possible.")),
                 NavigateTo = "hardware", FixLabel = "Repair",
             });
         foreach (var d in disks.Where(d => d.Health == HealthLevel.Caution))
@@ -77,7 +78,7 @@ public static class HealthScanner
             {
                 Severity = IssueSeverity.Warning,
                 Title = $"Drive needs attention: {d.Model}",
-                Detail = string.Join(" ", d.Findings),
+                Detail = string.Join("\n", d.Findings),
                 NavigateTo = "hardware", FixLabel = "Repair",
             });
 

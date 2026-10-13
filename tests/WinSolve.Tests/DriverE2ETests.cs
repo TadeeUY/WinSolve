@@ -163,7 +163,7 @@ public class ReportE2ETests(ITestOutputHelper output)
                 output.WriteLine(file);
                 Assert.EndsWith(".pdf", file);
                 // The file name follows the language too ("Informe del PC" / "PC report").
-                Assert.Contains(lang == "es" ? "Informe del PC" : "PC report", Path.GetFileName(file));
+                Assert.Contains(lang == "es" ? "Informe de la PC" : "PC report", Path.GetFileName(file));
                 var bytes = await File.ReadAllBytesAsync(file);
                 Assert.True(bytes.Length > 10_000, $"{bytes.Length} bytes");
                 Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));

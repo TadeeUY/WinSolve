@@ -78,7 +78,7 @@ public static partial class Spanish
         // ── Locked file finder ──
         ["(service)"] = "(servicio)",
         ["(Windows)"] = "(Windows)",
-        ["{0} is a critical part of Windows. Closing it could crash the PC (blue screen) or sign you out, so WinSolve won't do it. Use 'Delete at next restart' instead."] = "{0} es una parte crítica de Windows. Cerrarlo podría colgar el PC (pantalla azul) o cerrar tu sesión, así que WinSolve no lo hará. Usa 'Eliminar al reiniciar'.",
+        ["{0} is a critical part of Windows. Closing it could crash the PC (blue screen) or sign you out, so WinSolve won't do it. Use 'Delete at next restart' instead."] = "{0} es una parte crítica de Windows. Cerrarlo podría colgar la PC (pantalla azul) o cerrar tu sesión, así que WinSolve no lo hará. Usa 'Eliminar al reiniciar'.",
         ["That is WinSolve itself. Close the window or tool in WinSolve that uses the file instead."] = "Es el propio WinSolve. Cierra la ventana o herramienta de WinSolve que usa el archivo.",
         ["Windows Explorer (the taskbar, desktop and folder windows) is using it."] = "El Explorador de Windows (la barra de tareas, el escritorio y las ventanas de carpetas) lo está usando.",
         ["Restart Explorer instead of closing it? Open folder windows will close."] = "¿Reiniciar el Explorador en lugar de cerrarlo? Se cerrarán las ventanas de carpetas abiertas.",
@@ -100,7 +100,7 @@ public static partial class Spanish
         ["Part of Windows."] = "Parte de Windows.",
         ["WinSolve won't turn off or remove '{0}'."] = "WinSolve no desactivará ni quitará '{0}'.",
         ["These entries are protected and can't be removed:"] = "Estas entradas están protegidas y no se pueden quitar:",
-        ["These entries start for every user of this PC or run as SYSTEM:"] = "Estas entradas se inician para todos los usuarios de este PC o se ejecutan como SYSTEM:",
+        ["These entries start for every user of this PC or run as SYSTEM:"] = "Estas entradas se inician para todos los usuarios de esta PC o se ejecutan como SYSTEM:",
         ["Disabling them is safer: it takes effect at once and you can turn them back on here. Removing deletes them from Windows (WinSolve keeps a backup you can restore)."] = "Desactivarlas es más seguro: se aplica al instante y puedes volver a activarlas aquí. Quitarlas las borra de Windows (WinSolve guarda una copia que puedes restaurar).",
         ["Yes: disable them instead"] = "Sí: desactivarlas",
         ["No: remove them anyway"] = "No: quitarlas igualmente",
