@@ -256,6 +256,7 @@ public sealed class HardwarePage : Page
         private readonly DataGridView _grid = new();
         private readonly Control _summaryHost = new Panel { Height = 24, BackColor = Color.Transparent };
         private readonly TaskRunnerView _runner = new();
+        private bool _loaded, _loading;
 
         public DevicesSection()
         {
@@ -296,9 +297,32 @@ public sealed class HardwarePage : Page
             Controls.Add(_runner, 0, 3);
         }
 
-        public void Refresh(bool force)
+        public async void Refresh(bool force)
         {
-            var devices = HardwareService.GetProblemDevices();
+            if (_loading || (_loaded && !force)) return;
+            _loading = true;
+            _summaryHost.Controls.Clear();
+            _summaryHost.Controls.Add(Theme.Label("Looking for devices with problems...", Theme.Body, Theme.Muted));
+            List<ProblemDevice> devices;
+            try
+            {
+                // Win32_PnPEntity can take seconds: never on the UI thread.
+                devices = await Task.Run(HardwareService.GetProblemDevices);
+                _loaded = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Write($"Problem devices: {ex.Message}");
+                if (IsDisposed) return;
+                _summaryHost.Controls.Clear();
+                _summaryHost.Controls.Add(Theme.Status(ex.Message, Theme.Warn));
+                return;
+            }
+            finally
+            {
+                _loading = false;
+            }
+            if (IsDisposed) return;
             _grid.Rows.Clear();
             foreach (var d in devices)
             {
@@ -366,9 +390,13 @@ public sealed class HardwarePage : Page
             {
                 batCard.Add(Theme.Row(Theme.Button("Generate battery report", async (_, _) =>
                 {
-                    var file = Path.Combine(SafePath.CreateAdminOnlyFolder("Reports"), "battery-report.html");
-                    await ProcessRunner.RunAsync("powercfg.exe", $"/batteryreport /output \"{file}\"");
-                    ProcessRunner.ShellOpen(file);
+                    // On the user's desktop: their (non-elevated) browser can't read the admin-only folders.
+                    try { ProcessRunner.ShellOpen(await BatteryReport.SaveHtmlAsync()); }
+                    catch (Exception ex)
+                    {
+                        Logger.Write($"Battery report: {ex.Message}");
+                        Localization.Loc.Show(this, Localization.Loc.T("The battery report could not be created.") + "\n\n" + ex.Message, "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
                 })));
             }
             Add(batCard);

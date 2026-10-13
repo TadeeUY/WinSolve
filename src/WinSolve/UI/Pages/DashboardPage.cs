@@ -101,7 +101,8 @@ public sealed class DashboardPage : Page
             week.CriticalAlerts > 0 ? Theme.Bad : week.Alerts > 0 ? Theme.Warn : Theme.Good), 0, 0);
         stats.Controls.Add(Stat("Space freed", Format.Bytes(week.BytesFreed),
             string.Format(Localization.Loc.T("{0} cleanup(s), {1} automatic"), week.Cleanups, week.MaintenanceRuns)), 1, 0);
-        var worst = s.DiskBaselines.Values.Select(b => b.Health).DefaultIfEmpty(HealthLevel.Unknown).Max();
+        HealthLevel worst;
+        lock (AppSettings.SaveLock) worst = s.DiskBaselines.Values.Select(b => b.Health).DefaultIfEmpty(HealthLevel.Unknown).Max();
         stats.Controls.Add(Stat("Drives", Localization.Loc.T(worst switch { HealthLevel.Bad => "Needs attention", HealthLevel.Caution => "Some wear", HealthLevel.Good => "Healthy", _ => "Not checked yet" }),
             Localization.Loc.T("From the drives' S.M.A.R.T. data"),
             worst switch { HealthLevel.Bad => Theme.Bad, HealthLevel.Caution => Theme.Warn, HealthLevel.Good => Theme.Good, _ => Theme.Muted }), 2, 0);

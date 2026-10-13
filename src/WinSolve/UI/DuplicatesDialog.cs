@@ -9,6 +9,8 @@ public sealed class DuplicatesDialog : Form
     private readonly DataGridView _grid = new();
     private readonly Label _status = Theme.Label("", Theme.Body, Theme.Muted);
     private readonly FlatBtn _delete;
+    private readonly Control _toolbar;
+    private bool _recycling;
     private readonly SpaceNode _root;
     private CancellationTokenSource? _cts;
     private List<DuplicateGroup> _groups = [];
@@ -44,7 +46,7 @@ public sealed class DuplicatesDialog : Form
                 ProcessRunner.ShellOpen("explorer.exe", $"/select,\"{f.Path}\"");
         };
 
-        _delete = Theme.Button("Move selected to Recycle Bin", (_, _) => DeleteSelected(), primary: true);
+        _delete = Theme.Button("Move selected to Recycle Bin", async (_, _) => await DeleteSelectedAsync(), primary: true);
         _delete.Enabled = false;
         var top = Theme.Row(
             Theme.Button("Keep newest", (_, _) => AutoSelect(keepNewest: true)),
@@ -52,6 +54,7 @@ public sealed class DuplicatesDialog : Form
             Theme.Button("Clear selection", (_, _) => { foreach (DataGridViewRow r in _grid.Rows) r.Cells[0].Value = false; }),
             _delete);
         top.Dock = DockStyle.Top;
+        _toolbar = top;
         _status.Dock = DockStyle.Bottom;
         _status.Padding = new Padding(0, 8, 0, 0);
 
@@ -61,7 +64,12 @@ public sealed class DuplicatesDialog : Form
 
         HandleCreated += (_, _) => Theme.StyleWindow(this);
         Shown += async (_, _) => await SearchAsync();
-        FormClosing += (_, _) => _cts?.Cancel();
+        FormClosing += (_, e) =>
+        {
+            // Closing mid-way would leave the list out of step with what was really moved.
+            if (_recycling) { e.Cancel = true; return; }
+            _cts?.Cancel();
+        };
     }
 
     private async Task SearchAsync()
@@ -130,8 +138,9 @@ public sealed class DuplicatesDialog : Form
         _delete.Text = sel.Count > 0 ? $"Move {sel.Count} to Recycle Bin ({Format.Bytes(sel.Sum(f => f.Size))})" : "Move selected to Recycle Bin";
     }
 
-    private void DeleteSelected()
+    private async Task DeleteSelectedAsync()
     {
+        if (_recycling) return;
         var sel = Selected();
         // Never delete every copy of a set.
         foreach (var g in _groups)
@@ -151,14 +160,34 @@ public sealed class DuplicatesDialog : Form
         var permanent = RecycleBin.ConfirmBatch(sel.Select(f => (f.Path, f.Size)), this);
         var failed = 0;
         var moved = new HashSet<DuplicateFile>();
-        foreach (var f in sel)
+        var owner = Handle;
+        var progress = Localization.Loc.T("Moving to the Recycle Bin... {0} of {1}");
+        _recycling = true;
+        _toolbar.Enabled = _grid.Enabled = false;
+        try
         {
-            if (RecycleBin.Send(f.Path, Handle, askPermanent: false, knownSize: f.Size, permanentApproved: permanent.Contains(f.Path)))
+            // Each file can take seconds (antivirus, OneDrive): off the UI thread, which stays responsive.
+            await RecycleBin.RunOnStaAsync(() =>
             {
-                moved.Add(f);
-                Logger.Write($"Duplicate moved to Recycle Bin: {f.Path}");
-            }
-            else failed++;
+                for (var i = 0; i < sel.Count; i++)
+                {
+                    var f = sel[i];
+                    var n = i + 1;
+                    BeginInvoke(() => _status.Text = string.Format(progress, n, sel.Count));
+                    if (RecycleBin.Send(f.Path, owner, askPermanent: false, knownSize: f.Size, permanentApproved: permanent.Contains(f.Path)))
+                    {
+                        moved.Add(f);
+                        Logger.Write($"Duplicate moved to Recycle Bin: {f.Path}");
+                    }
+                    else failed++;
+                }
+                return true;
+            });
+        }
+        finally
+        {
+            _recycling = false;
+            _toolbar.Enabled = _grid.Enabled = true;
         }
         // Only drop the files that were really moved; the others are still on disk.
         foreach (var g in _groups) g.Files.RemoveAll(moved.Contains);

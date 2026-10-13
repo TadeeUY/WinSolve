@@ -117,7 +117,8 @@ public sealed partial class ErrorMonitor : IDisposable
 
     private void Raise(Alert alert)
     {
-        if (AppSettings.Current.MutedAlerts.Contains(alert.Kind)) return;
+        lock (AppSettings.SaveLock)
+            if (AppSettings.Current.MutedAlerts.Contains(alert.Kind)) return;
 
         lock (_recent)
         {

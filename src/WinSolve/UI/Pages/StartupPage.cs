@@ -75,7 +75,15 @@ public sealed class StartupPage : Page
     private async Task FillAsync()
     {
         _status.Text = "Loading...";
-        var items = await StartupService.GetItemsAsync();
+        List<StartupItem> items;
+        try { items = await StartupService.GetItemsAsync(); }
+        catch (Exception ex)
+        {
+            Logger.Write($"Startup items: {ex}");
+            if (!IsDisposed) _status.Text = ex.Message;
+            return;
+        }
+        if (IsDisposed) return;
         _filling = true;
         _grid.Rows.Clear();
         foreach (var item in items)

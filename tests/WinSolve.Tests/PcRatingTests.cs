@@ -77,6 +77,11 @@ public class PcRatingTests
     [InlineData("AMD Radeon(TM) Graphics", 38)]
     [InlineData("Microsoft Hyper-V Video", 15)]
     [InlineData("Microsoft Basic Display Adapter", 15)]
+    [InlineData("Intel(R) Arc(TM) A770 Graphics", 74)]
+    [InlineData("Intel(R) Arc(TM) Graphics", 50)]
+    [InlineData("NVIDIA RTX A2000", 75)]
+    [InlineData("NVIDIA RTX A4000", 75)]
+    [InlineData("NVIDIA Quadro RTX 4000", 75)]
     public void Graphics_cards_are_classed_by_name(string name, int score)
         => Assert.Equal(score, PcRating.GpuScore(name));
 

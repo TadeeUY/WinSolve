@@ -191,6 +191,8 @@ public static class PcRating
     internal static int GpuScore(string name)
     {
         var n = name ?? "";
+        // Before the GeForce pattern: "NVIDIA RTX A4000" and "Quadro RTX 4000" are workstation cards.
+        if (Regex.IsMatch(n, @"Quadro|RTX\s*A\d|Radeon\s*Pro|FirePro", RegexOptions.IgnoreCase)) return 75;
         var nvidia = Regex.Match(n, @"\b(RTX|GTX|GT)\s*(?:A)?(\d{3,4})", RegexOptions.IgnoreCase);
         if (nvidia.Success)
         {
@@ -212,11 +214,10 @@ public static class PcRating
             var baseScore = cls switch { >= 9 => 97, 8 => 92, 7 => 87, 6 => 78, _ => 66 };
             return Math.Clamp(baseScore - (gen >= 7 ? 0 : gen == 6 ? 4 : 10), 30, 100);
         }
-        if (Regex.IsMatch(n, @"\bArc\s*(A|B)\d{3}", RegexOptions.IgnoreCase)) return 74;
+        if (Regex.IsMatch(n, @"\bArc(\(TM\))?\s*(A|B)\d{3}", RegexOptions.IgnoreCase)) return 74;
         if (Regex.IsMatch(n, @"Radeon.*\b(7[6-9]0M|8[0-9]0M)\b|Arc\b", RegexOptions.IgnoreCase)) return 50; // strong integrated
         if (Regex.IsMatch(n, @"Iris(\(R\))?\s*Xe|Radeon(\(TM\))?\s*(Graphics|Vega|\d{3}M)", RegexOptions.IgnoreCase)) return 38;
         if (Regex.IsMatch(n, @"Intel.*(UHD|HD|Iris)|Radeon\s*R\d", RegexOptions.IgnoreCase)) return 25;
-        if (Regex.IsMatch(n, @"Quadro|RTX\s*A\d|Radeon\s*Pro|FirePro", RegexOptions.IgnoreCase)) return 75;
         return 15; // Microsoft Basic Display, virtual machines, unknown
     }
 

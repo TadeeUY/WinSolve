@@ -152,7 +152,14 @@ public sealed class MainForm : Form
         menu.Items.Add("Disk space", null, (_, _) => { ShowFromTray(); Navigate("space"); });
         menu.Items.Add("Toolbox", null, (_, _) => { ShowFromTray(); Navigate("toolbox"); });
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => ExitApp());
+        menu.Items.Add("Exit", null, (_, _) =>
+        {
+            // Exiting mid-task would kill a driver install, uninstall or optimization half-way.
+            if (WorkRunning && Localization.Loc.Show(Visible ? this : null, Localization.Loc.T("A task is still running. Exiting now stops it half-way.\n\nExit anyway?"),
+                    "WinSolve", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                return;
+            ExitApp();
+        });
 
         var tray = new NotifyIcon
         {
@@ -336,12 +343,23 @@ public sealed class MainForm : Form
 
     // ───────────── Updates ─────────────
 
+    /// <summary>An automatic update that waited for running work; retried on the next timer tick.</summary>
+    private UpdateInfo? _deferredUpdate;
+
+    /// <summary>True while a page task, a run window or a tray quick action is working (installing would kill it).</summary>
+    private bool WorkRunning => IsBusy || _quickBusy || Application.OpenForms.OfType<RunDialog>().Any();
+
     private async Task CheckForUpdateAsync()
     {
-        var update = await UpdateService.CheckIfDueAsync();
+        var update = _deferredUpdate ?? await UpdateService.CheckIfDueAsync();
         if (update is null) return;
-        if (AppSettings.Current.AutoInstallUpdates && !Edition.IsPortable) await InstallUpdateAsync(update);
-        else ShowUpdate(update);
+        _deferredUpdate = null;
+        if (AppSettings.Current.AutoInstallUpdates && !Edition.IsPortable && !WorkRunning) await InstallUpdateAsync(update);
+        else
+        {
+            if (AppSettings.Current.AutoInstallUpdates && !Edition.IsPortable) _deferredUpdate = update;
+            if (!_updating) ShowUpdate(update);
+        }
     }
 
     /// <summary>Shows the "update available" bar at the top of every page.</summary>
@@ -387,6 +405,15 @@ public sealed class MainForm : Form
             return;
         }
         if (_updating) return;
+        if (WorkRunning)
+        {
+            // Installing closes WinSolve, which would stop the running task half-way.
+            ShowFromTray();
+            Localization.Loc.Show(this, Localization.Loc.T("WinSolve is still running a task. Wait until it finishes, then update."),
+                "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        _deferredUpdate = null;
         _updating = true;
         ShowFromTray();
         _infoBar.Show($"Updating to WinSolve {update.Tag}", "Downloading...");
@@ -437,7 +464,7 @@ public sealed class MainForm : Form
 
     private void OnAlert(Alert alert) => AlertWindow.Show(alert, FixAlert, ShowFromTray);
 
-    private void FixAlert(Alert alert)
+    private async void FixAlert(Alert alert)
     {
         ShowFromTray();
         if (alert.FixTaskIds.Length > 0)
@@ -448,7 +475,17 @@ public sealed class MainForm : Form
         else if (alert.DeviceInstanceId is { } id)
         {
             // Only what a restart/reinstall can fix, and only after saying what will happen.
-            var device = HardwareService.GetProblemDevices().FirstOrDefault(d => string.Equals(d.InstanceId, id, StringComparison.OrdinalIgnoreCase));
+            // Win32_PnPEntity can take seconds: never on the UI thread.
+            List<ProblemDevice> devices;
+            try { devices = await Task.Run(HardwareService.GetProblemDevices); }
+            catch (Exception ex)
+            {
+                Logger.Write($"Problem devices: {ex.Message}");
+                Localization.Loc.Show(this, ex.Message, "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (IsDisposed) return;
+            var device = devices.FirstOrDefault(d => string.Equals(d.InstanceId, id, StringComparison.OrdinalIgnoreCase));
             if (device is null)
             {
                 Localization.Loc.Show(this, "This device has no error any more.", "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Information);
