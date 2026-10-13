@@ -9,10 +9,15 @@ on:
 
 permissions:
   contents: write
+  actions: read   # SignPath downloads the unsigned files from this run's artifacts
 
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      # Code signing turns on by itself once the SignPath secrets exist (Settings > Secrets >
+      # Actions: SIGNPATH_API_TOKEN and SIGNPATH_ORGANIZATION_ID). Until then releases are unsigned.
+      SIGNING: ${{ secrets.SIGNPATH_API_TOKEN != '' && secrets.SIGNPATH_ORGANIZATION_ID != '' && github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,9 +40,73 @@ jobs:
           dotnet publish src/WinSolve/WinSolve.csproj -c Release -p:Portable=true -o out/portable
           Move-Item out/portable/WinSolve.exe out/portable/WinSolve-Portable.exe
 
+      # ── Signing, part 1: the app itself (it is embedded in the installer, so it's signed first) ──
+      - name: Collect the app for signing
+        if: env.SIGNING == 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out/unsigned-app | Out-Null
+          Copy-Item out/app/WinSolve.exe, out/portable/WinSolve-Portable.exe out/unsigned-app/
+
+      - id: unsigned-app
+        if: env.SIGNING == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-app
+          path: out/unsigned-app/*.exe
+
+      - name: Sign the app (SignPath)
+        if: env.SIGNING == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: WinSolve
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ steps.unsigned-app.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: out/signed-app
+
+      - name: Use the signed app
+        if: env.SIGNING == 'true'
+        shell: pwsh
+        run: |
+          Copy-Item out/signed-app/WinSolve.exe out/app/WinSolve.exe -Force
+          Copy-Item out/signed-app/WinSolve-Portable.exe out/portable/WinSolve-Portable.exe -Force
+          Get-AuthenticodeSignature out/app/WinSolve.exe, out/portable/WinSolve-Portable.exe | Format-Table Status, Path
+
       - name: Build installer
         if: hashFiles('src/WinSolve.Setup/WinSolve.Setup.csproj') != ''
         run: dotnet build src/WinSolve.Setup/WinSolve.Setup.csproj -c Release -p:AppExe=${{ github.workspace }}/out/app/WinSolve.exe -o out/setup
+
+      # ── Signing, part 2: the installer ──
+      - id: unsigned-setup
+        if: env.SIGNING == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-setup
+          path: out/setup/WinSolveSetup.exe
+
+      - name: Sign the installer (SignPath)
+        if: env.SIGNING == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: WinSolve
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ steps.unsigned-setup.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: out/signed-setup
+
+      - name: Use the signed installer
+        if: env.SIGNING == 'true'
+        shell: pwsh
+        run: |
+          Copy-Item out/signed-setup/WinSolveSetup.exe out/setup/WinSolveSetup.exe -Force
+          $sig = Get-AuthenticodeSignature out/setup/WinSolveSetup.exe
+          $sig | Format-List Status, SignerCertificate
+          if ($sig.Status -ne 'Valid') { throw "The signed installer's signature is not valid ($($sig.Status))." }
 
       - name: Checksum
         if: hashFiles('out/setup/WinSolveSetup.exe') != ''
