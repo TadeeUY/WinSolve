@@ -447,6 +447,24 @@ public sealed class TaskRunnerView : TableLayoutPanel
     }
 }
 
+/// <summary>Guards the standard Windows file and folder pickers.</summary>
+public static class Pickers
+{
+    /// <summary>
+    /// A picker opened by WinSolve runs elevated: right-click > Open, rename, "Open with" and so on
+    /// inside it all act as the administrator. When a standard user typed another account's
+    /// administrator password, that would hand them administrator access, so the pickers are off.
+    /// Shows why and returns true in that case; otherwise returns false.
+    /// </summary>
+    public static bool PickersBlocked(IWin32Window owner)
+    {
+        if (!InteractiveUser.IsDifferent) return false;
+        Loc.Show(owner, "File and folder pickers are turned off when WinSolve runs with another account's administrator password, because they would give this account administrator access.",
+            "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        return true;
+    }
+}
+
 /// <summary>Base page: title, subtitle and a single-column row layout.</summary>
 public abstract class Page : UserControl
 {

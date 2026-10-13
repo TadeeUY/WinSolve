@@ -191,6 +191,9 @@ public sealed class AppsPage : Page
             ConfirmPermanentDelete = dirs => Invoke(() => ConfirmDanger(
                 "These folders can't be moved to the Recycle Bin:\n\n" + string.Join("\n", dirs.Select(d => "  " + d)) +
                 "\n\nDelete them permanently? This cannot be undone.")),
+            ConfirmUnverifiedUninstaller = (name, file) => Invoke(() => ConfirmDanger(
+                $"The uninstaller of {name} is not digitally signed, and it is in a folder that programs without administrator rights can change:\n\n{file}\n\n" +
+                "It will run with administrator rights. If another program replaced it, that program would get full control of this PC. Only continue if you trust this file. Run it anyway?")),
         };
 
         // Stop if the restore point was cancelled; ask if it failed (the user wanted one before force removal).

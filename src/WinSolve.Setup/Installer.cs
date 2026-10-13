@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Threading;
 using Microsoft.Win32;
@@ -105,8 +106,28 @@ namespace WinSolve.Setup
         public static void InstallRuntime(Action<string> status, Action<int> progress, CancellationToken ct)
         {
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | (SecurityProtocolType)12288 /* TLS 1.3 */;
-            // Unpredictable name, created fresh, so nothing can be planted in its place.
-            var file = Path.Combine(Path.GetTempPath(), "WinSolve-dotnet-" + Guid.NewGuid().ToString("N") + ".exe");
+            // Elevated, the runtime setup runs as administrator: download it into a fresh folder only
+            // Administrators and SYSTEM can write to, not into %TEMP%, which the signed-in (possibly
+            // standard) user controls. Otherwise an unpredictable name, created fresh, in %TEMP%.
+            var folder = IsElevated ? CreateAdminOnlyDownloadFolder() : null;
+            try
+            {
+                var file = Path.Combine(folder ?? Path.GetTempPath(), "WinSolve-dotnet-" + Guid.NewGuid().ToString("N") + ".exe");
+                DownloadAndRunRuntime(file, status, progress, ct);
+            }
+            finally
+            {
+                if (folder != null)
+                {
+                    TryDeleteDir(folder);
+                    // The parent too, when nothing else is left in it.
+                    try { Directory.Delete(Path.GetDirectoryName(folder)); } catch { }
+                }
+            }
+        }
+
+        private static void DownloadAndRunRuntime(string file, Action<string> status, Action<int> progress, CancellationToken ct)
+        {
             status(Lang.T("Downloading the .NET 8 Desktop Runtime from Microsoft..."));
             using (var wc = new WebClient())
             {
@@ -134,6 +155,49 @@ namespace WinSolve.Setup
                 }
             }
             TryDelete(file);
+        }
+
+        /// <summary>
+        /// %ProgramData%\WinSolve.Setup\(random): Administrators and SYSTEM only. Any user can create
+        /// folders in ProgramData, so a WinSolve.Setup folder that is a link or that an administrator
+        /// didn't create (its owner could rename what is inside) is moved aside first.
+        /// </summary>
+        private static string CreateAdminOnlyDownloadFolder()
+        {
+            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSolve.Setup");
+            if (Directory.Exists(root) || File.Exists(root))
+            {
+                var attributes = File.GetAttributes(root);
+                if ((attributes & FileAttributes.ReparsePoint) != 0 || (attributes & FileAttributes.Directory) == 0 || !OwnedByAdmins(root))
+                    Directory.Move(root, root + ".untrusted-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            }
+            if (Directory.Exists(root)) new DirectoryInfo(root).SetAccessControl(AdminOnlySecurity());
+            else Directory.CreateDirectory(root, AdminOnlySecurity());
+
+            var dir = Path.Combine(root, Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir, AdminOnlySecurity());
+            return dir;
+        }
+
+        private static DirectorySecurity AdminOnlySecurity()
+        {
+            var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            var security = new DirectorySecurity();
+            security.SetOwner(admins);
+            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+            security.AddAccessRule(new FileSystemAccessRule(admins, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+            security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+                FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+            return security;
+        }
+
+        /// <summary>Owned by Administrators, SYSTEM or a service (TrustedInstaller), not by a user account.</summary>
+        private static bool OwnedByAdmins(string dir)
+        {
+            var owner = Directory.GetAccessControl(dir, AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            return owner != null && (owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid) || owner.IsWellKnown(WellKnownSidType.LocalSystemSid)
+                || owner.Value.StartsWith("S-1-5-80-", StringComparison.Ordinal));
         }
 
         // ═══════════════════ Install ═══════════════════

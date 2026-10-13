@@ -251,6 +251,57 @@ public static class SafeDelete
         return SetFileInformationByHandle(h, FileDispositionInfo, ref info, (uint)Marshal.SizeOf<FILE_DISPOSITION_INFO>());
     }
 
+    /// <summary>
+    /// Deletes one file through a handle opened on the entry itself: a link is deleted as the link
+    /// (never what it points to), and a path that reaches the file through a junction or symbolic
+    /// link along the way is refused. Nothing happens if the file doesn't exist.
+    /// </summary>
+    public static void DeleteFile(string path)
+    {
+        var full = Path.GetFullPath(path);
+        using var h = CreateFileW(full, DELETE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | SYNCHRONIZE, FILE_SHARE_ALL, IntPtr.Zero, OPEN_EXISTING,
+            FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero);
+        if (h.IsInvalid)
+        {
+            var error = Marshal.GetLastWin32Error();
+            if (error is 2 or 3) return; // ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND
+            throw new Win32Exception(error, $"Cannot open {full}");
+        }
+        if (GetAttributes(h) is not { } a || (a & FileAttributes.Directory) != 0)
+            throw new IOException($"{full} is not a file.");
+        if (!IsAtPath(h, full))
+            throw new IOException($"{full} is reached through a link; not deleted.");
+        if (!MarkForDeletion(h, a))
+            throw new Win32Exception(Marshal.GetLastWin32Error(), $"Cannot delete {full}");
+    }
+
+    /// <summary>Deletes the file or folder an open handle (with DELETE access) refers to, when the handle closes.</summary>
+    internal static bool DeleteThroughHandle(SafeFileHandle h)
+        => GetAttributes(h) is { } a && MarkForDeletion(h, a);
+
+    /// <summary>
+    /// Renames the file an open handle (with DELETE access) refers to, inside its own folder: no
+    /// path is looked up, so a folder swapped for a link can't redirect it.
+    /// </summary>
+    internal static bool RenameThroughHandle(SafeFileHandle h, string newName)
+    {
+        if (newName.Length == 0 || newName.IndexOfAny(['\\', '/', ':']) >= 0) return false;
+        var nameOffset = (int)Marshal.OffsetOf<FILE_RENAME_INFO>(nameof(FILE_RENAME_INFO.FileNameLength)) + sizeof(uint);
+        var size = Math.Max(nameOffset + (newName.Length + 1) * 2, Marshal.SizeOf<FILE_RENAME_INFO>());
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.Copy(new byte[size], 0, buffer, size);
+            Marshal.StructureToPtr(new FILE_RENAME_INFO { Flags = 0, RootDirectory = IntPtr.Zero, FileNameLength = (uint)(newName.Length * 2) }, buffer, false);
+            Marshal.Copy(newName.ToCharArray(), 0, buffer + nameOffset, newName.Length);
+            return SetFileInformationByHandle(h, FileRenameInfo, buffer, (uint)size);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
     // ───────────── Helpers ─────────────
 
     internal static FileAttributes? GetAttributes(SafeFileHandle h)
@@ -322,7 +373,7 @@ public static class SafeDelete
     private const uint OBJ_CASE_INSENSITIVE = 0x40;
     private const uint FILE_OPEN = 1;
     private const uint FILE_DIRECTORY_FILE = 0x1, FILE_NON_DIRECTORY_FILE = 0x40, FILE_SYNCHRONOUS_IO_NONALERT = 0x20, FILE_OPEN_REPARSE_POINT = 0x00200000;
-    private const int FileBasicInfo = 0, FileDispositionInfo = 4, FileFullDirectoryInfo = 14, FileFullDirectoryRestartInfo = 15, FileDispositionInfoEx = 21;
+    private const int FileBasicInfo = 0, FileDispositionInfo = 4, FileFullDirectoryInfo = 14, FileFullDirectoryRestartInfo = 15, FileDispositionInfoEx = 21, FileRenameInfo = 3;
     private const uint FILE_DISPOSITION_FLAG_DELETE = 0x1, FILE_DISPOSITION_FLAG_POSIX_SEMANTICS = 0x2, FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE = 0x10;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -349,6 +400,14 @@ public static class SafeDelete
     {
         public IntPtr Status;
         public IntPtr Information;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FILE_RENAME_INFO
+    {
+        public uint Flags; // ReplaceIfExists
+        public IntPtr RootDirectory;
+        public uint FileNameLength; // followed by the name (UTF-16)
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -403,6 +462,9 @@ public static class SafeDelete
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetFileInformationByHandle(SafeFileHandle h, int infoClass, ref FILE_BASIC_INFO info, uint size);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetFileInformationByHandle(SafeFileHandle h, int infoClass, IntPtr info, uint size);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint GetFinalPathNameByHandleW(SafeFileHandle h, [Out] char[] buffer, uint size, uint flags);

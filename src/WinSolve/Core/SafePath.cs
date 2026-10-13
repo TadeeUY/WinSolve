@@ -362,16 +362,30 @@ public static class SafePath
         return dir;
     });
 
+    private static SecurityIdentifier AdministratorsSid => new(WellKnownSidType.BuiltinAdministratorsSid, null);
+
     /// <summary>Administrators and SYSTEM only: settings, logs and files run elevated live here.</summary>
-    private static DirectorySecurity AdminOnlySecurity()
+    private static DirectorySecurity AdminOnlySecurity() => ProtectedSecurity(usersCanRead: false);
+
+    /// <summary>
+    /// A protected DACL (nothing inherited from the parent) owned by Administrators: Administrators
+    /// and SYSTEM have full control and, if <paramref name="usersCanRead"/>, Users can read and run.
+    /// </summary>
+    private static DirectorySecurity ProtectedSecurity(bool usersCanRead)
     {
         var security = new DirectorySecurity();
+        // Explicitly, not the token's default owner: an administrator account whose default owner is
+        // itself would otherwise own the folder, and that owner is not trusted on the next start.
+        security.SetOwner(AdministratorsSid);
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
-        security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+        security.AddAccessRule(new FileSystemAccessRule(AdministratorsSid,
             FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
         security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
             FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+        if (usersCanRead)
+            security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
+                FileSystemRights.ReadAndExecute, inherit, PropagationFlags.None, AccessControlType.Allow));
         return security;
     }
 
@@ -399,12 +413,81 @@ public static class SafePath
         else info.SetAccessControl(AdminOnlySecurity()); // also removes the read access older versions gave to Users
     }
 
-    private static bool OwnedByAdmins(string dir)
+    /// <summary>
+    /// Owned by Administrators, SYSTEM or a service (TrustedInstaller). Not by the account WinSolve
+    /// runs as: a non-elevated process of that same account creates folders owned by it, so such
+    /// a folder may have been planted before WinSolve started.
+    /// </summary>
+    private static bool OwnedByAdmins(string path)
     {
-        var owner = new DirectoryInfo(dir).GetAccessControl(AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
-        return owner is not null && (owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid) || owner.IsWellKnown(WellKnownSidType.LocalSystemSid)
-            || owner.Value.StartsWith("S-1-5-80-", StringComparison.Ordinal) /* TrustedInstaller and other services */
-            || owner == System.Security.Principal.WindowsIdentity.GetCurrent().User);
+        FileSystemSecurity security = Directory.Exists(path)
+            ? new DirectoryInfo(path).GetAccessControl(AccessControlSections.Owner)
+            : new FileInfo(path).GetAccessControl(AccessControlSections.Owner);
+        return IsTrustedOwner(security.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier);
+    }
+
+    /// <summary>Administrators, SYSTEM, TrustedInstaller or another service SID. Pure.</summary>
+    internal static bool IsTrustedOwner(SecurityIdentifier? owner)
+        => owner is not null && (owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid) || owner.IsWellKnown(WellKnownSidType.LocalSystemSid)
+            || owner.Value.StartsWith("S-1-5-80-", StringComparison.Ordinal)); /* TrustedInstaller and other services */
+
+    /// <summary>
+    /// Makes a folder at the root of the drive that a vendor installer unpacks into and then runs
+    /// from elevated (C:\NVIDIA, C:\AMD) safe to use. Any user can create folders in C:\, and
+    /// folders made there inherit write access for every user, so an existing one that is a link,
+    /// or that holds anything a non-administrator created (or a link), is renamed to
+    /// "folder.winsolve-time". The folder is then (re)made owned by Administrators with a
+    /// protected DACL: Administrators and SYSTEM full control, Users read and run.
+    /// Throws when the folder can't be moved aside or secured.
+    /// </summary>
+    public static void PrepareInstallerFolder(string dir, Action<string> log)
+    {
+        if (Directory.Exists(dir) || File.Exists(dir))
+        {
+            // Renaming works on the link itself.
+            var attributes = File.GetAttributes(dir);
+            string? reason = (attributes & FileAttributes.ReparsePoint) != 0 ? "it is a link"
+                : (attributes & FileAttributes.Directory) == 0 ? "it is a file"
+                : !OwnedByAdmins(dir) ? "it was not created by an administrator"
+                : UntrustedEntry(dir) is { } entry ? $"{entry} is a link or was not created by an administrator"
+                : null;
+            if (reason is not null)
+            {
+                var aside = $"{dir}.winsolve-{DateTime.Now:yyyyMMdd-HHmmss}";
+                Directory.Move(dir, aside);
+                log($"{dir} was moved to {aside} before the installer runs, because {reason}.");
+            }
+        }
+        var info = new DirectoryInfo(dir);
+        if (!info.Exists) info.Create(ProtectedSecurity(usersCanRead: true));
+        else info.SetAccessControl(ProtectedSecurity(usersCanRead: true)); // drops the write access inherited from C:\
+    }
+
+    /// <summary>The first file or folder inside <paramref name="dir"/> that is a link or not owned by an administrator.</summary>
+    private static string? UntrustedEntry(string dir)
+    {
+        var options = new EnumerationOptions { RecurseSubdirectories = false, IgnoreInaccessible = false, AttributesToSkip = 0 };
+        var pending = new Stack<string>();
+        pending.Push(dir);
+        var current = dir;
+        try
+        {
+            while (pending.Count > 0)
+            {
+                current = pending.Pop();
+                foreach (var entry in new DirectoryInfo(current).EnumerateFileSystemInfos("*", options))
+                {
+                    current = entry.FullName;
+                    if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint) || !OwnedByAdmins(entry.FullName)) return entry.FullName;
+                    if (entry is DirectoryInfo) pending.Push(entry.FullName);
+                }
+            }
+            return null;
+        }
+        catch
+        {
+            return current; // couldn't be checked: treated as untrusted
+        }
     }
 
     /// <summary>

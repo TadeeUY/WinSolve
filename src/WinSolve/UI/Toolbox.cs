@@ -252,6 +252,7 @@ internal sealed class LockedFileDialog : ToolDialog
 
     private void PickFile()
     {
+        if (Pickers.PickersBlocked(this)) return;
         using var dlg = new OpenFileDialog { Title = Loc.T("Choose the locked file"), DereferenceLinks = false };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
         _chosen = dlg.FileName;
@@ -261,6 +262,7 @@ internal sealed class LockedFileDialog : ToolDialog
 
     private void PickFolder()
     {
+        if (Pickers.PickersBlocked(this)) return;
         using var dlg = new FolderBrowserDialog { Description = Loc.T("Choose the locked folder"), UseDescriptionForTitle = true };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
         _chosen = dlg.SelectedPath;
@@ -370,11 +372,12 @@ internal sealed class LockedFileDialog : ToolDialog
             Tell("This file is in a system or program folder; WinSolve won't delete it.", warning: true);
             return;
         }
-        // The deletion runs at boot as SYSTEM and follows links in the path. In a folder the
-        // signed-in (standard) user can change, they could redirect it to a system file.
-        if (InteractiveUser.IsDifferent && SafePath.IsUserWritableLocation(_chosen))
+        // The deletion runs at boot as SYSTEM and follows links in the path. In a folder that any
+        // program without administrator rights can change (a standard user's, or this account's
+        // own non-elevated programs), it could be redirected to a system file.
+        if (SafePath.IsUserWritableLocation(_chosen))
         {
-            Tell("This file is in a folder a standard user can change, so WinSolve won't schedule it as administrator. Delete it after restarting, or sign in as an administrator.", warning: true);
+            Tell("This file is in a folder that programs without administrator rights can change, so WinSolve won't schedule its deletion at restart: the deletion could be redirected to a system file. Restart the PC and delete it then, before opening the program that locks it.", warning: true);
             return;
         }
         if (!Ask($"Delete this file the next time Windows starts?\n\n{_chosen}", danger: true)) return;
@@ -408,12 +411,14 @@ internal sealed class ShredDialog : ToolDialog
 
     private void AddFiles()
     {
+        if (Pickers.PickersBlocked(this)) return;
         using var dlg = new OpenFileDialog { Multiselect = true, Title = Loc.T("Files to shred"), DereferenceLinks = false };
         if (dlg.ShowDialog(this) == DialogResult.OK) foreach (var f in dlg.FileNames) if (!_list.Items.Contains(f)) _list.Items.Add(f);
     }
 
     private void AddFolder()
     {
+        if (Pickers.PickersBlocked(this)) return;
         using var dlg = new FolderBrowserDialog { Description = Loc.T("Folder to shred"), UseDescriptionForTitle = true };
         if (dlg.ShowDialog(this) == DialogResult.OK && !_list.Items.Contains(dlg.SelectedPath)) _list.Items.Add(dlg.SelectedPath);
     }

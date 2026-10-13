@@ -416,7 +416,7 @@ public static class SecureDelete
 
         // Open the entry itself (never a link's target), exclusively, and check again right before
         // writing what the handle says: a plain file, with this one name, at exactly this path.
-        using var h = CreateFileW(path, GENERIC_WRITE | FILE_READ_ATTRIBUTES, 0, IntPtr.Zero, OPEN_EXISTING,
+        using var h = CreateFileW(path, GENERIC_WRITE | FILE_READ_ATTRIBUTES | DELETE, 0, IntPtr.Zero, OPEN_EXISTING,
             FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_WRITE_THROUGH, IntPtr.Zero);
         if (h.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
         if (SafeDelete.GetAttributes(h) is not { } now || (now & FileAttributes.Directory) != 0 || IsLinkOrCloud(now))
@@ -439,15 +439,17 @@ public static class SecureDelete
             }
             fs.Flush(flushToDisk: true);
             fs.SetLength(0);
+
+            // Renamed and deleted through the same handle (closing it first and going by path would
+            // let a folder on the way be swapped for a link). A random name too, so the old file
+            // name doesn't stay in the folder index; it is deleted even if the rename fails.
+            SafeDelete.RenameThroughHandle(h, Guid.NewGuid().ToString("N"));
+            if (!SafeDelete.DeleteThroughHandle(h)) throw new Win32Exception(Marshal.GetLastWin32Error());
         }
-        // A random name too, so the old file name doesn't stay in the folder index.
-        var renamed = Path.Combine(Path.GetDirectoryName(path)!, Guid.NewGuid().ToString("N"));
-        File.Move(path, renamed);
-        File.Delete(renamed);
         return null;
     }
 
-    private const uint GENERIC_WRITE = 0x40000000, FILE_READ_ATTRIBUTES = 0x0080, OPEN_EXISTING = 3;
+    private const uint GENERIC_WRITE = 0x40000000, DELETE = 0x00010000, FILE_READ_ATTRIBUTES = 0x0080, OPEN_EXISTING = 3;
     private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000, FILE_FLAG_WRITE_THROUGH = 0x80000000;
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

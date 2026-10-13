@@ -230,6 +230,7 @@ public sealed class SpacePage : Page
 
     private void PickFolder()
     {
+        if (Pickers.PickersBlocked(this)) return;
         using var dlg = new FolderBrowserDialog { Description = Localization.Loc.T("Folder to scan"), UseDescriptionForTitle = true };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
         _folderCard.Path = dlg.SelectedPath;

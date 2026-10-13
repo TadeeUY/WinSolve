@@ -537,6 +537,16 @@ public static class DriverService
         if (InstallerProblem(vendor, safeCopy) is { } problem)
             throw new InvalidOperationException(problem);
 
+        // The installer unpacks into C:\NVIDIA or C:\AMD and runs what it unpacked as administrator.
+        if (ExtractFolder(vendor) is { } extract)
+        {
+            try { SafePath.PrepareInstallerFolder(extract, log); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                throw new InvalidOperationException($"Could not prepare {extract} for the installer ({ex.Message}). Nothing was changed. Rename or delete that folder and try again.");
+            }
+        }
+
         await EnsureRestorePointAsync("WinSolve - before graphics driver clean install", confirm, log, ct);
 
         var before = DriverState(vendor);
@@ -762,6 +772,18 @@ public static class DriverService
             _ => [Path.Combine(InteractiveUser.LocalAppData, "D3DSCache")],
         };
         foreach (var dir in dirs) ClearCache(dir, log);
+    }
+
+    /// <summary>The folder at the root of the Windows drive the vendor's installer unpacks into, if any.</summary>
+    private static string? ExtractFolder(GpuVendor vendor)
+    {
+        var drive = Path.GetPathRoot(Environment.SystemDirectory)!;
+        return vendor switch
+        {
+            GpuVendor.Nvidia => Path.Combine(drive, "NVIDIA"),
+            GpuVendor.Amd => Path.Combine(drive, "AMD"),
+            _ => null,
+        };
     }
 
     /// <summary>

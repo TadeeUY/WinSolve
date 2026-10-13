@@ -32,6 +32,16 @@ public static class Authenticode
         }
     }
 
+    /// <summary>
+    /// True when the file has a valid Authenticode signature that chains to a trusted root,
+    /// whoever the signer is. Files signed only through a Windows catalog are not recognized.
+    /// </summary>
+    public static bool IsTrusted(string file)
+    {
+        try { return Verify(file); }
+        catch { return false; }
+    }
+
     private static string? SubjectField(string subject, string key)
     {
         // Subject looks like: CN="NVIDIA Corporation", O="NVIDIA Corporation", L=Santa Clara, ...
