@@ -888,6 +888,7 @@ internal sealed class ForgottenDialog : ToolDialog
     private readonly FlowLayoutPanel _actions = Theme.Row();
     private readonly ComboBox _age = Theme.Combo("Not changed or opened in 6 months", "Not changed or opened in 1 year", "Not changed or opened in 2 years");
     private CancellationTokenSource? _cts;
+    private bool _recycling;
 
     public ForgottenDialog() : base("\uE81C", "Large & forgotten files",
         "Files over 100 MB that haven't been changed or opened for a long time (Windows doesn't always record when a file is opened), and folders with nothing inside. Only your own folders are searched (not AppData).", new Size(860, 580))
@@ -906,7 +907,11 @@ internal sealed class ForgottenDialog : ToolDialog
         _tabs.Select("files", notify: false);
         ShowTab();
         Shown += async (_, _) => await ScanAsync();
-        FormClosing += (_, _) => _cts?.Cancel();
+        FormClosing += (_, e) =>
+        {
+            if (_recycling) { e.Cancel = true; return; }
+            _cts?.Cancel();
+        };
     }
 
     private void ShowTab()
@@ -920,7 +925,7 @@ internal sealed class ForgottenDialog : ToolDialog
         Theme.ClearAndDispose(_actions);
         if (files)
         {
-            _actions.Controls.Add(Theme.Button("Send to Recycle Bin", (_, _) => RecycleSelected(), primary: true, glyph: "\uE74D"));
+            _actions.Controls.Add(Theme.Button("Send to Recycle Bin", async (_, _) => await RecycleSelectedAsync(), primary: true, glyph: "\uE74D"));
             _actions.Controls.Add(Theme.Button("Open folder", (_, _) => OpenFolder(), glyph: "\uE838"));
         }
         else
@@ -961,22 +966,46 @@ internal sealed class ForgottenDialog : ToolDialog
         if (SelectedFiles().FirstOrDefault() is { } f) ProcessRunner.ShellOpen("explorer.exe", $"/select,\"{f.Path}\"");
     }
 
-    private void RecycleSelected()
+    private async Task RecycleSelectedAsync()
     {
+        if (_recycling) return;
         var files = SelectedFiles();
         if (files.Count == 0) { Tell("Select one or more files first."); return; }
         if (!Ask(string.Format(Loc.T("Send {0} file(s) ({1}) to the Recycle Bin?"), files.Count, Format.Bytes(files.Sum(f => f.Size))))) return;
         long freed = 0;
         var permanent = RecycleBin.ConfirmBatch(files.Select(f => (f.Path, f.Size)), this); // asked once, not per file
-        foreach (var f in files)
+        var moved = new List<ForgottenFile>();
+        var owner = Handle;
+        var progress = Loc.T("Moving to the Recycle Bin... {0} of {1}");
+        _recycling = true;
+        _actions.Enabled = _tabs.Enabled = _age.Enabled = _files.Enabled = false;
+        try
         {
-            if (InteractiveUser.IsOtherUsersData(f.Path)) continue;
-            if (RecycleBin.Send(f.Path, Handle, askPermanent: false, knownSize: f.Size, permanentApproved: permanent.Contains(f.Path)))
+            // Each file can take seconds (antivirus, OneDrive): off the UI thread, which stays responsive.
+            await RecycleBin.RunOnStaAsync(() =>
             {
-                freed += f.Size;
-                foreach (DataGridViewRow r in _files.Rows) if (ReferenceEquals(r.Tag, f)) { _files.Rows.Remove(r); break; }
-            }
+                for (var i = 0; i < files.Count; i++)
+                {
+                    var f = files[i];
+                    var n = i + 1;
+                    BeginInvoke(() => Status.Text = string.Format(progress, n, files.Count));
+                    if (InteractiveUser.IsOtherUsersData(f.Path)) continue;
+                    if (RecycleBin.Send(f.Path, owner, askPermanent: false, knownSize: f.Size, permanentApproved: permanent.Contains(f.Path)))
+                    {
+                        freed += f.Size;
+                        moved.Add(f);
+                    }
+                }
+                return true;
+            });
         }
+        finally
+        {
+            _recycling = false;
+            _actions.Enabled = _tabs.Enabled = _age.Enabled = _files.Enabled = true;
+        }
+        foreach (var f in moved)
+            foreach (DataGridViewRow r in _files.Rows) if (ReferenceEquals(r.Tag, f)) { _files.Rows.Remove(r); break; }
         ActivityLog.Cleaned(freed, "forgotten files");
         Status.Text = string.Format(Loc.T("{0} moved to the Recycle Bin."), Format.Bytes(freed));
     }

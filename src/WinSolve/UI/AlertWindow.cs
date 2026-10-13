@@ -187,7 +187,7 @@ public sealed class Toast : Form
         if (_o.MuteKind is { } kind)
             menu.Items.Add(Localization.Loc.T("Don't show alerts like this"), null, (_, _) =>
             {
-                AppSettings.Current.MutedAlerts.Add(kind);
+                lock (AppSettings.SaveLock) AppSettings.Current.MutedAlerts.Add(kind);
                 AppSettings.Current.Save();
                 CloseAnimated();
             });

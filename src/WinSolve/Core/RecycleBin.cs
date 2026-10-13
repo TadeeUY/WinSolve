@@ -69,6 +69,23 @@ public static class RecycleBin
         return SHFileOperation(ref op) == 0 && !op.fAnyOperationsAborted;
     }
 
+    /// <summary>
+    /// Runs shell file operations (<see cref="Send"/>) off the UI thread, which stays responsive,
+    /// on a single-threaded apartment as the shell wants.
+    /// </summary>
+    public static Task<T> RunOnStaAsync<T>(Func<T> work)
+    {
+        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            try { tcs.SetResult(work()); }
+            catch (Exception ex) { tcs.SetException(ex); }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return tcs.Task;
+    }
+
     private sealed class Owner(IntPtr handle) : IWin32Window
     {
         public IntPtr Handle => handle;

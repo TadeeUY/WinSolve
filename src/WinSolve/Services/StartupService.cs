@@ -135,7 +135,9 @@ public static class StartupService
             }
         }
 
-        FromFolder(InteractiveUser.Startup, RegistryHive.CurrentUser, "Startup folder (current user)");
+        // The signed-in user's folder may not be found (e.g. their profile can't be resolved): list the rest anyway.
+        try { FromFolder(InteractiveUser.Startup, RegistryHive.CurrentUser, "Startup folder (current user)"); }
+        catch (Exception ex) { Logger.Write($"Could not read the current user's Startup folder: {ex.Message}"); }
         FromFolder(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup), RegistryHive.LocalMachine, "Startup folder (all users)");
 
         items.AddRange(await GetScheduledTasksAsync());

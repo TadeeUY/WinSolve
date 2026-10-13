@@ -14,6 +14,12 @@ public sealed class AppSettings
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
+    /// <summary>
+    /// Held while saving, and by background code while it changes a collection in the settings
+    /// (e.g. <see cref="DiskBaselines"/>), so a save never serializes a collection mid-change.
+    /// </summary>
+    internal static readonly object SaveLock = new();
+
     /// <summary>One-click uses the custom lists below instead of the automatic profile.</summary>
     public bool UseCustomOneClick { get; set; }
 
@@ -112,9 +118,21 @@ public sealed class AppSettings
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-            var tmp = FilePath + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(this, JsonOptions));
-            File.Move(tmp, FilePath, overwrite: true);
+            lock (SaveLock)
+            {
+                // A temp file of its own: two saves at once never write into the same one.
+                var tmp = $"{FilePath}.{Guid.NewGuid():N}.tmp";
+                try
+                {
+                    File.WriteAllText(tmp, JsonSerializer.Serialize(this, JsonOptions));
+                    File.Move(tmp, FilePath, overwrite: true);
+                }
+                catch
+                {
+                    try { File.Delete(tmp); } catch { }
+                    throw;
+                }
+            }
             return true;
         }
         catch (Exception ex)

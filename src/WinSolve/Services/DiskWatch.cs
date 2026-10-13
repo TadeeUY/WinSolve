@@ -30,7 +30,8 @@ public sealed partial class ErrorMonitor
             foreach (var d in disks)
             {
                 var key = $"{d.Model}|{d.Serial}";
-                baselines.TryGetValue(key, out var before);
+                DiskBaseline? before;
+                lock (AppSettings.SaveLock) baselines.TryGetValue(key, out before);
                 foreach (var alert in DiskAlerts(d, before, DateTime.Now))
                 {
                     // A hot drive stays hot for a while: remind at most every 6 hours.
@@ -41,7 +42,8 @@ public sealed partial class ErrorMonitor
                     }
                     Raise(alert);
                 }
-                baselines[key] = NextBaseline(d, before, DateTime.Now);
+                var next = NextBaseline(d, before, DateTime.Now);
+                lock (AppSettings.SaveLock) baselines[key] = next;
             }
             AppSettings.Current.Save();
         }
