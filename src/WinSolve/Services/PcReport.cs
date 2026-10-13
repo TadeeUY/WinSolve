@@ -151,6 +151,9 @@ public static class PcReport
             foreach (var (k, v) in rows) sb.Append($"<tr><th>{E(Loc.T(k))}</th><td>{E(v)}</td></tr>");
             sb.Append("</table></section>");
         }
+        // "Drive 1", "Drive 2"... when there are several of a kind (already translated: Section
+        // looks the title up again and leaves it unchanged).
+        static string Numbered(string title, int index, int count) => count > 1 ? $"{Loc.T(title)} {index + 1}" : title;
 
         var os = Wmi.Query("SELECT Caption, Version, BuildNumber, OSArchitecture, InstallDate, LastBootUpTime FROM Win32_OperatingSystem").FirstOrDefault();
         var cs = Wmi.Query("SELECT Manufacturer, Model, TotalPhysicalMemory FROM Win32_ComputerSystem").FirstOrDefault();
@@ -178,8 +181,9 @@ public static class PcReport
             ("BIOS / UEFI", $"{bios?.Str("Manufacturer")} {bios?.Str("SMBIOSBIOSVersion")} ({(bios is null ? "—" : Date(bios.Str("ReleaseDate")))})"),
         ]);
 
-        foreach (var cpu in Wmi.Query("SELECT Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed FROM Win32_Processor"))
-            Section("Processor",
+        var cpus = Wmi.Query("SELECT Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed FROM Win32_Processor");
+        foreach (var (cpu, i) in cpus.Select((c, i) => (c, i)))
+            Section(Numbered("Processor", i, cpus.Count),
             [
                 ("Model", cpu.Str("Name")),
                 ("Cores / threads", $"{cpu.Get<uint>("NumberOfCores")} / {cpu.Get<uint>("NumberOfLogicalProcessors")}"),
@@ -201,11 +205,12 @@ public static class PcReport
         }
         Section("Memory", memRows);
 
-        foreach (var gpu in DriverService.GetGpus())
-            Section("Graphics", [("Model", gpu.Name), ("Driver", $"{gpu.FriendlyVersion} ({gpu.DriverDate?.ToString("d", Loc.Culture)})")]);
+        var gpus = DriverService.GetGpus();
+        foreach (var (gpu, i) in gpus.Select((g, i) => (g, i)))
+            Section(Numbered("Graphics", i, gpus.Count), [("Model", gpu.Name), ("Driver", $"{gpu.FriendlyVersion} ({gpu.DriverDate?.ToString("d", Loc.Culture)})")]);
 
-        foreach (var d in disks)
-            Section("Drive",
+        foreach (var (d, i) in disks.Select((d, i) => (d, i)))
+            Section(Numbered("Drive", i, disks.Count),
             [
                 ("Model", d.Model),
                 ("Type", $"{d.MediaType} / {d.BusType}  ·  {Format.Bytes(d.SizeBytes)}"),
@@ -214,14 +219,18 @@ public static class PcReport
                 ("Power-on hours", d.PowerOnHours is { } h ? $"{h:N0}" : "—"),
             ]);
 
+        // Every fixed volume in one table.
+        var volumes = new List<(string, string)>();
         foreach (var drive in DriveInfo.GetDrives().Where(x => x.DriveType == DriveType.Fixed))
         {
-            try { Section("Volume", [(drive.Name, string.Format(Loc.T("{0} free of {1}"), Format.Bytes(drive.AvailableFreeSpace), Format.Bytes(drive.TotalSize)) + $" ({drive.DriveFormat})")]); }
+            try { volumes.Add((drive.Name, string.Format(Loc.T("{0} free of {1}"), Format.Bytes(drive.AvailableFreeSpace), Format.Bytes(drive.TotalSize)) + $" ({drive.DriveFormat})")); }
             catch { }
         }
+        if (volumes.Count > 0) Section(volumes.Count > 1 ? "Volumes" : "Volume", volumes);
 
-        foreach (var a in NetworkTest.Adapters())
-            Section("Network", [("Adapter", a.Name), ("Type / speed", $"{a.Type}  ·  {a.Speed}")]);
+        var adapters = NetworkTest.Adapters().ToList();
+        foreach (var (a, i) in adapters.Select((a, i) => (a, i)))
+            Section(Numbered("Network", i, adapters.Count), [("Adapter", a.Name), ("Type / speed", $"{a.Type}  ·  {a.Speed}")]);
 
         foreach (var b in Wmi.Query("SELECT Name, EstimatedChargeRemaining FROM Win32_Battery"))
             Section("Battery", [("Model", b.Str("Name")), ("Charge", $"{b.Get<ushort>("EstimatedChargeRemaining")} %")]);
