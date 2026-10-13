@@ -120,24 +120,24 @@ public static class PcReport
             systemDisk?.Health ?? HealthLevel.Unknown, free, gpus, build, virtualMachine);
     }
 
-    /// <summary>"How good is this PC": overall score, one bar per part, what it's good for and what to upgrade.</summary>
+    /// <summary>"How good is this PC": score ring, one tile per part, what it's good for and what to upgrade.</summary>
     private static string RatingCard(PcSpecs specs, Func<string?, string> E)
     {
         var r = PcRating.Rate(specs);
         static string Color(int score) => score >= 70 ? "#0f7b0f" : score >= 45 ? "#c27c0e" : "#c42b1c";
         var sb = new StringBuilder();
-        sb.Append($"""<section class="rating"><div class="score" style="border-color:{Color(r.Score)}"><b>{r.Score}</b><span>/100</span></div><div class="verdict">""");
-        sb.Append($"<h2>{E(Loc.T("How good is this PC?"))}</h2><p class=\"big\" style=\"color:{Color(r.Score)}\">{E(Loc.T(r.Verdict))}</p>");
-        if (r.Weakest is { } weakest) sb.Append($"<p>{E(string.Format(Loc.T("What holds it back the most: {0}."), Loc.T(weakest)))}</p>");
-        sb.Append("</div></section><section><table class=\"parts\">");
+        sb.Append($"""<div class="summary"><h2>{E(Loc.T("How good is this PC?"))}</h2><div class="ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.9" fill="none" stroke="#e3e7ec" stroke-width="3"/><circle cx="18" cy="18" r="15.9" fill="none" stroke="{Color(r.Score)}" stroke-width="3" stroke-linecap="round" pathLength="100" stroke-dasharray="{r.Score} 100"/></svg><div class="value"><b>{r.Score}</b><span>{E(Loc.T("of 100"))}</span></div></div>""");
+        sb.Append($"""<div class="verdict" style="color:{Color(r.Score)}">{E(Loc.T(r.Verdict))}</div>""");
+        if (r.Weakest is { } weakest) sb.Append($"""<p class="limit">{E(string.Format(Loc.T("What holds it back the most: {0}."), Loc.T(weakest)))}</p>""");
+        sb.Append("</div>");
+        sb.Append("""<div class="grid">""");
         foreach (var p in r.Parts)
-            sb.Append($"""<tr><th>{E(Loc.T(p.Name))}</th><td class="bar"><div><i style="width:{p.Score}%;background:{Color(p.Score)}"></i></div></td><td class="num">{p.Score}</td><td>{E(Loc.T(p.Detail))}</td></tr>""");
-        sb.Append("</table></section>");
-        sb.Append($"<section class=\"cols\"><div><h2>{E(Loc.T("Good for"))}</h2><ul>");
+            sb.Append($"""<div class="card part"><div class="top"><span>{E(Loc.T(p.Name))}</span><b>{p.Score}</b></div><div class="bar"><i style="width:{p.Score}%;background:{Color(p.Score)}"></i></div><p>{E(Loc.T(p.Detail))}</p></div>""");
+        sb.Append($"""</div><div class="grid"><div class="card"><h2>{E(Loc.T("Good for"))}</h2><ul>""");
         foreach (var g in r.GoodFor) sb.Append($"<li>{E(Loc.T(g))}</li>");
-        sb.Append($"</ul></div><div><h2>{E(Loc.T("Recommendations"))}</h2><ul>");
+        sb.Append($"""</ul></div><div class="card"><h2>{E(Loc.T("Recommendations"))}</h2><ul>""");
         foreach (var t in r.Tips) sb.Append($"<li>{E(Loc.T(t))}</li>");
-        sb.Append($"</ul></div></section><p class=\"note\">{E(Loc.T("The score compares this PC with today's computers: processor, memory, storage and graphics. It is a guide, not a benchmark."))}</p>");
+        sb.Append($"""</ul></div></div><p class="note">{E(Loc.T("The score compares this PC with today's computers: processor, memory, storage and graphics. It is a guide, not a benchmark."))}</p>""");
         return sb.ToString();
     }
 
@@ -161,7 +161,7 @@ public static class PcReport
             try { return System.Management.ManagementDateTimeConverter.ToDateTime(dmtf).ToString("d", Loc.Culture); } catch { return "—"; }
         }
 
-        sb.Append(RatingCard(ReadSpecs(os, cs, systemDisk), E));
+        var rating = RatingCard(ReadSpecs(os, cs, systemDisk), E);
 
         Section("Windows",
         [
@@ -229,28 +229,46 @@ public static class PcReport
         return $$"""
             <!doctype html><html lang="{{(Loc.IsEnglish ? "en" : "es")}}"><head><meta charset="utf-8"><title>{{E(Loc.T("PC report"))}} - {{E(Environment.MachineName)}}</title>
             <style>
-              body { font-family: "Segoe UI", system-ui, sans-serif; margin: 32px auto; max-width: 860px; color: #1b1b1b; }
-              header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px solid #0067c0; padding-bottom: 8px; }
-              h1 { margin: 0; font-size: 26px; } header span { color: #666; }
-              section { margin-top: 18px; break-inside: avoid; }
-              h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: #0067c0; margin: 0 0 6px; }
-              table { width: 100%; border-collapse: collapse; }
-              th { text-align: left; width: 34%; font-weight: 600; color: #444; }
-              th, td { padding: 6px 10px; border-bottom: 1px solid #e5e5e5; vertical-align: top; }
-              footer { margin-top: 28px; color: #888; font-size: 12px; }
-              .rating { display: flex; gap: 24px; align-items: center; margin-top: 22px; }
-              .score { width: 112px; height: 112px; border: 8px solid; border-radius: 50%; display: flex; align-items: baseline; justify-content: center; padding-top: 30px; box-sizing: border-box; flex: none; }
-              .score b { font-size: 40px; } .score span { color: #777; font-size: 14px; }
-              .verdict p { margin: 4px 0; } .verdict .big { font-size: 26px; font-weight: 700; margin: 2px 0 6px; }
-              .parts th { width: 22%; } .parts td.bar { width: 26%; } .parts td.num { width: 6%; font-weight: 600; text-align: right; }
-              .bar div { height: 10px; background: #eee; border-radius: 5px; overflow: hidden; margin-top: 5px; } .bar i { display: block; height: 100%; }
-              .cols { display: flex; gap: 24px; } .cols > div { flex: 1; } ul { margin: 6px 0; padding-left: 20px; } li { margin: 4px 0; }
-              .note { color: #888; font-size: 12px; margin-top: 10px; }
+              :root { --accent: #0067c0; --text: #1b1b1b; --muted: #6b6b6b; --line: #e6e6e6; --soft: #f5f7fa; }
+              * { box-sizing: border-box; }
+              body { font-family: "Segoe UI", system-ui, sans-serif; color: var(--text); margin: 32px auto; max-width: 760px; font-size: 14px; line-height: 1.45; }
+              header { text-align: center; padding-bottom: 18px; border-bottom: 2px solid var(--accent); }
+              header .kicker { color: var(--accent); font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+              header h1 { margin: 4px 0 2px; font-size: 26px; }
+              header .date { color: var(--muted); }
+              .summary { text-align: center; padding: 22px 0 8px; } .summary h2 { margin-bottom: 12px; }
+              .ring { width: 132px; height: 132px; margin: 0 auto; position: relative; }
+              .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+              .ring .value { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+              .ring .value b { font-size: 38px; line-height: 1; }
+              .ring .value span { color: var(--muted); font-size: 12px; margin-top: 2px; }
+              .verdict { font-size: 22px; font-weight: 700; margin: 12px 0 2px; }
+              .limit { color: var(--muted); margin: 0; }
+              .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+              .card { background: var(--soft); border-radius: 10px; padding: 14px 16px; break-inside: avoid; }
+              .part .top { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; }
+              .part .top b { font-size: 18px; }
+              .bar { height: 8px; background: #e3e7ec; border-radius: 4px; margin: 8px 0; overflow: hidden; }
+              .bar i { display: block; height: 100%; border-radius: 4px; }
+              .part p { margin: 0; color: var(--muted); font-size: 13px; white-space: pre-line; }
+              h2 { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin: 0 0 8px; }
+              ul { margin: 0; padding-left: 18px; } li { margin: 4px 0; }
+              .note { text-align: center; color: var(--muted); font-size: 12px; margin: 14px 0 0; }
+              .specs { break-before: page; }
+              .specs > .title { text-align: center; font-size: 20px; margin: 0 0 6px; padding-bottom: 14px; border-bottom: 2px solid var(--accent); }
+              .specs section { margin-top: 18px; break-inside: avoid; }
+              table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+              th, td { text-align: left; padding: 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+              th { width: 36%; color: var(--muted); font-weight: 600; padding-right: 16px; }
+              footer { margin-top: 28px; text-align: center; color: var(--muted); font-size: 12px; }
               @page { margin: 14mm; }
               @media print { body { margin: 0 auto; } }
             </style></head><body>
-            <header><h1>{{E(Environment.MachineName)}}</h1><span>{{E(DateTime.Now.ToString("f", Localization.Loc.Culture))}}</span></header>
+            <header><div class="kicker">{{E(Loc.T("PC report"))}}</div><h1>{{E(Environment.MachineName)}}</h1><div class="date">{{E(DateTime.Now.ToString("f", Localization.Loc.Culture))}}</div></header>
+            {{rating}}
+            <div class="specs"><h1 class="title">{{E(Loc.T("Specifications"))}}</h1>
             {{sb}}
+            </div>
             <footer>{{E(Loc.T("Created with WinSolve. Serial numbers and product keys are not included."))}}{{(pdf ? "" : " " + E(Loc.T("Use the browser's Print > Save as PDF to keep a PDF.")))}}</footer>
             </body></html>
             """;

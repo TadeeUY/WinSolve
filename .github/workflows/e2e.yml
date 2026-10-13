@@ -86,10 +86,12 @@ jobs:
       - name: Sample PC report (base64, to read it from the log)
         if: success() || failure()
         run: |
-          if (Test-Path e2e\pc-report.pdf) {
-            "----- PC REPORT PDF BEGIN -----"
-            [Convert]::ToBase64String([IO.File]::ReadAllBytes("e2e\pc-report.pdf")) -split '(.{1,4000})' | Where-Object { $_ }
-            "----- PC REPORT PDF END -----"
+          foreach ($lang in "es", "en") {
+            if (Test-Path "e2e\pc-report-$lang.pdf") {
+              "----- PC REPORT PDF BEGIN $lang -----"
+              [Convert]::ToBase64String([IO.File]::ReadAllBytes("e2e\pc-report-$lang.pdf")) -split '(.{1,4000})' | Where-Object { $_ }
+              "----- PC REPORT PDF END $lang -----"
+            }
           }
 
       - name: Installer - only me

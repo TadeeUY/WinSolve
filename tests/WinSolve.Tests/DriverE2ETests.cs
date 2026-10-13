@@ -150,22 +150,27 @@ public class DriverE2ETests(ITestOutputHelper output)
 public class ReportE2ETests(ITestOutputHelper output)
 {
     [E2EFact]
-    public async Task Pc_report_is_saved_as_a_pdf_with_the_rating()
+    public async Task Pc_report_is_saved_as_a_pdf_in_the_apps_language()
     {
         var language = AppSettings.Current.Language;
-        AppSettings.Current.Language = "es";
-        Localization.Loc.Reset();
         try
         {
-            var file = await PcReport.CreateAsync(output.WriteLine, default);
-            output.WriteLine(file);
-            Assert.EndsWith(".pdf", file);
-            var bytes = await File.ReadAllBytesAsync(file);
-            Assert.True(bytes.Length > 10_000, $"{bytes.Length} bytes");
-            Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
-            // Kept for the workflow to publish as a sample (it is a test VM, nothing private).
-            var copy = Environment.GetEnvironmentVariable("WINSOLVE_E2E_OUT");
-            if (!string.IsNullOrEmpty(copy)) File.Copy(file, Path.Combine(copy, "pc-report.pdf"), overwrite: true);
+            foreach (var lang in new[] { "es", "en" })
+            {
+                AppSettings.Current.Language = lang;
+                Localization.Loc.Reset();
+                var file = await PcReport.CreateAsync(output.WriteLine, default);
+                output.WriteLine(file);
+                Assert.EndsWith(".pdf", file);
+                // The file name follows the language too ("Informe del PC" / "PC report").
+                Assert.Contains(lang == "es" ? "Informe del PC" : "PC report", Path.GetFileName(file));
+                var bytes = await File.ReadAllBytesAsync(file);
+                Assert.True(bytes.Length > 10_000, $"{bytes.Length} bytes");
+                Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
+                // Kept for the workflow to publish as a sample (it is a test VM, nothing private).
+                var copy = Environment.GetEnvironmentVariable("WINSOLVE_E2E_OUT");
+                if (!string.IsNullOrEmpty(copy)) File.Copy(file, Path.Combine(copy, $"pc-report-{lang}.pdf"), overwrite: true);
+            }
         }
         finally
         {
