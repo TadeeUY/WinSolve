@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 14, 1),
+        [
+            new("\uE9D9", "The PC report has a simpler, tidier design: the score, a card for each part and the recommendations on the first page, the specifications on their own pages. It comes out in the app's language.",
+                "El informe del PC tiene un diseño más simple y ordenado: la nota, una tarjeta por componente y las recomendaciones en la primera página, y la ficha técnica en páginas aparte. Sale en el idioma de la app."),
+        ]),
         new(new Version(0, 14, 0),
         [
             new("\uE9D9", "The PC report now says how good your PC is: a score out of 100, a bar for the processor, memory, storage and graphics, what it is good for and which upgrade would help most.",
