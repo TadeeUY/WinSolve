@@ -423,8 +423,25 @@ public static class SafePath
         FileSystemSecurity security = Directory.Exists(path)
             ? new DirectoryInfo(path).GetAccessControl(AccessControlSections.Owner)
             : new FileInfo(path).GetAccessControl(AccessControlSections.Owner);
-        return IsTrustedOwner(security.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier);
+        var owner = security.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+        // When this account never runs anything without full rights (UAC off, or the built-in
+        // Administrator with admin approval mode off), there is no non-elevated process of it that
+        // could have planted the folder, and Windows makes the account itself the owner.
+        return IsTrustedOwner(owner) || (owner is not null && owner == WindowsIdentity.GetCurrent().User && AccountAlwaysElevated.Value);
     }
+
+    private static readonly Lazy<bool> AccountAlwaysElevated = new(() =>
+    {
+        try
+        {
+            const string policies = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System";
+            if (Reg.Get(Microsoft.Win32.RegistryHive.LocalMachine, policies, "EnableLUA") is int lua && lua == 0) return true;
+            var me = WindowsIdentity.GetCurrent().User;
+            return me is not null && me.IsAccountSid() && me.Value.EndsWith("-500", StringComparison.Ordinal)
+                   && Reg.Get(Microsoft.Win32.RegistryHive.LocalMachine, policies, "FilterAdministratorToken") is not 1;
+        }
+        catch { return false; }
+    });
 
     /// <summary>Administrators, SYSTEM, TrustedInstaller or another service SID. Pure.</summary>
     internal static bool IsTrustedOwner(SecurityIdentifier? owner)

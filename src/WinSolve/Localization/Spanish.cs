@@ -1515,7 +1515,7 @@ public static partial class Spanish
         ["it is a file"] = "es un archivo",
         ["it was not created by an administrator"] = "no la creó un administrador",
         ["{0} is a link or was not created by an administrator"] = "{0} es un enlace o no lo creó un administrador",
-        ["Could not prepare {0} for the installer ({1}). Nothing was changed. Rename or delete that folder and try again."] = "No se pudo preparar {0} para el instalador ({1}). No se cambió nada. Cambia el nombre de esa carpeta o bórrala y vuelve a intentarlo.",
+        ["Could not prepare {0} for the installer ({1}). The current driver was not touched. Rename or delete that folder and try again."] = "No se pudo preparar {0} para el instalador ({1}). No se tocó el driver actual. Cambia el nombre de esa carpeta o bórrala y vuelve a intentarlo.",
         ["{0} is not a file."] = "{0} no es un archivo.",
         ["{0} is reached through a link; not deleted."] = "{0} se alcanza a través de un enlace; no se borró.",
     };

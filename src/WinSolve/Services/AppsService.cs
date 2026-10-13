@@ -483,8 +483,9 @@ public static class AppsService
         return (parts[0], string.Join(' ', parts.Skip(1)));
     }
 
+    /// <summary>Windows Installer itself (System32\msiexec.exe), not just any file with that name.</summary>
     private static bool IsMsiexec(string exe)
-        => exe.EndsWith("msiexec.exe", StringComparison.OrdinalIgnoreCase) || exe.Equals("msiexec", StringComparison.OrdinalIgnoreCase);
+        => ProcessRunner.Resolve(exe).Equals(Path.Combine(Environment.SystemDirectory, "msiexec.exe"), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The Windows Installer product code of an entry: its key name, or the GUID of an msiexec uninstall command.</summary>
     private static string? MsiCode(InstalledProgram p)

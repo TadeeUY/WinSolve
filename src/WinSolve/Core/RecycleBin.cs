@@ -82,6 +82,7 @@ public static class RecycleBin
             catch (Exception ex) { tcs.SetException(ex); }
         });
         thread.SetApartmentState(ApartmentState.STA);
+        thread.IsBackground = true; // never keeps WinSolve running after Exit
         thread.Start();
         return tcs.Task;
     }

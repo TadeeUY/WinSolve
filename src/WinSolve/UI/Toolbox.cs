@@ -372,10 +372,10 @@ internal sealed class LockedFileDialog : ToolDialog
             Tell("This file is in a system or program folder; WinSolve won't delete it.", warning: true);
             return;
         }
-        // The deletion runs at boot as SYSTEM and follows links in the path. In a folder that any
-        // program without administrator rights can change (a standard user's, or this account's
-        // own non-elevated programs), it could be redirected to a system file.
-        if (SafePath.IsUserWritableLocation(_chosen))
+        // The deletion runs at boot as SYSTEM and follows links in the path. When a standard user
+        // started WinSolve with another account's password, a folder they can change could
+        // redirect it to a system file.
+        if (InteractiveUser.IsDifferent && SafePath.IsUserWritableLocation(_chosen))
         {
             Tell("This file is in a folder that programs without administrator rights can change, so WinSolve won't schedule its deletion at restart: the deletion could be redirected to a system file. Restart the PC and delete it then, before opening the program that locks it.", warning: true);
             return;

@@ -39,11 +39,36 @@ public static class BatteryReport
     /// <summary>Windows' full HTML battery report, saved on the desktop.</summary>
     public static async Task<string> SaveHtmlAsync(CancellationToken ct = default)
     {
-        if (SafePath.HasReparsePoint(InteractiveUser.Desktop)) throw new InvalidOperationException("The desktop folder is a link; refusing to write there.");
-        var file = Path.Combine(InteractiveUser.Desktop, $"Battery report - {DateTime.Now:yyyy-MM-dd}.html");
-        var r = await ProcessRunner.RunAsync("powercfg.exe", $"/batteryreport /output \"{file}\"", null, ct);
-        if (!File.Exists(file)) throw new InvalidOperationException(r.Output.Trim());
-        return file;
+        // powercfg (elevated) writes into an admin-only folder; the result is then copied to the
+        // desktop as a new file, so a desktop swapped for a link can't redirect an elevated write
+        // over an existing file.
+        var work = SafePath.CreateAdminOnlyFolder("Report");
+        try
+        {
+            var source = Path.Combine(work, "battery-report.html");
+            var r = await ProcessRunner.RunAsync("powercfg.exe", $"/batteryreport /output \"{source}\"", null, ct);
+            if (!File.Exists(source)) throw new InvalidOperationException(r.Output.Trim().Length > 0 ? r.Output.Trim() : "Windows could not create the battery report.");
+
+            var desktop = InteractiveUser.Desktop;
+            if (SafePath.HasReparsePoint(desktop)) throw new InvalidOperationException("The desktop folder is a link; refusing to write there.");
+            var name = $"Battery report - {DateTime.Now:yyyy-MM-dd}";
+            for (int n = 1; ; n++)
+            {
+                var file = Path.Combine(desktop, n == 1 ? name + ".html" : $"{name} ({n}).html");
+                try
+                {
+                    await using var target = new FileStream(file, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                    await using var input = File.OpenRead(source);
+                    await input.CopyToAsync(target, ct);
+                    return file;
+                }
+                catch (IOException) when (File.Exists(file) && n < 50) { /* today's report already there: next name */ }
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(work, recursive: true); } catch { }
+        }
     }
 
     internal static List<BatteryDetails> Parse(XDocument doc)

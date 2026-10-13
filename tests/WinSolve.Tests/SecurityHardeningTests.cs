@@ -51,7 +51,7 @@ public class TrustedOwnerTests
     public void User_accounts_are_not_trusted_owners()
     {
         // A non-elevated process of the account WinSolve runs as creates folders owned by that account.
-        Assert.False(SafePath.IsTrustedOwner(WindowsIdentity.GetCurrent().User));
+        if (!WindowsIdentity.GetCurrent().IsSystem) Assert.False(SafePath.IsTrustedOwner(WindowsIdentity.GetCurrent().User));
         Assert.False(SafePath.IsTrustedOwner(new SecurityIdentifier("S-1-5-21-1-2-3-1001")));
         Assert.False(SafePath.IsTrustedOwner(new SecurityIdentifier("S-1-5-32-545"))); // Users
         Assert.False(SafePath.IsTrustedOwner(null));

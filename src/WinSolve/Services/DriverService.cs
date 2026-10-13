@@ -543,7 +543,7 @@ public static class DriverService
             try { SafePath.PrepareInstallerFolder(extract, log); }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                throw new InvalidOperationException($"Could not prepare {extract} for the installer ({ex.Message}). Nothing was changed. Rename or delete that folder and try again.");
+                throw new InvalidOperationException($"Could not prepare {extract} for the installer ({ex.Message}). The current driver was not touched. Rename or delete that folder and try again.");
             }
         }
 

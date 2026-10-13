@@ -297,9 +297,12 @@ public sealed class HardwarePage : Page
             Controls.Add(_runner, 0, 3);
         }
 
+        private bool _reloadAfter;
+
         public async void Refresh(bool force)
         {
-            if (_loading || (_loaded && !force)) return;
+            if (_loading) { _reloadAfter |= force; return; } // run again once the current load ends
+            if (_loaded && !force) return;
             _loading = true;
             _summaryHost.Controls.Clear();
             _summaryHost.Controls.Add(Theme.Label("Looking for devices with problems...", Theme.Body, Theme.Muted));
@@ -323,6 +326,13 @@ public sealed class HardwarePage : Page
                 _loading = false;
             }
             if (IsDisposed) return;
+            if (_reloadAfter)
+            {
+                // A device was fixed while the list was loading: show the state after the fix.
+                _reloadAfter = false;
+                Refresh(force: true);
+                return;
+            }
             _grid.Rows.Clear();
             foreach (var d in devices)
             {
