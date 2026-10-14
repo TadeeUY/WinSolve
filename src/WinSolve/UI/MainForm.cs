@@ -93,9 +93,9 @@ public sealed class MainForm : Form
             }
             ErrorMonitor.Instance.AlertRaised += OnAlert;
             ErrorMonitor.Instance.Apply();
-            _ = CheckForUpdateAsync();
+            _ = CheckForUpdateAsync(atStartup: true);
             // Keep checking while WinSolve sits in the notification area.
-            var updateTimer = new System.Windows.Forms.Timer { Interval = (int)TimeSpan.FromHours(4).TotalMilliseconds };
+            var updateTimer = new System.Windows.Forms.Timer { Interval = (int)TimeSpan.FromHours(1).TotalMilliseconds };
             updateTimer.Tick += async (_, _) => await CheckForUpdateAsync();
             updateTimer.Start();
             if (!_startHidden)
@@ -349,9 +349,9 @@ public sealed class MainForm : Form
     /// <summary>True while a page task, a run window or a tray quick action is working (installing would kill it).</summary>
     private bool WorkRunning => IsBusy || _quickBusy || Application.OpenForms.OfType<RunDialog>().Any();
 
-    private async Task CheckForUpdateAsync()
+    private async Task CheckForUpdateAsync(bool atStartup = false)
     {
-        var update = _deferredUpdate ?? await UpdateService.CheckIfDueAsync();
+        var update = _deferredUpdate ?? await UpdateService.CheckIfDueAsync(atStartup);
         if (update is null) return;
         _deferredUpdate = null;
         if (AppSettings.Current.AutoInstallUpdates && !Edition.IsPortable && !WorkRunning) await InstallUpdateAsync(update);

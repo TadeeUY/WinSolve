@@ -85,12 +85,15 @@ public static class UpdateService
         return ok ? uri.AbsoluteUri : ReleasesPage;
     }
 
-    /// <summary>Automatic check when WinSolve starts and every few hours while it runs.</summary>
-    public static async Task<UpdateInfo?> CheckIfDueAsync()
+    /// <summary>
+    /// Automatic check: every time WinSolve starts (a version published since the last check
+    /// shows up right away) and every hour while it runs.
+    /// </summary>
+    public static async Task<UpdateInfo?> CheckIfDueAsync(bool atStartup = false)
     {
         var s = AppSettings.Current;
         if (!s.CheckForUpdates) return null;
-        if (s.LastUpdateCheck is { } last && DateTime.Now - last < TimeSpan.FromHours(4)) return null;
+        if (!atStartup && s.LastUpdateCheck is { } last && DateTime.Now - last < TimeSpan.FromMinutes(50)) return null;
         try
         {
             return await CheckAsync();

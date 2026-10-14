@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 15, 2),
+        [
+            new("\uE895", "New versions show up sooner: WinSolve checks every time it starts and every hour, instead of every 4 hours.",
+                "Las versiones nuevas aparecen antes: WinSolve busca cada vez que se abre y cada hora, en vez de cada 4 horas."),
+        ]),
         new(new Version(0, 15, 1),
         [
             new("\uEA18", "New in Toolbox: Safe Mode. Restarts Windows in Safe Mode (with or without internet) for one start only, so the PC can never get stuck in it. From Safe Mode, one button restarts normally.",

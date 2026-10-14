@@ -832,7 +832,7 @@ public static partial class Spanish
         ["Starts hidden in the notification area."] = "Se inicia oculto en el área de notificación.",
         ["Requires an all-users install (in Program Files)."] = "Requiere instalación para todos los usuarios (en Archivos de programa).",
         ["Updates"] = "Actualizaciones",
-        ["At startup and every 4 hours."] = "Al iniciar y cada 4 horas.",
+        ["At startup and every hour."] = "Al iniciar y cada hora.",
         ["Updates are verified (SHA-256) and installed without asking."] = "Las actualizaciones se verifican (SHA-256) y se instalan sin preguntar.",
 
         // ── Startup apps ──
