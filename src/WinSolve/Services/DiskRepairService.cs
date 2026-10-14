@@ -256,7 +256,8 @@ public static class DiskRepairService
                 else
                 {
                     var entries = current.ToList();
-                    var at = entries.FindIndex(e => e.Trim().Equals("autocheck autochk *", StringComparison.OrdinalIgnoreCase));
+                    // Before Windows' own check of all drives ("autocheck autochk *", or with /q /v on some editions).
+                    var at = entries.FindIndex(e => e.Trim().StartsWith("autocheck autochk", StringComparison.OrdinalIgnoreCase) && e.Trim().EndsWith('*'));
                     entries.Insert(at < 0 ? 0 : at, $@"autocheck autochk /r \??\{letter}:");
                     key.SetValue("BootExecute", entries.ToArray(), RegistryValueKind.MultiString);
                 }

@@ -80,7 +80,9 @@ public class DiskRepairE2ETests
             Assert.True(DiskRepairService.IsCheckScheduled('T', surfaceScan: true));
             var after = (string[])Microsoft.Win32.Registry.LocalMachine.OpenSubKey(key)!.GetValue("BootExecute")!;
             Assert.Contains(@"autocheck autochk /r \??\T:", after);
-            Assert.Contains(after, e => e.Trim().Equals("autocheck autochk *", StringComparison.OrdinalIgnoreCase));
+            // Windows' own entries are all kept, after the new one.
+            Assert.Equal([.. before], after.Where(e => !e.Contains(@"\??\T:")).ToArray());
+            Assert.Equal(0, Array.FindIndex(after, e => e.Contains(@"\??\T:")));
         }
         finally
         {
