@@ -17,8 +17,8 @@ jobs:
           "create vdisk file=`"$vhd`" maximum=256 type=expandable`nselect vdisk file=`"$vhd`"`nattach vdisk`ncreate partition primary`nformat fs=ntfs quick label=TEST`nassign letter=T" | Set-Content "$env:RUNNER_TEMP\dp.txt" -Encoding ascii
           diskpart /s "$env:RUNNER_TEMP\dp.txt"
           Get-Volume -DriveLetter T | Format-List
-          function Run($name, $file, $args) {
-            $psi = [Diagnostics.ProcessStartInfo]::new($file, $args)
+          function Run($name, $file, $arguments) {
+            $psi = [Diagnostics.ProcessStartInfo]::new($file, $arguments)
             $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
             $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
             $p = [Diagnostics.Process]::Start($psi)
