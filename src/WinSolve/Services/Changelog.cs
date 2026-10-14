@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 15, 3),
+        [
+            new("\uEDA2", "Disk repair: when Windows won't hand over a drive (\"Access denied\" because a program or driver is using it), the check or bad sector scan is scheduled for the next restart, where it runs before anything else uses the drive.",
+                "Reparación de discos: cuando Windows no libera una unidad (\"Acceso denegado\" porque un programa o driver la está usando), la revisión o la búsqueda de sectores dañados se programa para el próximo reinicio, donde corre antes de que nada más use la unidad."),
+        ]),
         new(new Version(0, 15, 2),
         [
             new("\uE895", "New versions show up sooner: WinSolve checks every time it starts and every hour, instead of every 4 hours.",
