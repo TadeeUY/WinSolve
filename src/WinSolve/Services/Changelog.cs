@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 15, 5),
+        [
+            new("\uE895", "Automatic updates never interrupt you: they wait until nothing is running or open in WinSolve and no game, video or presentation is full screen. From the notification area they install silently, without opening any window; with WinSolve open, they wait until you've been away for 10 minutes.",
+                "Las actualizaciones automáticas nunca te interrumpen: esperan a que no haya nada en marcha ni abierto en WinSolve y a que no haya un juego, video o presentación a pantalla completa. Desde el área de notificaciones se instalan en silencio, sin abrir ventanas; con WinSolve abierto, esperan a que no uses la PC por 10 minutos."),
+        ]),
         new(new Version(0, 15, 4),
         [
             new("\uEDA2", "Hardware > Disks: 'Last check result' shows what the scan at startup found (it often runs overnight). WinSolve warns if a drive was checked in the last week, won't schedule the same scan twice and lets you cancel a scheduled check.",
