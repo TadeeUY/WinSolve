@@ -5,6 +5,20 @@
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
+  // ── Language: the visitor's choice wins; otherwise the browser's language picks ES or EN ──
+  const lang = document.documentElement.lang || "es";
+  const store = {
+    get() { try { return localStorage.getItem("winsolve-lang"); } catch { return null; } },
+    set(v) { try { localStorage.setItem("winsolve-lang", v); } catch { /* private mode: just follow the link */ } },
+  };
+  $$(".lang a[data-lang]").forEach((a) => a.addEventListener("click", () => store.set(a.dataset.lang)));
+  const alt = $('link[rel="alternate"][hreflang]:not([hreflang="' + lang + '"])');
+  // Only the Spanish pages (the default address) redirect: an English link someone shared stays English.
+  if (alt && lang === "es" && !store.get()) {
+    const wants = (navigator.languages || [navigator.language || ""]).some((l) => /^es\b/i.test(l)) ? "es" : "en";
+    if (wants !== lang && alt.hreflang === wants) { location.replace(alt.href + location.hash); return; }
+  }
+
   // ── Nav state + scroll progress ──
   const nav = $(".nav");
   const bar = $(".progress");
@@ -124,6 +138,40 @@
     }, { threshold: 0.35 }).observe(win);
   }
 
+  // ── Questions: smooth open/close (height, content and icon), one open at a time per list ──
+  $$("details").forEach((d) => {
+    const summary = $("summary", d);
+    if (!summary) return;
+    const body = document.createElement("div");
+    body.className = "acc";
+    while (summary.nextSibling) body.append(summary.nextSibling);
+    d.append(body);
+    if (d.open) d.classList.add("is-open");
+    let anim = null;
+    const ease = "cubic-bezier(.2, .8, .2, 1)";
+    const toggle = (open) => {
+      if (open === d.classList.contains("is-open")) return;
+      anim?.cancel();
+      const from = d.offsetHeight;
+      d.classList.toggle("is-open", open);
+      if (reduce) { d.open = open; return; }
+      if (open) d.open = true;
+      const closed = summary.offsetHeight + (d.offsetHeight - d.clientHeight);
+      const to = open ? d.offsetHeight : closed;
+      anim = d.animate({ height: [`${from}px`, `${to}px`] }, { duration: open ? 460 : 340, easing: ease });
+      if (open) body.animate({ opacity: [0, 1], transform: ["translateY(-8px)", "none"], filter: ["blur(4px)", "none"] }, { duration: 420, delay: 60, easing: ease, fill: "backwards" });
+      else body.animate({ opacity: [1, 0], transform: ["none", "translateY(-6px)"] }, { duration: 220, easing: "ease-in" });
+      anim.onfinish = () => { anim = null; if (!open) d.open = false; };
+    };
+    summary.addEventListener("click", (e) => {
+      e.preventDefault();
+      const open = !d.classList.contains("is-open");
+      if (open) $$("details.is-open", d.parentElement).forEach((o) => o !== d && o.dispatchEvent(new CustomEvent("acc-close")));
+      toggle(open);
+    });
+    d.addEventListener("acc-close", () => toggle(false));
+  });
+
   // ── Counters ──
   function countTo(el, to, ms = 1600) {
     if (!el) return;
@@ -151,7 +199,6 @@
   });
 
   // ── Latest release (version, date, sizes, checksum) ──
-  const lang = document.documentElement.lang || "es";
   const mb = (b) => `${(b / 1048576).toLocaleString(lang, { maximumFractionDigits: b > 10485760 ? 0 : 1 })} MB`;
   const date = (s) => new Date(s).toLocaleDateString(lang, { day: "numeric", month: "long", year: "numeric" });
   fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: "application/vnd.github+json" } })
@@ -210,7 +257,9 @@
       .catch(() => {
         hist.innerHTML = "";
         const p = document.createElement("p");
-        p.innerHTML = 'No se pudo cargar ahora. Míralo en <a style="color:var(--blue)" href="https://github.com/TadeeUY/WinSolve/releases">GitHub</a>.';
+        p.innerHTML = lang === "en"
+          ? 'Could not load it right now. See it on <a style="color:var(--blue)" href="https://github.com/TadeeUY/WinSolve/releases">GitHub</a>.'
+          : 'No se pudo cargar ahora. Míralo en <a style="color:var(--blue)" href="https://github.com/TadeeUY/WinSolve/releases">GitHub</a>.';
         hist.append(p);
       });
   }
