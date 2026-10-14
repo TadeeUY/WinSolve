@@ -67,4 +67,44 @@ public class DiskRepairE2ETests
     [E2EFact]
     public async Task A_normal_drive_has_nothing_blocking_its_repair()
         => Assert.Null(await DiskRepairService.WriteBlockerAsync(new VolumeInfo { Letter = "C", FileSystem = "NTFS" }, default));
+
+    [E2EFact]
+    public async Task A_surface_scan_of_another_drive_can_be_scheduled_for_the_restart()
+    {
+        // What happens when a program holds a drive: the scan is moved to the next boot.
+        const string key = @"SYSTEM\CurrentControlSet\Control\Session Manager";
+        var before = (string[])Microsoft.Win32.Registry.LocalMachine.OpenSubKey(key)!.GetValue("BootExecute")!;
+        try
+        {
+            Assert.True(await DiskRepairService.ScheduleAtRestartAsync('T', surfaceScan: true, _ => { }, default));
+            Assert.True(DiskRepairService.IsCheckScheduled('T', surfaceScan: true));
+            var after = (string[])Microsoft.Win32.Registry.LocalMachine.OpenSubKey(key)!.GetValue("BootExecute")!;
+            Assert.Contains(@"autocheck autochk /r \??\T:", after);
+            Assert.Contains(after, e => e.Trim().Equals("autocheck autochk *", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            using var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(key, writable: true)!;
+            k.SetValue("BootExecute", before, Microsoft.Win32.RegistryValueKind.MultiString);
+        }
+    }
+}
+
+public class DiskRepairDeniedTests
+{
+    [Theory]
+    [InlineData(1, "Acceso denegado.")]
+    [InlineData(3, "Access Denied as you do not have sufficient privileges or the disk may be locked by another process.")]
+    [InlineData(5, "Zugriff verweigert")]
+    [InlineData(2, "Отказано в доступе.")]
+    public void A_refused_drive_is_recognized(int exit, string output)
+        => Assert.True(DiskRepairService.Denied(new ProcessResult(exit, output)));
+
+    [Fact]
+    public void A_real_check_is_not_taken_for_a_refusal()
+    {
+        var output = string.Join('\n', Enumerable.Range(1, 30).Select(i => $"Stage line {i}"));
+        Assert.False(DiskRepairService.Denied(new ProcessResult(1, output)));
+        Assert.False(DiskRepairService.Denied(new ProcessResult(0, "")));
+    }
 }

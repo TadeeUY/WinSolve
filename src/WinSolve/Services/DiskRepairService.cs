@@ -299,6 +299,7 @@ public static class DiskRepairService
         log($"Repairing {Drive(v)}. The drive is dismounted for a moment; programs using it may lose open files.");
         // stdin is NUL: if chkdsk asks anything, it gets "no" instead of waiting forever.
         var r = await ProcessRunner.CmdAsync($"chkdsk {Drive(v)} /f /x < nul", log, ct);
+        if (Denied(r)) return await AtRestartInsteadAsync(v, surfaceScan: false, log, ct);
         log(Outcome(v, r, "Repair finished."));
         return false;
     }
@@ -318,8 +319,28 @@ public static class DiskRepairService
         if (await WriteBlockerAsync(v, ct) is { } blocked) { log(blocked); return false; }
         log($"Scanning every sector of {Drive(v)}. This can take hours on large hard disks; keep the PC on.");
         var r = await ProcessRunner.CmdAsync($"chkdsk {Drive(v)} /r /x < nul", log, ct);
+        if (Denied(r)) return await AtRestartInsteadAsync(v, surfaceScan: true, log, ct);
         log(Outcome(v, r, "Finished. Refresh S.M.A.R.T. to see the reallocated / pending sector counts now."));
         return false;
+    }
+
+    /// <summary>
+    /// chkdsk was refused the drive before it even started (it printed little more than "Access
+    /// denied", in the Windows language): a program or driver holds it while Windows runs.
+    /// </summary>
+    internal static bool Denied(ProcessResult r)
+    {
+        string[] words = ["access denied", "acceso denegado", "accès refusé", "acesso negado", "zugriff verweigert", "accesso negato"];
+        if (words.Any(w => r.Output.Contains(w, StringComparison.OrdinalIgnoreCase))) return true;
+        // Any language: it failed and printed at most a couple of lines (a real check prints dozens).
+        return r.ExitCode != 0 && r.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length <= 2;
+    }
+
+    /// <summary>At boot, before any program or driver starts, the drive can always be checked.</summary>
+    private static async Task<bool> AtRestartInsteadAsync(VolumeInfo v, bool surfaceScan, Action<string> log, CancellationToken ct)
+    {
+        log($"Windows won't hand over {Drive(v)} while it is running (a program or driver is holding it), so the check will run at the next restart instead, before anything else uses the drive.");
+        return await ScheduleAtRestartAsync(v.Letter[0], surfaceScan, log, ct);
     }
 
     /// <summary>chkdsk's exit code 3 means it could not check or could not fix the drive.</summary>
@@ -330,8 +351,8 @@ public static class DiskRepairService
             : $"chkdsk could not finish on {Drive(v)} (code {r.ExitCode}). Read the lines above: close the programs that use the drive and try again, or restart the PC first.";
 
     /// <summary>
-    /// Why chkdsk would get "Access denied" on a drive, found before running it: locked by
-    /// BitLocker, write-protected, or opened by a program that doesn't let it be locked.
+    /// Why chkdsk can't repair a drive at all, found before running it: locked by BitLocker or
+    /// write-protected. (A drive a program holds is checked at the next restart instead.)
     /// Null when the drive can be opened for repair.
     /// </summary>
     internal static async Task<string?> WriteBlockerAsync(VolumeInfo v, CancellationToken ct)
@@ -354,7 +375,6 @@ public static class DiskRepairService
         if (!h.IsInvalid) return null;
         return Marshal.GetLastWin32Error() switch
         {
-            5 => $"Windows denied access to {drive}. Usually a program protects it: an antivirus, backup or encryption software (like VeraCrypt), or the drive was encrypted on another PC. Close those programs or restart the PC, then try again.",
             19 => $"{drive} is write-protected (read-only), so it can't be repaired. On a memory card or USB drive, check its lock switch.",
             _ => null,
         };
