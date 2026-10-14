@@ -47,6 +47,9 @@ public static class Toolbox
         new("pc-report", "Windows", "", "PC report",
             "A PDF with every spec of this PC to share or print (no serial numbers or keys).", "specs speccy informe especificaciones hardware",
             CreateReport),
+        new("safe-mode", "Windows", "\uEA18", "Safe Mode",
+            "Restarts Windows in Safe Mode once, to fix problems that don't let it work normally.", "safe mode modo seguro a prueba de errores boot arranque f8 reiniciar",
+            o => Show(o, new SafeModeDialog())),
     ];
 
     private static void Show(IWin32Window owner, Form dialog)
@@ -755,6 +758,72 @@ internal sealed class RestorePointsDialog : ToolDialog
         if (!Ask($"Delete the restore point from {p.Created:g}?\n\n{p.Description}", danger: true)) return;
         if (!RestorePoints.Delete(p.Sequence)) Tell("Windows could not delete it.", warning: true);
         Fill();
+    }
+}
+
+// ═══════════════════════ Safe Mode ═══════════════════════
+
+internal sealed class SafeModeDialog : ToolDialog
+{
+    private readonly OptionCard _minimal = new("\uEA18", "Safe Mode", "Only the basic drivers and services. No internet.");
+    private readonly OptionCard _network = new("\uE774", "Safe Mode with Networking", "The same, plus internet (to download a driver or run an antivirus).");
+
+    public SafeModeDialog() : base("\uEA18", "Safe Mode",
+        "Windows starts with only the basics, so you can remove a driver, program or virus that stops it from working normally.", new Size(760, 440))
+    {
+        if (SafeMode.IsRunningInSafeMode)
+        {
+            AddRow(Theme.Status("Windows is running in Safe Mode right now.", Theme.Info));
+            AddRow(Theme.Paragraph("When you're done, restart normally. WinSolve also turns off Safe Mode if it was turned on with System Configuration (msconfig), so the PC doesn't keep starting in it.", Theme.Muted));
+            Buttons.Controls.Add(Theme.Button("Restart normally", (_, _) => Restart(normal: true), primary: true, glyph: "\uE777"));
+            return;
+        }
+
+        var cards = new TableLayoutPanel { ColumnCount = 2, Height = 104, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 10) };
+        foreach (var (card, i) in new[] { _minimal, _network }.Select((c, i) => (c, i)))
+        {
+            cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            card.Dock = DockStyle.Fill;
+            card.Margin = new Padding(i == 0 ? 0 : 4, 0, i == 0 ? 4 : 0, 0);
+            card.Click += (_, _) => Pick(card == _network);
+            cards.Controls.Add(card, i, 0);
+        }
+        Pick(networking: false);
+        AddRow(cards);
+        AddRow(Theme.Paragraph(
+            "• Only the next start is in Safe Mode. The one after that is normal again, even if you don't open WinSolve.\n" +
+            "• Save your work first: the PC restarts right away.\n" +
+            "• If your PIN or fingerprint doesn't work there, sign in with your account password (for a Microsoft account, its email password).\n" +
+            "• If BitLocker is on, it is paused for that one restart so Windows doesn't ask for the recovery key.", Theme.Muted));
+        AddRow(new Panel { BackColor = Color.Transparent }, fill: true);
+
+        Buttons.Controls.Add(Theme.Button("Restart in Safe Mode", (_, _) => Restart(normal: false), primary: true, glyph: "\uE777"));
+        Buttons.Controls.Add(Theme.Button("Advanced startup", (_, _) => AdvancedStartup(), glyph: "\uE7EF"));
+    }
+
+    private void Pick(bool networking)
+    {
+        _minimal.Selected = !networking;
+        _network.Selected = networking;
+    }
+
+    private void Restart(bool normal)
+    {
+        var question = normal
+            ? "The PC will restart normally now. Save your work and close your programs first.\n\nRestart now?"
+            : "The PC will restart in Safe Mode now. Save your work and close your programs first.\n\nRestart now?";
+        if (!Ask(question, danger: true)) return;
+        var networking = _network.Selected;
+        var ok = RunDialog.Run(this, normal ? "Restart normally" : "Safe Mode", (log, _, ct) => normal
+            ? SafeMode.RestartNormallyAsync(log, ct)
+            : SafeMode.RestartIntoSafeModeAsync(networking, log, ct));
+        if (ok) Close();
+    }
+
+    private void AdvancedStartup()
+    {
+        if (!Ask("The PC will restart into the blue Windows recovery menu (Advanced startup). From there you can choose Troubleshoot > Advanced options > Startup Settings, System Restore or Startup Repair.\n\nSave your work first. Restart now?", danger: true)) return;
+        if (RunDialog.Run(this, "Advanced startup", (log, _, ct) => SafeMode.AdvancedStartupAsync(log, ct))) Close();
     }
 }
 

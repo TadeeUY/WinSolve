@@ -295,9 +295,11 @@ public static class DiskRepairService
                            : $"{Drive(v)} is in use by Windows (page file, user profiles or programs): the repair will run on the next restart.");
             return await ScheduleAtRestartAsync(v.Letter[0], surfaceScan: false, log, ct);
         }
+        if (await WriteBlockerAsync(v, ct) is { } blocked) { log(blocked); return false; }
         log($"Repairing {Drive(v)}. The drive is dismounted for a moment; programs using it may lose open files.");
         // stdin is NUL: if chkdsk asks anything, it gets "no" instead of waiting forever.
-        await ProcessRunner.CmdAsync($"chkdsk {Drive(v)} /f /x < nul", log, ct);
+        var r = await ProcessRunner.CmdAsync($"chkdsk {Drive(v)} /f /x < nul", log, ct);
+        log(Outcome(v, r, "Repair finished."));
         return false;
     }
 
@@ -313,10 +315,49 @@ public static class DiskRepairService
                            : $"{Drive(v)} is in use by Windows (page file, user profiles or programs): the surface scan will run on the next restart.");
             return await ScheduleAtRestartAsync(v.Letter[0], surfaceScan: true, log, ct);
         }
+        if (await WriteBlockerAsync(v, ct) is { } blocked) { log(blocked); return false; }
         log($"Scanning every sector of {Drive(v)}. This can take hours on large hard disks; keep the PC on.");
-        await ProcessRunner.CmdAsync($"chkdsk {Drive(v)} /r /x < nul", log, ct);
-        log("Finished. Refresh S.M.A.R.T. to see the reallocated / pending sector counts now.");
+        var r = await ProcessRunner.CmdAsync($"chkdsk {Drive(v)} /r /x < nul", log, ct);
+        log(Outcome(v, r, "Finished. Refresh S.M.A.R.T. to see the reallocated / pending sector counts now."));
         return false;
+    }
+
+    /// <summary>chkdsk's exit code 3 means it could not check or could not fix the drive.</summary>
+    private static string Outcome(VolumeInfo v, ProcessResult r, string success)
+        => r.ExitCode is 0 or 1 or 2
+           && !r.Output.Contains("Access denied", StringComparison.OrdinalIgnoreCase)
+           && !r.Output.Contains("Acceso denegado", StringComparison.OrdinalIgnoreCase) ? success
+            : $"chkdsk could not finish on {Drive(v)} (code {r.ExitCode}). Read the lines above: close the programs that use the drive and try again, or restart the PC first.";
+
+    /// <summary>
+    /// Why chkdsk would get "Access denied" on a drive, found before running it: locked by
+    /// BitLocker, write-protected, or opened by a program that doesn't let it be locked.
+    /// Null when the drive can be opened for repair.
+    /// </summary>
+    internal static async Task<string?> WriteBlockerAsync(VolumeInfo v, CancellationToken ct)
+    {
+        var drive = Drive(v);
+        var r = await ProcessRunner.PowerShellAsync($$"""
+            try {
+              $e = Get-CimInstance -Namespace root\CIMV2\Security\MicrosoftVolumeEncryption -ClassName Win32_EncryptableVolume -Filter "DriveLetter='{{drive}}'" -ErrorAction Stop
+              if ($e -and (Invoke-CimMethod -InputObject $e -MethodName GetLockStatus).LockStatus -eq 1) { 'STATE:LOCKED' }
+            } catch { }
+            $p = Get-Partition -DriveLetter '{{v.Letter}}' -ErrorAction SilentlyContinue
+            if ($p -and ($p.IsReadOnly -or ($p | Get-Disk).IsReadOnly)) { 'STATE:READONLY' }
+            """, null, ct);
+        if (r.Output.Contains("STATE:LOCKED", StringComparison.Ordinal))
+            return $"{drive} is locked by BitLocker, so Windows denies access to it. Unlock it first (open it in File Explorer and type its password or recovery key), then try again.";
+        if (r.Output.Contains("STATE:READONLY", StringComparison.Ordinal))
+            return $"{drive} is write-protected (read-only), so it can't be repaired. On a memory card or USB drive, check its lock switch.";
+
+        using var h = CreateFile($@"\\.\{drive}", 0xC0000000 /* GENERIC_READ | GENERIC_WRITE */, 3, IntPtr.Zero, 3 /* OPEN_EXISTING */, 0, IntPtr.Zero);
+        if (!h.IsInvalid) return null;
+        return Marshal.GetLastWin32Error() switch
+        {
+            5 => $"Windows denied access to {drive}. Usually a program protects it: an antivirus, backup or encryption software (like VeraCrypt), or the drive was encrypted on another PC. Close those programs or restart the PC, then try again.",
+            19 => $"{drive} is write-protected (read-only), so it can't be repaired. On a memory card or USB drive, check its lock switch.",
+            _ => null,
+        };
     }
 
     /// <summary>Plain-language advice for a drive, based on its S.M.A.R.T. data.</summary>

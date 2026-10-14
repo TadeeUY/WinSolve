@@ -64,6 +64,9 @@ internal static class Program
             return;
         }
 
+        // Deletes the one-time Safe Mode boot entry once Windows started normally again.
+        _ = Task.Run(() => SafeMode.CleanupAsync());
+
         // Language picked in the installer ("--lang es").
         var langIndex = Array.FindIndex(args, a => a.Equals("--lang", StringComparison.OrdinalIgnoreCase));
         if (langIndex >= 0 && langIndex + 1 < args.Length && args[langIndex + 1] is "es" or "en" && AppSettings.Current.Language != args[langIndex + 1])

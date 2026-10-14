@@ -10,6 +10,13 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 16, 0),
+        [
+            new("\uEA18", "New in Toolbox: Safe Mode. Restarts Windows in Safe Mode (with or without internet) for one start only, so the PC can never get stuck in it. From Safe Mode, one button restarts normally.",
+                "Nuevo en Herramientas: Modo seguro. Reinicia Windows en modo seguro (con o sin internet) solo para un arranque, así la PC nunca queda atrapada en él. Desde el modo seguro, un botón reinicia normalmente."),
+            new("\uEDA2", "Disk repair explains \"Access denied\": it checks first whether the drive is locked by BitLocker, write-protected or held by another program, and no longer says \"Finished\" when chkdsk could not run.",
+                "La reparación de discos explica el \"Acceso denegado\": primero revisa si la unidad está bloqueada con BitLocker, protegida contra escritura o tomada por otro programa, y ya no dice \"Terminado\" cuando chkdsk no pudo ejecutarse."),
+        ]),
         new(new Version(0, 15, 0),
         [
             new("\uE72E", "Safer when someone uses another account's administrator password: file pickers, unsigned installers and risky uninstallers are blocked, and WinSolve's own folders are better protected.",
