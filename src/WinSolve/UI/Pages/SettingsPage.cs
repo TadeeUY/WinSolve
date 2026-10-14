@@ -82,7 +82,7 @@ public sealed class SettingsPage : Page
             Theme.SectionHeader("\uE895", "Updates", "Keep WinSolve up to date."),
             Theme.SettingRow("Check for updates automatically", "At startup and every hour.", _updates),
             new Divider(),
-            Theme.SettingRow("Install updates automatically (no need to click)", "Updates are verified (SHA-256) and installed without asking.", _autoUpdate),
+            Theme.SettingRow("Install updates automatically (no need to click)", "Verified (SHA-256) and installed while you are not using WinSolve, never in the middle of a task.", _autoUpdate),
             Theme.Row(Theme.Button("Check for updates now", async (_, _) => await CheckUpdatesNow(), glyph: "\uE895")));
 
         var swatches = _swatchRow;

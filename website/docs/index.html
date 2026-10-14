@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WinSolve Docs — Descarga y guía</title>
+  <meta name="description" content="Descarga WinSolve y aprende a usarlo: instalación, primeros pasos, limpieza, discos, drivers, modo seguro, actualizaciones y preguntas frecuentes.">
+  <meta name="theme-color" content="#07090f">
+  <link rel="icon" href="../favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+  <div class="bg" aria-hidden="true"><div class="blob b1"></div><div class="blob b2"></div><div class="grid"></div><div class="noise"></div></div>
+
+  <nav class="nav">
+    <div class="wrap">
+      <a class="brand" href="../"><img src="../assets/logo.svg" alt="">WinSolve <span style="color:var(--dim);font-weight:500">Docs</span></a>
+      <div class="links">
+        <a href="../">Inicio</a>
+        <a class="keep active" href="./">Docs</a>
+        <a href="https://github.com/TadeeUY/WinSolve">GitHub</a>
+      </div>
+      <a class="btn primary cta" href="https://github.com/TadeeUY/WinSolve/releases/latest/download/WinSolveSetup.exe">Descargar</a>
+    </div>
+  </nav>
+
+  <div class="wrap docs">
+    <aside class="toc" aria-label="Contenido">
+      <span class="t">Empezar</span>
+      <a href="#descargar">Descargar</a>
+      <a href="#instalar">Instalar</a>
+      <a href="#primeros-pasos">Primeros pasos</a>
+      <span class="t">Guías</span>
+      <a href="#limpieza">Limpieza</a>
+      <a href="#discos">Discos</a>
+      <a href="#drivers">Drivers</a>
+      <a href="#modo-seguro">Modo seguro</a>
+      <a href="#herramientas">Herramientas</a>
+      <span class="t">Más</span>
+      <a href="#actualizaciones">Actualizaciones</a>
+      <a href="#seguridad">Seguridad</a>
+      <a href="#versiones">Versiones</a>
+      <a href="#ayuda">Ayuda</a>
+    </aside>
+
+    <main class="doc">
+      <section id="descargar" style="padding:0">
+        <span class="eyebrow reveal">Documentación</span>
+        <h1 class="reveal">Descarga WinSolve</h1>
+        <p class="reveal" style="font-size:18px;color:var(--muted);max-width:640px">Última versión: <b data-version>…</b> · publicada el <span data-date>…</span>. Las descargas vienen directo de GitHub, donde se compilan de forma automática.</p>
+
+        <div class="dl-grid" data-stagger>
+          <div class="dl rec reveal">
+            <span class="rec-tag">Recomendado</span>
+            <h3>Instalador</h3>
+            <p>Instala WinSolve, crea los accesos directos y se actualiza solo. Si falta, instala .NET 8 automáticamente.</p>
+            <div class="facts"><span>WinSolveSetup.exe</span><span data-size-setup>2,5 MB</span><span>Windows 10/11 · 64 bits</span></div>
+            <a class="btn primary magnetic" href="https://github.com/TadeeUY/WinSolve/releases/latest/download/WinSolveSetup.exe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 19h16"/></svg>
+              Descargar instalador
+            </a>
+          </div>
+          <div class="dl reveal">
+            <h3>Portable</h3>
+            <p>Funciona sin instalar, por ejemplo desde un pendrive. Trae todo incluido; no se actualiza sola.</p>
+            <div class="facts"><span>WinSolve-Portable.exe</span><span data-size-portable>65 MB</span><span>Sin instalar</span></div>
+            <a class="btn" href="https://github.com/TadeeUY/WinSolve/releases/latest/download/WinSolve-Portable.exe">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 19h16"/></svg>
+              Descargar portable
+            </a>
+          </div>
+        </div>
+        <p class="hash reveal">SHA-256 del instalador: <span data-sha>se carga desde GitHub…</span></p>
+        <div class="callout reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5m0 3h.01"/></svg>
+          <p>Para comprobar que el archivo es el original, abre PowerShell en la carpeta de descargas y escribe <code>Get-FileHash .\WinSolveSetup.exe</code>. El resultado tiene que ser igual al de arriba.</p>
+        </div>
+      </section>
+
+      <h2 id="instalar" class="reveal">Instalar</h2>
+      <ol class="reveal">
+        <li>Abre <b>WinSolveSetup.exe</b>.</li>
+        <li>Si aparece <b>"Windows protegió su PC"</b>, toca <b>Más información</b> y luego <b>Ejecutar de todas formas</b>. Sale porque el instalador todavía no tiene firma digital.</li>
+        <li>Elige <b>Todos los usuarios</b> (recomendado) o <b>Solo para mí</b>, el idioma y si quieres acceso directo en el escritorio.</li>
+        <li>Toca <b>Instalar</b>. Si a tu PC le falta .NET 8, el instalador lo descarga e instala solo.</li>
+      </ol>
+      <div class="callout warn reveal">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3 2 20h20z"/><path d="M12 10v4m0 3h.01"/></svg>
+        <p>WinSolve pide permisos de administrador al abrirse, porque muchas reparaciones los necesitan. Solo cambia cosas de tu usuario y del sistema, nunca de otras cuentas.</p>
+      </div>
+      <p class="reveal">Para desinstalar: <b>Configuración de Windows → Aplicaciones → WinSolve → Desinstalar</b>.</p>
+
+      <h2 id="primeros-pasos" class="reveal">Primeros pasos</h2>
+      <p class="reveal">Al abrir WinSolve, <b>Inicio</b> analiza la PC y te muestra una nota de salud con lo que conviene revisar. Desde ahí:</p>
+      <ul class="reveal">
+        <li><b>Optimización en 1 clic</b>: elige el tipo de PC (escritorio o notebook) y el nivel (Ligera, Equilibrada o Máximo rendimiento). Antes de cambiar nada, crea un punto de restauración.</li>
+        <li><b>Buscar</b> (<kbd>Ctrl</kbd> + <kbd>K</kbd>): encuentra cualquier herramienta escribiendo su nombre, por ejemplo "modo seguro".</li>
+        <li><b>Icono junto al reloj</b>: WinSolve puede quedarse en el área de notificaciones para avisarte de problemas (disco que falla, temperatura alta).</li>
+      </ul>
+
+      <h2 id="limpieza" class="reveal">Limpieza</h2>
+      <p class="reveal"><b>Limpieza y reparación</b> borra temporales, caché de navegadores y restos de Windows Update. Los temporales solo se borran si tienen más de un día, y nunca se tocan tus carpetas personales ni las de Windows. <b>Espacio en disco</b> muestra un mapa de qué ocupa más, archivos grandes que no abres hace un año y duplicados. Lo que borras desde ahí va a la Papelera.</p>
+
+      <h2 id="discos" class="reveal">Discos</h2>
+      <p class="reveal">En <b>Hardware → Discos</b> ves la salud de cada disco (S.M.A.R.T.) explicada en simple, y por cada unidad tienes:</p>
+      <ul class="reveal">
+        <li><b>Revisar</b>: busca errores sin cambiar nada.</li>
+        <li><b>Reparar errores del sistema de archivos</b>: arregla lo que encuentra.</li>
+        <li><b>Escanear y reparar sectores dañados</b>: lee todo el disco, recupera lo que se puede y aísla las zonas malas. Puede tardar horas.</li>
+        <li><b>Último resultado</b>: lo que encontró la última revisión hecha al iniciar Windows.</li>
+      </ul>
+      <div class="callout reveal">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5m0 3h.01"/></svg>
+        <p>Si el disco es el de Windows, o Windows no lo libera ("Acceso denegado"), la revisión queda programada para el <b>próximo reinicio</b>: verás una pantalla negra revisando el disco antes de iniciar sesión. No apagues la PC mientras tanto. Si cambias de idea, toca <b>Cancelar revisión programada</b>.</p>
+      </div>
+
+      <h2 id="drivers" class="reveal">Drivers</h2>
+      <p class="reveal">WinSolve detecta tu placa de video y puede hacer una <b>instalación limpia</b> del driver de NVIDIA o AMD: guarda tu driver actual y lo vuelve a poner si algo sale mal. También limpia <b>drivers viejos</b> que quedan después de actualizar (nunca los que están en uso) y hace copia de seguridad de tus drivers.</p>
+
+      <h2 id="modo-seguro" class="reveal">Modo seguro</h2>
+      <p class="reveal">En <b>Herramientas → Modo seguro</b> eliges <b>Modo seguro</b> o <b>Modo seguro con funciones de red</b> y tocas <b>Reiniciar en modo seguro</b>.</p>
+      <ul class="reveal">
+        <li>Solo el <b>próximo</b> arranque es en modo seguro; el siguiente vuelve a ser normal aunque no abras WinSolve.</li>
+        <li>Si BitLocker está activado, se pausa solo para ese reinicio.</li>
+        <li>Si el PIN o la huella no funcionan en modo seguro, entra con la contraseña de tu cuenta.</li>
+        <li>Desde el modo seguro, <b>Reiniciar normalmente</b> también apaga un modo seguro que haya quedado activado con msconfig.</li>
+        <li><b>Inicio avanzado</b> reinicia en el menú azul de recuperación de Windows.</li>
+      </ul>
+
+      <h2 id="herramientas" class="reveal">Herramientas</h2>
+      <ul class="reveal">
+        <li><b>Prueba de velocidad de disco</b>: lectura y escritura secuencial y aleatoria, como CrystalDiskMark.</li>
+        <li><b>Buscador de archivos bloqueados</b>: qué programa usa un archivo, cerrarlo o borrarlo al reiniciar.</li>
+        <li><b>Borrado seguro</b>: sobrescribe archivos antes de borrarlos.</li>
+        <li><b>Prueba de red</b> y <b>contraseñas Wi-Fi guardadas</b>.</li>
+        <li><b>Editor del archivo hosts</b>, con copia automática.</li>
+        <li><b>Informe de batería</b>: cuánta capacidad perdió y cuánto dura.</li>
+        <li><b>Menú de clic derecho</b>, <b>puntos de restauración</b> e <b>informe de la PC</b> en PDF.</li>
+      </ul>
+
+      <h2 id="actualizaciones" class="reveal">Actualizaciones</h2>
+      <p class="reveal">WinSolve busca versiones nuevas cada vez que se abre y cada hora. Cuando hay una, aparece una barra arriba con <b>Actualizar ahora</b>: tarda menos de un minuto y conserva tu configuración. Cada actualización se descarga solo desde GitHub y se comprueba con su SHA-256 antes de instalarla.</p>
+      <p class="reveal">Si activas <b>Configuración → Instalar actualizaciones automáticamente</b>, se instala sola, pero <b>nunca te interrumpe</b>:</p>
+      <ul class="reveal">
+        <li>Espera a que no haya ninguna tarea, herramienta o ventana de WinSolve abierta.</li>
+        <li>No se instala durante juegos, videos o presentaciones a pantalla completa.</li>
+        <li>Si WinSolve está junto al reloj, se actualiza en silencio, sin abrir ventanas, y vuelve ahí. Si tienes la ventana abierta, espera a que no uses la PC por 10 minutos.</li>
+        <li>Si algo falla, vuelve a abrir la versión anterior, que queda intacta.</li>
+      </ul>
+
+      <h2 id="seguridad" class="reveal">Seguridad y privacidad</h2>
+      <ul class="reveal">
+        <li>Sin anuncios, sin cuentas y sin rastreo. Solo se conecta a internet para buscar actualizaciones, descargar drivers que pidas y la prueba de red.</li>
+        <li>Antes de cambios grandes crea un punto de restauración y guarda copia de cada ajuste que modifica.</li>
+        <li>Trabaja solo con el usuario que inició sesión; no toca otras cuentas.</li>
+        <li>El código es abierto: <a style="color:var(--blue)" href="https://github.com/TadeeUY/WinSolve">github.com/TadeeUY/WinSolve</a>.</li>
+      </ul>
+
+      <h2 id="versiones" class="reveal">Versiones</h2>
+      <p class="reveal">Las últimas versiones publicadas. Lo nuevo de cada una aparece en WinSolve en <b>Novedades</b> después de actualizar.</p>
+      <div id="history-list"><div class="skeleton"></div><div class="skeleton" style="width:80%"></div><div class="skeleton" style="width:60%"></div></div>
+
+      <h2 id="ayuda" class="reveal">Ayuda</h2>
+      <p class="reveal">¿Algo no funciona? En WinSolve, <b>Configuración → Crear reporte de errores</b> guarda un archivo en tu escritorio con los registros (sin datos personales). Ábrelo en un <a style="color:var(--blue)" href="https://github.com/TadeeUY/WinSolve/issues">reporte en GitHub</a> y explica qué pasó.</p>
+    </main>
+  </div>
+
+  <footer>
+    <div class="wrap">
+      <a class="brand" href="../"><img src="../assets/logo.svg" alt="">WinSolve</a>
+      <div class="fl">
+        <a href="../">Inicio</a>
+        <a href="https://github.com/TadeeUY/WinSolve">GitHub</a>
+        <a href="https://github.com/TadeeUY/WinSolve/releases">Versiones</a>
+      </div>
+      <span>Hecho por Tadeo Álvarez</span>
+    </div>
+  </footer>
+  <script src="../assets/site.js"></script>
+</body>
+</html>

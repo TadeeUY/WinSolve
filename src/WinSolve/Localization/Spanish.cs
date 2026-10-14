@@ -841,7 +841,7 @@ public static partial class Spanish
         ["Requires an all-users install (in Program Files)."] = "Requiere instalación para todos los usuarios (en Archivos de programa).",
         ["Updates"] = "Actualizaciones",
         ["At startup and every hour."] = "Al iniciar y cada hora.",
-        ["Updates are verified (SHA-256) and installed without asking."] = "Las actualizaciones se verifican (SHA-256) y se instalan sin preguntar.",
+        ["Verified (SHA-256) and installed while you are not using WinSolve, never in the middle of a task."] = "Se verifican (SHA-256) y se instalan cuando no estás usando WinSolve, nunca en medio de una tarea.",
 
         // ── Startup apps ──
         ["Disable is instant and reversible (same as Task Manager). Remove deletes the startup entry for good; the program stays installed."] = "Desactivar es instantáneo y reversible (igual que el Administrador de tareas). Quitar borra la entrada de inicio para siempre; el programa sigue instalado.",

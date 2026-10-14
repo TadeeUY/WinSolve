@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WinSolve — La navaja suiza para Windows</title>
+  <meta name="description" content="WinSolve limpia, repara y acelera tu PC con Windows: limpieza segura, drivers, reparación de discos, modo seguro, informe de la PC y más. Gratis.">
+  <meta name="theme-color" content="#07090f">
+  <meta property="og:title" content="WinSolve — La navaja suiza para Windows">
+  <meta property="og:description" content="Limpia, repara y acelera tu PC con Windows. Gratis y de código abierto.">
+  <meta property="og:image" content="assets/logo-256.png">
+  <link rel="icon" href="favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+  <div class="bg" aria-hidden="true"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="grid"></div><div class="noise"></div></div>
+
+  <nav class="nav">
+    <div class="wrap">
+      <a class="brand" href="#top"><img src="assets/logo.svg" alt="">WinSolve</a>
+      <div class="links">
+        <a href="#funciones">Funciones</a>
+        <a href="#seguridad">Seguridad</a>
+        <a href="#faq">Preguntas</a>
+        <a class="keep" href="docs/">Docs</a>
+      </div>
+      <a class="btn primary cta" href="docs/#descargar">Descargar</a>
+    </div>
+  </nav>
+
+  <header class="hero" id="top">
+    <div class="wrap">
+      <span class="badge reveal"><span class="dot"></span>Versión <b data-version>0.15</b> · gratis y de código abierto</span>
+      <h1 class="split">Tu PC, <span class="grad">rápida</span> y en orden.</h1>
+      <p class="lead reveal" style="--d:.5s">
+        WinSolve
+        <span class="rotator" aria-live="polite"><span>limpia</span><span>repara</span><span>acelera</span><span>protege</span></span>
+        tu Windows desde una sola app: limpieza segura, drivers, discos, arranque y más, sin romper nada.
+      </p>
+      <div class="actions reveal" style="--d:.65s">
+        <a class="btn primary big magnetic" href="https://github.com/TadeeUY/WinSolve/releases/latest/download/WinSolveSetup.exe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 19h16"/></svg>
+          Descargar para Windows
+        </a>
+        <a class="btn big" href="docs/">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 3v5h5M8 13h8M8 17h5"/></svg>
+          Leer la documentación
+        </a>
+      </div>
+      <div class="meta reveal" style="--d:.8s">
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 12 5 5 9-10"/></svg>Windows 10 y 11</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 12 5 5 9-10"/></svg>Español e inglés</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 12 5 5 9-10"/></svg>Sin anuncios ni cuentas</span>
+      </div>
+
+      <div class="stage reveal" style="--d:.9s">
+        <div class="window" role="img" aria-label="Vista de la app WinSolve analizando la PC">
+          <svg width="0" height="0" style="position:absolute"><defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" stop-color="#3aa3e0"/><stop offset="1" stop-color="#7ccb80"/></linearGradient></defs></svg>
+          <div class="titlebar"><img src="assets/logo.svg" alt="">WinSolve<span class="ctl"><span>—</span><span>▢</span><span>✕</span></span></div>
+          <div class="app">
+            <aside class="side">
+              <div class="it on"><i></i>Inicio</div>
+              <div class="it"><i></i>Optimización en 1 clic</div>
+              <div class="grp">MANTENIMIENTO</div>
+              <div class="it"><i></i>Limpieza y reparación</div>
+              <div class="it"><i></i>Espacio en disco</div>
+              <div class="it"><i></i>Apps de inicio</div>
+              <div class="it"><i></i>Drivers</div>
+              <div class="grp">DIAGNÓSTICO</div>
+              <div class="it"><i></i>Monitor</div>
+              <div class="it"><i></i>Hardware</div>
+              <div class="grp">SISTEMA</div>
+              <div class="it"><i></i>Herramientas</div>
+              <div class="it"><i></i>Windows Update</div>
+            </aside>
+            <div class="main">
+              <h4>Inicio</h4>
+              <div class="sub">Estado general de la PC y lo que requiere atención.</div>
+              <div class="health">
+                <div class="ring">
+                  <svg viewBox="0 0 140 140" width="150" height="150"><circle class="track" cx="70" cy="70" r="60" fill="none" stroke-width="12"/><circle class="val" cx="70" cy="70" r="60" fill="none" stroke-width="12"/></svg>
+                  <div class="num"><div><b>0</b><small>Salud de la PC</small></div></div>
+                </div>
+                <div class="checks">
+                  <div class="check"><span class="st"></span>Archivos temporales y caché<span class="tag">3,2 GB</span></div>
+                  <div class="check"><span class="st"></span>Salud de los discos (S.M.A.R.T.)<span class="tag">Bien</span></div>
+                  <div class="check"><span class="st"></span>Drivers y dispositivos<span class="tag">Al día</span></div>
+                  <div class="check"><span class="st"></span>Apps de inicio<span class="tag">4 lentas</span></div>
+                  <div class="check"><span class="st"></span>Windows Update y seguridad<span class="tag">Activo</span></div>
+                </div>
+              </div>
+              <div class="tiles">
+                <div class="tile"><b>Limpiar archivos</b><span>Temporales, caché…</span><div class="bar"><i data-w="78%"></i></div></div>
+                <div class="tile"><b>Espacio en disco</b><span>Qué ocupa más</span><div class="bar"><i data-w="54%"></i></div></div>
+                <div class="tile"><b>Drivers</b><span>Gráficos y más</span><div class="bar"><i data-w="92%"></i></div></div>
+                <div class="tile"><b>Monitor</b><span>Uso y temperaturas</span><div class="bar"><i data-w="36%"></i></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="funciones">
+    <div class="wrap">
+      <span class="eyebrow reveal">Funciones</span>
+      <h2 class="h2 reveal">Todo lo que tu PC necesita, <span class="grad">en un solo lugar</span>.</h2>
+      <p class="sec-lead reveal">En vez de diez programas distintos, una app que te explica qué hace cada cosa antes de hacerla.</p>
+
+      <div class="bento" data-stagger>
+        <article class="card c4 reveal">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg></div>
+          <h3>Optimización en 1 clic</h3>
+          <p>Elige Ligera, Equilibrada o Máximo rendimiento: limpia, ajusta la energía y aplica las mejoras recomendadas. Antes crea un punto de restauración.</p>
+          <div class="viz"><div class="bars"><i style="--h:.35"></i><i style="--h:.5"></i><i style="--h:.42"></i><i style="--h:.62"></i><i style="--h:.55"></i><i style="--h:.78"></i><i style="--h:.7"></i><i style="--h:.88"></i><i style="--h:.82"></i><i style="--h:.95"></i><i style="--h:.9"></i><i style="--h:1"></i></div></div>
+        </article>
+        <article class="card c2 reveal">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14"/></svg></div>
+          <h3>Limpieza segura</h3>
+          <p>Temporales, caché y restos de actualizaciones. Nunca toca tus documentos ni las carpetas de Windows.</p>
+        </article>
+        <article class="card c2 reveal">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M7 20h10M9 16v4m6-4v4"/></svg></div>
+          <h3>Drivers</h3>
+          <p>Instalación limpia de NVIDIA y AMD con copia de tu driver actual, y limpieza de drivers viejos.</p>
+        </article>
+        <article class="card c4 reveal">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h8v10H3zM13 3h8v6h-8zM13 11h8v10h-8zM3 15h8v6H3z"/></svg></div>
+          <h3>Espacio en disco</h3>
+          <p>Un mapa visual de qué ocupa tu disco, archivos grandes y olvidados, y duplicados. Lo que borras va a la Papelera.</p>
+          <div class="viz"><div class="treemap"><i></i><i></i><i></i><i></i><i></i></div></div>
+        </article>
+        <article class="card c3 reveal">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></div>
+          <h3>Salud y reparación de discos</h3>
+          <p>S.M.A.R.T. explicado en simple, reparación del sistema de archivos y búsqueda de sectores dañados, aunque haya que hacerla al reiniciar.</p>
+          <div class="viz"><div class="term"><span class="dim">&gt;</span> Revisando E: …<br><span class="ok">✓</span> Sistema de archivos sin errores<br><span class="ok">✓</span> 0 KB en sectores defectuosos<br><span class="ok">✓</span> Reasignados: 0 · Pendientes: 0<br><span class="cursor"></span></div></div>
+        </article>
+        <article class="card c3 reveal">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.4 8.6 8 9 4.6-.4 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></div>
+          <h3>Modo seguro sin quedar atrapado</h3>
+          <p>Reinicia en modo seguro (con o sin internet) solo una vez. Si tienes BitLocker, lo pausa para ese reinicio y no te pide la clave.</p>
+          <div class="viz"><div class="term"><span class="dim">&gt;</span> Preparando arranque de una sola vez…<br><span class="ok">✓</span> Entrada temporal creada<br><span class="ok">✓</span> BitLocker pausado para 1 reinicio<br><span class="ok">✓</span> El siguiente arranque vuelve a ser normal<br><span class="cursor"></span></div></div>
+        </article>
+        <article class="card c2 reveal">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 3v5h5"/><path d="M8 15l2 2 5-5"/></svg></div>
+          <h3>Informe de la PC</h3>
+          <p>Un PDF con la nota de tu PC, cada componente y qué mejora conviene más. Sin números de serie ni claves.</p>
+        </article>
+        <article class="card c2 reveal">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></div>
+          <h3>Monitor en vivo</h3>
+          <p>Uso de procesador, memoria, disco y temperaturas, con avisos si algo se calienta o falla.</p>
+        </article>
+        <article class="card c2 reveal">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2.6-.6-.6-2.6z"/></svg></div>
+          <h3>Caja de herramientas</h3>
+          <p>Velocidad de disco, archivos bloqueados, claves Wi-Fi guardadas, archivo hosts, batería, puntos de restauración y más.</p>
+        </article>
+      </div>
+    </div>
+
+    <div class="marquee" aria-label="Herramientas incluidas">
+      <div class="track">
+        <span class="chip"><i></i>Prueba de velocidad de disco</span><span class="chip"><i></i>Buscador de archivos bloqueados</span><span class="chip"><i></i>Borrado seguro</span><span class="chip"><i></i>Prueba de red</span><span class="chip"><i></i>Contraseñas Wi-Fi guardadas</span><span class="chip"><i></i>Editor del archivo hosts</span><span class="chip"><i></i>Informe de batería</span><span class="chip"><i></i>Menú de clic derecho</span>
+      </div>
+    </div>
+    <div class="marquee rev" aria-hidden="true">
+      <div class="track">
+        <span class="chip"><i></i>Puntos de restauración</span><span class="chip"><i></i>Modo seguro</span><span class="chip"><i></i>Apps de inicio</span><span class="chip"><i></i>Desinstalar con restos</span><span class="chip"><i></i>Windows Update</span><span class="chip"><i></i>Mantenimiento programado</span><span class="chip"><i></i>Ajustes de privacidad</span><span class="chip"><i></i>Duplicados</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="seguridad">
+    <div class="wrap">
+      <span class="eyebrow reveal">Hecha para no romper nada</span>
+      <h2 class="h2 reveal">Cuidadosa con tu PC, <span class="grad">a propósito</span>.</h2>
+      <p class="sec-lead reveal">Cada función se prueba de forma automática en un Windows real antes de publicar cada versión.</p>
+      <div class="steps" data-stagger>
+        <div class="step reveal"><h3>Antes de cambiar, guarda</h3><p>Punto de restauración, copia de tu driver actual y respaldo de cada ajuste. Si algo sale mal, se vuelve atrás.</p></div>
+        <div class="step reveal"><h3>Solo lo tuyo</h3><p>Trabaja únicamente con tu usuario: nunca toca los archivos ni la configuración de otras cuentas de la PC.</p></div>
+        <div class="step reveal"><h3>Actualiza sin molestar</h3><p>Las actualizaciones se verifican con su firma SHA-256 y nunca cortan lo que estás haciendo: esperan a que no la uses.</p></div>
+      </div>
+      <div class="stats" data-stagger>
+        <div class="stat reveal"><b data-count="40" data-suffix="+">0</b><span>herramientas y tareas</span></div>
+        <div class="stat reveal"><b data-count="2">0</b><span>idiomas: español e inglés</span></div>
+        <div class="stat reveal"><b data-count="0">0</b><span>anuncios, cuentas o rastreo</span></div>
+        <div class="stat reveal"><b data-count="100" data-suffix="%">0</b><span>gratis y de código abierto</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap center">
+      <span class="eyebrow reveal">Preguntas frecuentes</span>
+      <h2 class="h2 reveal">Lo que todos preguntan.</h2>
+      <div class="faq" style="text-align:left" data-stagger>
+        <details class="reveal"><summary>¿Es gratis?</summary><p>Sí, totalmente. No tiene versión paga, anuncios ni cuenta. El código está en GitHub.</p></details>
+        <details class="reveal"><summary>¿Por qué Windows dice "Windows protegió su PC"?</summary><p>Porque el instalador todavía no tiene firma digital y SmartScreen no conoce el archivo. Toca <b>Más información → Ejecutar de todas formas</b>. Puedes comprobar que el archivo es el original con su SHA-256, que aparece en la página de descarga.</p></details>
+        <details class="reveal"><summary>¿Puede romper mi Windows?</summary><p>Está hecha para no hacerlo: antes de cambios grandes crea un punto de restauración, guarda copias de lo que modifica y nunca borra tus archivos personales ni carpetas del sistema. Todo lo que borra a mano va a la Papelera.</p></details>
+        <details class="reveal"><summary>¿Se actualiza sola?</summary><p>Te avisa cuando hay una versión nueva. Si activas la actualización automática, se instala sola sin abrir ventanas y sin cortar nada de lo que estés haciendo.</p></details>
+        <details class="reveal"><summary>¿Hay versión portable?</summary><p>Sí: <b>WinSolve-Portable.exe</b> funciona sin instalar, por ejemplo desde un pendrive.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="cta-box reveal">
+        <div class="orb" aria-hidden="true"></div>
+        <img class="logo" src="assets/logo.svg" alt="">
+        <h2 class="h2" style="margin-inline:auto">Dale a tu PC un respiro.</h2>
+        <p class="sec-lead" style="margin:0 auto 30px">Versión <span data-version>0.15</span> · <span data-size-setup>2,5 MB</span> · Windows 10 y 11</p>
+        <div class="actions" style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">
+          <a class="btn primary big magnetic" href="https://github.com/TadeeUY/WinSolve/releases/latest/download/WinSolveSetup.exe">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 19h16"/></svg>
+            Descargar WinSolve
+          </a>
+          <a class="btn big" href="docs/#descargar">Más opciones de descarga</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <a class="brand" href="#top"><img src="assets/logo.svg" alt="">WinSolve</a>
+      <div class="fl">
+        <a href="docs/">Documentación</a>
+        <a href="docs/#descargar">Descargas</a>
+        <a href="https://github.com/TadeeUY/WinSolve">GitHub</a>
+        <a href="https://github.com/TadeeUY/WinSolve/releases">Versiones</a>
+      </div>
+      <span>Hecho por Tadeo Álvarez · © <span id="yr">2026</span></span>
+    </div>
+  </footer>
+
+  <script src="assets/site.js"></script>
+  <script>document.getElementById("yr").textContent = new Date().getFullYear();</script>
+</body>
+</html>
