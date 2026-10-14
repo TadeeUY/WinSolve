@@ -10,7 +10,7 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
-        new(new Version(0, 16, 0),
+        new(new Version(0, 15, 1),
         [
             new("\uEA18", "New in Toolbox: Safe Mode. Restarts Windows in Safe Mode (with or without internet) for one start only, so the PC can never get stuck in it. From Safe Mode, one button restarts normally.",
                 "Nuevo en Herramientas: Modo seguro. Reinicia Windows en modo seguro (con o sin internet) solo para un arranque, así la PC nunca queda atrapada en él. Desde el modo seguro, un botón reinicia normalmente."),
