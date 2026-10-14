@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 15, 4),
+        [
+            new("\uEDA2", "Hardware > Disks: 'Last check result' shows what the scan at startup found (it often runs overnight). WinSolve warns if a drive was checked in the last week, won't schedule the same scan twice and lets you cancel a scheduled check.",
+                "Hardware > Discos: 'Último resultado' muestra lo que encontró la revisión al iniciar (que suele correr de noche). WinSolve avisa si una unidad se revisó en la última semana, no programa dos veces la misma revisión y permite cancelar una revisión programada."),
+        ]),
         new(new Version(0, 15, 3),
         [
             new("\uEDA2", "Disk repair: when Windows won't hand over a drive (\"Access denied\" because a program or driver is using it), the check or bad sector scan is scheduled for the next restart, where it runs before anything else uses the drive.",
