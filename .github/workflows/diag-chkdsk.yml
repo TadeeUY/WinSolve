@@ -1,0 +1,37 @@
+name: Diagnose chkdsk
+on:
+  push:
+    paths: [".github/workflows/diag-chkdsk.yml"]
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Virtual disk and chkdsk variants
+        run: |
+          $vhd = "$env:RUNNER_TEMP\test.vhdx"
+          "create vdisk file=`"$vhd`" maximum=256 type=expandable`nselect vdisk file=`"$vhd`"`nattach vdisk`ncreate partition primary`nformat fs=ntfs quick label=TEST`nassign letter=T" | Set-Content "$env:RUNNER_TEMP\dp.txt" -Encoding ascii
+          diskpart /s "$env:RUNNER_TEMP\dp.txt"
+          Get-Volume -DriveLetter T | Format-List
+          function Run($name, $file, $args) {
+            $psi = [Diagnostics.ProcessStartInfo]::new($file, $args)
+            $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
+            $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+            $p = [Diagnostics.Process]::Start($psi)
+            $o = $p.StandardOutput.ReadToEndAsync(); $e = $p.StandardError.ReadToEndAsync()
+            $p.WaitForExit()
+            "===== $name : exit $($p.ExitCode)"
+            $o.Result -replace "`0", ''
+            "--- stderr"
+            $e.Result -replace "`0", ''
+          }
+          Run "cmd /f /x < nul" "$env:SystemRoot\System32\cmd.exe" '/d /c chcp 65001 >nul & chkdsk T: /f /x < nul'
+          Run "cmd /r /x < nul" "$env:SystemRoot\System32\cmd.exe" '/d /c chcp 65001 >nul & chkdsk T: /r /x < nul'
+          Run "cmd /r /x no redirect" "$env:SystemRoot\System32\cmd.exe" '/d /c chcp 65001 >nul & chkdsk T: /r /x'
+          Run "direct /r /x" "$env:SystemRoot\System32\chkdsk.exe" 'T: /r /x'
+          Run "direct /f /x" "$env:SystemRoot\System32\chkdsk.exe" 'T: /f /x'
+          Run "direct /scan" "$env:SystemRoot\System32\chkdsk.exe" 'T: /scan'
