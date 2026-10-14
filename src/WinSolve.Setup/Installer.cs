@@ -18,6 +18,8 @@ namespace WinSolve.Setup
         public bool Clean;
         public bool DesktopShortcut = true;
         public bool Launch = true;
+        /// <summary>Reopen WinSolve in the notification area (a background update), not its window.</summary>
+        public bool Tray;
         /// <summary>Update in place: the folder of the running installation (set by WinSolve's updater).</summary>
         public string UpdateDir;
         /// <summary>Process id of the WinSolve that started the update; setup waits for it to exit.</summary>
@@ -27,7 +29,7 @@ namespace WinSolve.Setup
 
         public string ToArgs() =>
             "--install" + (AllUsers ? " --allusers" : "") + (Clean ? " --clean" : "") +
-            (DesktopShortcut ? " --desktop" : "") + (Launch ? " --launch" : "") +
+            (DesktopShortcut ? " --desktop" : "") + (Launch ? " --launch" : "") + (Tray ? " --tray" : "") +
             (UpdateDir != null ? " --update-dir \"" + UpdateDir + "\"" : "") + (WaitPid > 0 ? " --wait " + WaitPid : "") +
             (Language != null ? " --lang " + Language : "");
 
@@ -45,6 +47,7 @@ namespace WinSolve.Setup
                 Clean = args.Contains("--clean"),
                 DesktopShortcut = args.Contains("--desktop"),
                 Launch = args.Contains("--launch"),
+                Tray = args.Contains("--tray"),
                 UpdateDir = Value("--update-dir"),
                 WaitPid = pid,
                 Language = Value("--lang") is string l && (l == "es" || l == "en") ? l : null,
@@ -287,7 +290,8 @@ namespace WinSolve.Setup
         public static void LaunchApp(InstallOptions o)
         {
             var exe = Path.Combine(ValidUpdateDir(o.UpdateDir) ?? InstallDir(o.AllUsers), ExeName);
-            try { Process.Start(new ProcessStartInfo(exe, o.Language != null ? "--lang " + o.Language : "") { UseShellExecute = true }); } catch { /* UAC declined */ }
+            var args = ((o.Tray ? "--tray " : "") + (o.Language != null ? "--lang " + o.Language : "")).Trim();
+            try { Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = true }); } catch { /* UAC declined */ }
         }
 
         // ═══════════════════ Uninstall ═══════════════════

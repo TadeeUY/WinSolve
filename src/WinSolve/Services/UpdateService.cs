@@ -114,7 +114,7 @@ public static class UpdateService
     /// Downloads the new installer into an administrators-only folder, verifies its SHA-256 and
     /// starts it in automatic mode for the same install scope. WinSolve then exits.
     /// </summary>
-    public static async Task InstallAsync(UpdateInfo update, Action<string> log, Action<int, int> progress, CancellationToken ct)
+    public static async Task InstallAsync(UpdateInfo update, bool background, Action<string> log, Action<int, int> progress, CancellationToken ct)
     {
         var uri = new Uri(update.SetupUrl);
         if (!IsGitHubHost(uri)) throw new InvalidOperationException("Update URL is not on github.com.");
@@ -163,7 +163,8 @@ public static class UpdateService
             // Update the folder this copy runs from (not one derived from the elevated account's
             // profile), and let setup wait for this process to exit instead of killing it.
             var dir = Path.GetDirectoryName(exe)!;
-            var args = "--install --auto --launch" + (allUsers ? " --allusers" : "") +
+            // From the notification area: no setup window, and WinSolve comes back to the notification area.
+            var args = (background ? "--install --quiet --launch --tray" : "--install --auto --launch") + (allUsers ? " --allusers" : "") +
                        $" --update-dir \"{dir}\" --wait {Environment.ProcessId}";
             log("Starting the installer. WinSolve will restart.");
             Process.Start(new ProcessStartInfo(file, args) { UseShellExecute = true, WorkingDirectory = Environment.SystemDirectory });

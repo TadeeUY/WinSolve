@@ -35,7 +35,23 @@ Start-Sleep -Seconds 10
 $restarted = Get-Process WinSolve -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }
 Check ($null -ne $restarted) 'WinSolve restarted after the update'
 Screenshot 'app-after-update'
-$restarted | Stop-Process -Force -ErrorAction SilentlyContinue
+
+Write-Host "== Background update from the notification area (no windows)"
+# UpdateService.InstallAsync with background: "--install --quiet --launch --tray ...".
+$running = $restarted | Select-Object -First 1
+$s = Start-Process $Setup -ArgumentList "--install --quiet --launch --tray --allusers --update-dir `"$dir`" --wait $($running.Id)" -PassThru
+Start-Sleep -Seconds 3
+Stop-Process -Id $running.Id -Force -ErrorAction SilentlyContinue
+Check ($s.WaitForExit(120000)) 'silent setup finishes'
+Check ($s.ExitCode -eq 0) "silent setup exits with 0 (got $($s.ExitCode))"
+Start-Sleep -Seconds 10
+$back = Get-CimInstance Win32_Process -Filter "Name = 'WinSolve.exe'" | Where-Object { $_.ExecutablePath -eq $exe }
+Check ($null -ne $back) 'WinSolve came back after the background update'
+Check ($back.CommandLine -match '--tray') "it came back in the notification area ($($back.CommandLine))"
+$visible = Get-Process WinSolve -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe -and $_.MainWindowHandle -ne 0 }
+Check ($null -eq $visible) 'no WinSolve window opened'
+Screenshot 'after-background-update'
+Get-Process WinSolve -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
 Start-Process (Join-Path $dir 'Uninstall WinSolve.exe') -ArgumentList '--uninstall --quiet --allusers' -Wait
 Finish 'Update from 0.13.1'

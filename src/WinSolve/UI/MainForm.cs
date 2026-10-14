@@ -95,7 +95,8 @@ public sealed class MainForm : Form
             ErrorMonitor.Instance.Apply();
             _ = CheckForUpdateAsync(atStartup: true);
             // Keep checking while WinSolve sits in the notification area.
-            var updateTimer = new System.Windows.Forms.Timer { Interval = (int)TimeSpan.FromHours(1).TotalMilliseconds };
+            // Every 10 minutes: GitHub is asked at most once an hour; a waiting automatic update is retried.
+            var updateTimer = new System.Windows.Forms.Timer { Interval = (int)TimeSpan.FromMinutes(10).TotalMilliseconds };
             updateTimer.Tick += async (_, _) => await CheckForUpdateAsync();
             updateTimer.Start();
             if (!_startHidden)
@@ -349,16 +350,49 @@ public sealed class MainForm : Form
     /// <summary>True while a page task, a run window or a tray quick action is working (installing would kill it).</summary>
     private bool WorkRunning => IsBusy || _quickBusy || Application.OpenForms.OfType<RunDialog>().Any();
 
+    /// <summary>
+    /// Any other WinSolve window is open (a tool such as the disk speed test or secure delete,
+    /// a question, an editor): closing WinSolve would cut it off or lose what was typed.
+    /// </summary>
+    private bool OtherWindowOpen =>
+        Application.OpenForms.Cast<Form>().Any(f => f != this && f.Visible && f is not Toast)
+        // A message box is not in OpenForms, but it disables the window it belongs to.
+        || (IsHandleCreated && Visible && !IsWindowEnabled(Handle));
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool IsWindowEnabled(IntPtr hWnd);
+
+    /// <summary>
+    /// An automatic update never interrupts: nothing may be running or open in WinSolve, no
+    /// full-screen game, video or presentation, and the person is either not looking at WinSolve
+    /// (it is in the notification area) or has been away from the PC for 10 minutes.
+    /// </summary>
+    private bool CanUpdateInBackground(out bool hidden)
+    {
+        hidden = !Visible || WindowState == FormWindowState.Minimized;
+        if (WorkRunning || OtherWindowOpen || UserActivity.InFullScreenOrQuiet) return false;
+        return hidden || UserActivity.Idle >= TimeSpan.FromMinutes(10);
+    }
+
+    private string? _notifiedTag;
+
     private async Task CheckForUpdateAsync(bool atStartup = false)
     {
         var update = _deferredUpdate ?? await UpdateService.CheckIfDueAsync(atStartup);
-        if (update is null) return;
+        if (update is null || _updating) return;
         _deferredUpdate = null;
-        if (AppSettings.Current.AutoInstallUpdates && !Edition.IsPortable && !WorkRunning) await InstallUpdateAsync(update);
-        else
+        var auto = AppSettings.Current.AutoInstallUpdates && !Edition.IsPortable;
+        if (auto && CanUpdateInBackground(out var hidden))
         {
-            if (AppSettings.Current.AutoInstallUpdates && !Edition.IsPortable) _deferredUpdate = update;
-            if (!_updating) ShowUpdate(update);
+            await InstallUpdateAsync(update, background: hidden);
+            return;
+        }
+        if (auto) _deferredUpdate = update; // tried again on the next timer tick
+        // The bar (and, from the notification area, one toast per version) instead of interrupting.
+        if (update.Tag != _notifiedTag || Visible)
+        {
+            _notifiedTag = update.Tag;
+            ShowUpdate(update);
         }
     }
 
@@ -397,7 +431,10 @@ public sealed class MainForm : Form
     /// One-click update: downloads the new installer (SHA-256 verified), runs it silently for
     /// the same install scope and reopens WinSolve. No dialogs.
     /// </summary>
-    public async Task InstallUpdateAsync(UpdateInfo update)
+    public async Task InstallUpdateAsync(UpdateInfo update) => await InstallUpdateAsync(update, background: false);
+
+    /// <param name="background">WinSolve is in the notification area: update silently and come back there, without opening any window.</param>
+    private async Task InstallUpdateAsync(UpdateInfo update, bool background)
     {
         if (Edition.IsPortable)
         {
@@ -415,12 +452,12 @@ public sealed class MainForm : Form
         }
         _deferredUpdate = null;
         _updating = true;
-        ShowFromTray();
+        if (!background) ShowFromTray();
         _infoBar.Show($"Updating to WinSolve {update.Tag}", "Downloading...");
         _infoBar.SetProgress(0);
         try
         {
-            await Task.Run(() => UpdateService.InstallAsync(update,
+            await Task.Run(() => UpdateService.InstallAsync(update, background,
                 line => Logger.Write("[update] " + line),
                 (done, total) => BeginInvoke(() =>
                 {
@@ -440,6 +477,7 @@ public sealed class MainForm : Form
             var retry = Theme.Button("Try again", async (_, _) => await InstallUpdateAsync(update), primary: true);
             var manual = Theme.Button("Download manually", (_, _) => ProcessRunner.ShellOpen(update.ReleaseUrl));
             _infoBar.Show("The update could not be installed", ex.Message, retry, manual);
+            if (background) _notifiedTag = null; // the next check offers it again
         }
     }
 

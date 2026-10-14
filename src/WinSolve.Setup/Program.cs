@@ -66,6 +66,8 @@ namespace WinSolve.Setup
             catch (Exception ex)
             {
                 Console.Error.WriteLine("Setup failed: " + ex.Message);
+                // A background update that failed: the previous version is still intact, reopen it.
+                if (o.Launch && o.UpdateDir != null) Installer.LaunchApp(o);
                 return 1;
             }
         }
