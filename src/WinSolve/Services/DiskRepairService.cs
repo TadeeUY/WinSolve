@@ -189,6 +189,75 @@ public static class DiskRepairService
                                 && e.Contains($@"\??\{char.ToUpperInvariant(letter)}:", StringComparison.OrdinalIgnoreCase)
                                 && (!surfaceScan || Regex.IsMatch(e, @"(^|\s)/r(\s|$)", RegexOptions.IgnoreCase)));
 
+    /// <summary>
+    /// Takes back a check of the drive scheduled for the next restart (the BootExecute entries
+    /// for that drive only; Windows' own check of all drives stays). Returns how many were removed.
+    /// </summary>
+    public static int CancelScheduledCheck(char letter)
+    {
+        letter = char.ToUpperInvariant(letter);
+        if (!char.IsAsciiLetter(letter)) return 0;
+        using var key = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64)
+            .OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Session Manager", writable: true);
+        if (key is null || !key.GetValueNames().Contains("BootExecute", StringComparer.OrdinalIgnoreCase)
+            || key.GetValueKind("BootExecute") != RegistryValueKind.MultiString
+            || key.GetValue("BootExecute", null, RegistryValueOptions.DoNotExpandEnvironmentNames) is not string[] current) return 0;
+        var kept = WithoutCheckOf(current, letter);
+        if (kept.Length == current.Length) return 0;
+        key.SetValue("BootExecute", kept, RegistryValueKind.MultiString);
+        return current.Length - kept.Length;
+    }
+
+    internal static string[] WithoutCheckOf(IEnumerable<string> bootExecute, char letter)
+        => bootExecute.Where(e => !IsCheckScheduled([e], letter, surfaceScan: false)).ToArray();
+
+    public sealed record BootCheckResult(DateTime When, string Text);
+
+    /// <summary>
+    /// The result of the last check Windows ran at startup on this drive (it is saved in the event
+    /// log, Wininit 1001), so a scan that ran overnight can be read afterwards. Null if none.
+    /// </summary>
+    public static async Task<BootCheckResult?> LastBootCheckAsync(char letter, CancellationToken ct = default)
+    {
+        letter = char.ToUpperInvariant(letter);
+        if (!char.IsAsciiLetter(letter)) return null;
+        var r = await ProcessRunner.PowerShellAsync("""
+            $e = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'Wininit'; Id = 1001 } -MaxEvents 30 -ErrorAction SilentlyContinue
+            ConvertTo-Json -Compress -InputObject @($e | ForEach-Object { [pscustomobject]@{ When = $_.TimeCreated.ToString('o'); Text = $_.Message } })
+            """, null, ct);
+        var start = r.Output.IndexOf('[');
+        if (start < 0) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(r.Output[start..]);
+            foreach (var e in doc.RootElement.EnumerateArray())
+            {
+                var text = e.GetProperty("Text").GetString() ?? "";
+                if (!IsAboutDrive(text, letter)) continue;
+                if (!DateTime.TryParse(e.GetProperty("When").GetString(), null, System.Globalization.DateTimeStyles.RoundtripKind, out var when)) continue;
+                return new BootCheckResult(when.ToLocalTime(), CleanCheckText(text));
+            }
+        }
+        catch (JsonException) { }
+        return null;
+    }
+
+    /// <summary>The check log names its drive near the top ("Checking file system on E:", in the Windows language).</summary>
+    internal static bool IsAboutDrive(string text, char letter)
+    {
+        var head = string.Join('\n', text.Replace("\r", "").Split('\n').Take(4));
+        return Regex.IsMatch(head, $@"(?<![\p{{L}}\d]){char.ToUpperInvariant(letter)}:(?![\\/\p{{L}}\d])", RegexOptions.IgnoreCase);
+    }
+
+    /// <summary>Drops the progress lines ("Progress: 10 of 200 done; Stage: 5%...") and repeated blank lines.</summary>
+    internal static string CleanCheckText(string text)
+    {
+        var result = new List<string>();
+        foreach (var line in text.Replace("\r", "").Split('\n').Select(l => l.TrimEnd()).Where(l => !l.Contains('%')))
+            if (line.Trim().Length > 0 || (result.Count > 0 && result[^1].Trim().Length > 0)) result.Add(line);
+        return string.Join(Environment.NewLine, result).Trim();
+    }
+
     /// <summary>The letter chkdsk accepts as "yes" in its (Y/N) question, read from its own prompt: Y, S (Spanish), J (German), O (French)...</summary>
     internal static char? YesLetter(string chkdskOutput)
     {

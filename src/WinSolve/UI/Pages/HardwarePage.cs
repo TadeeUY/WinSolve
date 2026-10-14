@@ -224,9 +224,20 @@ public sealed class HardwarePage : Page
                         Run($"Repairing {v.Letter}:", async (log, ct) => reboot = await DiskRepairService.FixAsync(v, log, ct));
                         if (reboot) AskRestart();
                     }, glyph: "\uE90F"),
-                    Theme.Button("Scan & repair bad sectors", (_, _) =>
+                    Theme.Button("Scan & repair bad sectors", async (_, _) =>
                     {
-                        var msg = (d.Health == HealthLevel.Bad ? "This drive is failing: copy your files first. " : "") +
+                        if (DiskRepairService.IsCheckScheduled(v.Letter[0], surfaceScan: true))
+                        {
+                            Localization.Loc.Show(this, $"A scan of every sector of {v.Letter}: is already scheduled: it runs on the next restart. To not run it, use 'Cancel scheduled check'.",
+                                "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            return;
+                        }
+                        // A scan that already ran at startup (often overnight) is not repeated by mistake.
+                        var last = await DiskRepairService.LastBootCheckAsync(v.Letter[0]);
+                        var recent = last is not null && DateTime.Now - last.When < TimeSpan.FromDays(7)
+                            ? $"{v.Letter}: was already checked at startup on {last.When.ToString("g", Localization.Loc.Culture)} (see 'Last check result'). "
+                            : "";
+                        var msg = recent + (d.Health == HealthLevel.Bad ? "This drive is failing: copy your files first. " : "") +
                                   (v.RepairAtRestart
                                       ? $"Scan every sector of {v.Letter}: on the next restart? It can take hours; do not turn the PC off."
                                       : $"Scan every sector of {v.Letter}: now? It can take hours and the drive is unavailable meanwhile.");
@@ -235,8 +246,36 @@ public sealed class HardwarePage : Page
                         Run($"Bad sector scan on {v.Letter}:", async (log, ct) => reboot = await DiskRepairService.RepairBadSectorsAsync(v, log, ct));
                         if (reboot) AskRestart();
                         else Refresh(true);
-                    }, primary: level != HealthLevel.Good, glyph: "\uE9F5")));
+                    }, primary: level != HealthLevel.Good && !DiskRepairService.IsCheckScheduled(v.Letter[0], surfaceScan: false), glyph: "\uE9F5"),
+                    Theme.Button("Last check result", async (_, _) => await ShowLastCheckAsync(v), glyph: "\uE81C")));
+
+                if (DiskRepairService.IsCheckScheduled(v.Letter[0], surfaceScan: false))
+                    _repair.Add(Theme.Row(
+                        Theme.Status($"A check of {v.Letter}: is scheduled for the next restart.", Theme.Info),
+                        Theme.Button("Cancel scheduled check", (_, _) =>
+                        {
+                            try { DiskRepairService.CancelScheduledCheck(v.Letter[0]); }
+                            catch (Exception ex) { Logger.Write($"Cancel scheduled check: {ex.Message}"); }
+                            Refresh(true);
+                        }, glyph: "\uE711")));
             }
+        }
+
+        private async Task ShowLastCheckAsync(VolumeInfo v)
+        {
+            var last = await DiskRepairService.LastBootCheckAsync(v.Letter[0]);
+            if (last is null)
+            {
+                Localization.Loc.Show(this, $"Windows has no record of a check of {v.Letter}: at startup.", "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            Run($"Last check of {v.Letter}:", (log, _) =>
+            {
+                log($"Checked at startup on {last.When.ToString("g", Localization.Loc.Culture)}.");
+                foreach (var line in last.Text.Split(Environment.NewLine)) log(line);
+                log("Refresh S.M.A.R.T. to see the reallocated / pending sector counts now.");
+                return Task.CompletedTask;
+            });
         }
 
         private void Run(string title, Func<Action<string>, CancellationToken, Task> work)

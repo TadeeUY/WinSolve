@@ -83,6 +83,11 @@ public class DiskRepairE2ETests
             // Windows' own entries are all kept, after the new one.
             Assert.Equal([.. before], after.Where(e => !e.Contains(@"\??\T:")).ToArray());
             Assert.Equal(0, Array.FindIndex(after, e => e.Contains(@"\??\T:")));
+
+            // "Cancel scheduled check" puts the list back exactly as it was.
+            Assert.Equal(1, DiskRepairService.CancelScheduledCheck('T'));
+            Assert.Equal(before, (string[])Microsoft.Win32.Registry.LocalMachine.OpenSubKey(key)!.GetValue("BootExecute")!);
+            Assert.False(DiskRepairService.IsCheckScheduled('T', surfaceScan: false));
         }
         finally
         {
@@ -108,5 +113,44 @@ public class DiskRepairDeniedTests
         var output = string.Join('\n', Enumerable.Range(1, 30).Select(i => $"Stage line {i}"));
         Assert.False(DiskRepairService.Denied(new ProcessResult(1, output)));
         Assert.False(DiskRepairService.Denied(new ProcessResult(0, "")));
+    }
+}
+
+public class BootCheckTests
+{
+    [Fact]
+    public void Cancelling_removes_only_that_drives_check()
+    {
+        string[] list = ["autocheck autochk /r \\??\\E:", "autocheck autochk /q /v *", "autocheck autochk /p \\??\\D:"];
+        Assert.Equal(["autocheck autochk /q /v *", "autocheck autochk /p \\??\\D:"], DiskRepairService.WithoutCheckOf(list, 'e'));
+        Assert.Equal(list, DiskRepairService.WithoutCheckOf(list, 'F'));
+    }
+
+    [Theory]
+    [InlineData("Checking file system on E:\r\nThe type of the file system is NTFS.", 'E', true)]
+    [InlineData("Comprobando el sistema de archivos en E:\r\nEl tipo de sistema de archivos es NTFS.", 'E', true)]
+    [InlineData("Checking file system on C:\r\nThe type of the file system is NTFS.", 'E', false)]
+    [InlineData("Checking file system on C:\r\nVolume label is ONE.\r\nCHKDSK is verifying files (stage 1 of 3)...", 'E', false)]
+    public void The_check_log_is_matched_to_its_drive(string text, char letter, bool expected)
+        => Assert.Equal(expected, DiskRepairService.IsAboutDrive(text, letter));
+
+    [Fact]
+    public void Progress_lines_are_dropped_from_the_result()
+    {
+        var text = "Checking file system on E:\r\nProgress: 1 of 200 done; Stage: 0%\r\n\r\n\r\n   0 KB in bad sectors.\r\nProgress: 200 of 200 done; Stage: 100%";
+        Assert.Equal("Checking file system on E:" + Environment.NewLine + Environment.NewLine + "   0 KB in bad sectors.", DiskRepairService.CleanCheckText(text));
+    }
+}
+
+[Trait("Category", "E2E")]
+public class BootCheckE2ETests(ITestOutputHelper output)
+{
+    [E2EFact]
+    public async Task The_last_startup_check_can_be_read()
+    {
+        // The test machine may never have checked a drive at startup; reading must still work.
+        var last = await DiskRepairService.LastBootCheckAsync('C');
+        output.WriteLine(last is null ? "No startup check of C: recorded." : $"{last.When:g}\n{last.Text}");
+        Assert.Null(await DiskRepairService.LastBootCheckAsync('Q'));
     }
 }
