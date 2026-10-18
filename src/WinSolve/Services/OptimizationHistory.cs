@@ -38,7 +38,7 @@ public sealed class OptimizationRun
 /// <summary>Before/after measurements of each optimization, kept in %ProgramData%\WinSolve\history.json.</summary>
 public static class OptimizationHistory
 {
-    private static string FilePath => Path.Combine(SafePath.DataFolder, "history.json");
+    private static string FilePath => Path.Combine(DataLocation.UserFolder, "history.json");
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
     public static List<OptimizationRun> Load()

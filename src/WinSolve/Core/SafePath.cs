@@ -339,16 +339,16 @@ public static class SafePath
     }
 
     /// <summary>
-    /// %ProgramData%\WinSolve: settings and logs. WinSolve always runs elevated, so its own
-    /// files live where only Administrators and SYSTEM can read and write. Writing
-    /// them under the user profile would let a non-elevated process redirect those writes
-    /// with links to any file on the system.
+    /// The trusted data folder (%ProgramData%\WinSolve, or the portable edition's folder, see
+    /// <see cref="DataLocation"/>). WinSolve always runs elevated, so the files it acts on live where
+    /// only Administrators and SYSTEM can read and write. Writing them under the user profile
+    /// would let a non-elevated process redirect those writes with links to any file on the system.
     /// </summary>
     public static string DataFolder => DataFolderLazy.Value;
 
     private static readonly Lazy<string> DataFolderLazy = new(() =>
     {
-        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSolve");
+        var dir = DataLocation.TrustedPath;
         try
         {
             if (Admin.IsElevated) MakeTrusted(dir);
@@ -508,7 +508,7 @@ public static class SafePath
     }
 
     /// <summary>
-    /// Creates a fresh, randomly named folder under %ProgramData%\WinSolve that only
+    /// Creates a fresh, randomly named folder under the trusted data folder that only
     /// Administrators and SYSTEM can write to. Used for files that are executed elevated.
     /// </summary>
     public static string CreateAdminOnlyFolder(string purpose)

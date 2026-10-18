@@ -1,11 +1,11 @@
 namespace WinSolve.Core;
 
-/// <summary>Plain text log in %ProgramData%\WinSolve\logs (administrators-only).</summary>
+/// <summary>Plain text log in the data folder's logs (see <see cref="DataLocation"/>).</summary>
 public static class Logger
 {
     private static readonly object Gate = new();
 
-    public static string LogDirectory => Path.Combine(SafePath.DataFolder, "logs");
+    public static string LogDirectory => Path.Combine(DataLocation.UserFolder, "logs");
 
     private static readonly System.Text.RegularExpressions.Regex ProductKey =
         new(@"\b(?:[A-Z0-9]{5}-){4}([A-Z0-9]{5})\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);

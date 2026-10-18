@@ -489,7 +489,7 @@ public static class DriverService
     public static async Task<InstallOutcome> CleanInstallAsync(GpuVendor vendor, string installer, bool requireVendorSignature,
         string? expectedVersion, Func<string, bool> confirm, Action<string> log, CancellationToken ct)
     {
-        var protectedRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSolve", "Drivers");
+        var protectedRoot = Path.Combine(DataLocation.TrustedPath, "Drivers");
         string safeCopy;
         string? copyFolder = null;
         if (SafePath.IsSameOrInside(installer, protectedRoot))

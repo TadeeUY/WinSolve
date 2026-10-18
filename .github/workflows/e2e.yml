@@ -29,6 +29,8 @@ jobs:
       - name: Build app and installer
         run: |
           dotnet publish src/WinSolve/WinSolve.csproj -c Release -o out/app
+          dotnet publish src/WinSolve/WinSolve.csproj -c Release -p:Portable=true -o out/portable
+          Get-ChildItem out/portable | Format-Table Name, Length
           dotnet build src/WinSolve.Setup/WinSolve.Setup.csproj -c Release -p:AppExe=${{ github.workspace }}/out/app/WinSolve.exe -o out/setup
           New-Item -ItemType Directory -Force e2e | Out-Null
 
@@ -93,6 +95,10 @@ jobs:
               "----- PC REPORT PDF END $lang -----"
             }
           }
+
+      - name: Portable mode (NTFS, marker file, FAT32 stick)
+        if: success() || failure()
+        run: ./.github/e2e/portable.ps1 -Portable out/portable/WinSolve.exe -App out/app/WinSolve.exe
 
       - name: Installer - only me
         if: success() || failure()

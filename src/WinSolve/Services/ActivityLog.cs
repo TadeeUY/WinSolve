@@ -21,7 +21,7 @@ public sealed record WeeklySummary(DateTime From, DateTime To, int Alerts, int C
 public static class ActivityLog
 {
     private static readonly object Gate = new();
-    private static string FilePath => Path.Combine(SafePath.DataFolder, "activity.json");
+    private static string FilePath => Path.Combine(DataLocation.UserFolder, "activity.json");
 
     public static void Cleaned(long bytes, string source)
     {

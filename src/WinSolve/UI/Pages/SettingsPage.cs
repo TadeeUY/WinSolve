@@ -156,6 +156,8 @@ public sealed class SettingsPage : Page
                     finally { _saving = false; }
                 })));
 
+        if (PortableStorageText() is { } where) about.Add(Theme.Paragraph(where, Theme.Muted));
+
         var save = Theme.Button("Save", async (_, _) => await SaveAsync(), primary: true, glyph: "\uE74E");
         var body = new Stack(scroll: true).Add(general, background, updates, appearance, oneClick, about);
         AddRow(body, fill: true);
@@ -176,6 +178,15 @@ public sealed class SettingsPage : Page
     }
 
     private Task CheckUpdatesNow() => Main.CheckForUpdatesNowAsync();
+
+    /// <summary>Where the portable edition keeps its data on this PC; null for the installed edition.</summary>
+    private static string? PortableStorageText() => DataLocation.Mode switch
+    {
+        DataMode.BesideExe => $"Portable mode: settings, logs and Undo backups are kept in {DataLocation.UserFolder}. Nothing is saved on this PC.",
+        DataMode.Split => $"Portable mode: settings and logs are kept in {DataLocation.UserFolder}. This drive has no permissions, so Undo backups are kept in {DataLocation.TrustedPath} and removed on exit when nothing is left to undo.",
+        DataMode.Fallback => $"Portable mode: the folder of WinSolve can't be used, so its data is kept in {DataLocation.TrustedPath} and removed on exit when nothing is left to undo.",
+        _ => null,
+    };
 
     private async Task CreateBugReport()
     {

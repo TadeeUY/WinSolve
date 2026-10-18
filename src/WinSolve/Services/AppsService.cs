@@ -449,9 +449,8 @@ public static class AppsService
         {
             var full = Path.GetFullPath(path.Trim().Trim('"')).TrimEnd('\\');
             var own = Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)?.TrimEnd('\\') ?? "";
-            var data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinSolve");
             return (own.Length > 0 && (SafePath.IsSameOrInside(own, full) || SafePath.IsSameOrInside(full, own)))
-                   || SafePath.IsSameOrInside(data, full) || SafePath.IsSameOrInside(full, data);
+                   || DataLocation.AllKnownFolders().Any(data => SafePath.IsSameOrInside(data, full) || SafePath.IsSameOrInside(full, data));
         }
         catch { return true; }
     }

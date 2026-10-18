@@ -62,7 +62,7 @@ public static partial class SafeMode
             Logger.Write("bcdedit /copy: " + copy.Output.Trim());
             throw new InvalidOperationException("Windows could not prepare the Safe Mode start (bcdedit). Nothing was changed.");
         }
-        Reg.Set(RegistryHive.LocalMachine, StateKey, StateValue, id, RegistryValueKind.String);
+        SaveState(id);
 
         await RequireAsync($"/set {id} safeboot {(networking ? "network" : "minimal")}", log, ct);
         await RequireAsync($"/displayorder {id} /remove", log, ct);
@@ -111,8 +111,9 @@ public static partial class SafeMode
     {
         try
         {
-            if (Reg.Get(RegistryHive.LocalMachine, StateKey, StateValue) is not { } stored) return;
-            if (stored is not string id || ParseEntryId(id) != id) { Forget(); return; }
+            if (LoadState() is not { } stored) return;
+            if (ParseEntryId(stored) != stored) { Forget(); return; }
+            var id = stored;
             if (IsRunningInSafeMode) return; // possibly the entry in use right now
             var entry = await BcdAsync($"/enum {id}", default);
             // Already gone, or no longer WinSolve's copy: never delete it, just forget it.
@@ -131,7 +132,27 @@ public static partial class SafeMode
         }
     }
 
-    private static void Forget() => Reg.Delete(RegistryHive.LocalMachine, StateKey, StateValue);
+    // The entry id is kept in the registry, or by the portable edition in its own data folder
+    // (so it leaves nothing in the registry of the PC).
+    private static string StateFile => Path.Combine(DataLocation.TrustedPath, "safe-mode-entry.txt");
+
+    private static void SaveState(string id)
+    {
+        if (Edition.IsPortable) File.WriteAllText(Path.Combine(SafePath.DataFolder, "safe-mode-entry.txt"), id);
+        else Reg.Set(RegistryHive.LocalMachine, StateKey, StateValue, id, RegistryValueKind.String);
+    }
+
+    private static string? LoadState()
+    {
+        if (!Edition.IsPortable) return Reg.Get(RegistryHive.LocalMachine, StateKey, StateValue) is { } v ? v as string ?? "" : null;
+        return File.Exists(StateFile) ? File.ReadAllText(StateFile).Trim() : null;
+    }
+
+    private static void Forget()
+    {
+        if (Edition.IsPortable) { if (File.Exists(StateFile)) File.Delete(StateFile); }
+        else Reg.Delete(RegistryHive.LocalMachine, StateKey, StateValue);
+    }
 
     private static Task<ProcessResult> BcdAsync(string args, CancellationToken ct)
     {

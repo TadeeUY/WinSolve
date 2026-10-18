@@ -78,6 +78,8 @@ internal static class Program
         var startHidden = args.Any(a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
         if (!startHidden) SplashScreen.Show("Starting...");
         Application.Run(new MainForm(startHidden));
+        // Portable edition: working folders go, and so does the fallback folder when nothing is left to undo.
+        DataLocation.CleanUpOnExit();
     }
 
     private static void Report(Exception? ex)
