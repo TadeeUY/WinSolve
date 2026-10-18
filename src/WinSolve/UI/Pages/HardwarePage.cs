@@ -457,6 +457,8 @@ public sealed class HardwarePage : Page
     private sealed class EventsSection : TableLayoutPanel, ISection
     {
         private readonly DataGridView _grid = new();
+        private readonly DataGridView _dumps = new();
+        private readonly Control _dumpsCard;
         private readonly Panel _summaryHost = new() { Height = 24, BackColor = Color.Transparent };
         private bool _loaded;
 
@@ -466,7 +468,28 @@ public sealed class HardwarePage : Page
             BackColor = Color.Transparent;
             RowStyles.Add(new RowStyle(SizeType.AutoSize));
             RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            RowStyles.Add(new RowStyle(SizeType.AutoSize));
             RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            // Blue screens read from the crash dumps in C:\Windows\Minidump: stop code and, when the
+            // dump says, the driver at the faulting address.
+            Theme.StyleGrid(_dumps);
+            _dumps.ReadOnly = true;
+            _dumps.Columns.Add("time", "Date");
+            _dumps.Columns.Add("code", "Stop code");
+            _dumps.Columns.Add("cause", "Probable cause");
+            _dumps.Columns.Add("hint", "What to do");
+            _dumps.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            _dumps.Columns["time"]!.FillWeight = 55;
+            _dumps.Columns["code"]!.FillWeight = 120;
+            _dumps.Columns["cause"]!.FillWeight = 70;
+            _dumps.Columns["hint"]!.FillWeight = 220;
+            _dumps.Height = 170;
+            _dumpsCard = Theme.InCard(_dumps);
+            _dumpsCard.Height = 190;
+            _dumpsCard.Dock = DockStyle.Top;
+            _dumpsCard.Margin = new Padding(0, 0, 0, 10);
+            _dumpsCard.Visible = false;
 
             Theme.StyleGrid(_grid);
             _grid.ReadOnly = true;
@@ -485,8 +508,9 @@ public sealed class HardwarePage : Page
                 Theme.Button("Event Viewer", (_, _) => ProcessRunner.ShellOpen("eventvwr.msc")),
                 Theme.Button("Reliability Monitor", (_, _) => ProcessRunner.ShellOpen("perfmon.exe", "/rel"))), 0, 0);
             Controls.Add(_summaryHost, 0, 1);
+            Controls.Add(_dumpsCard, 0, 2);
             Theme.EmptyState(_grid, "No critical events in the last 30 days.");
-            Controls.Add(Theme.InCard(_grid), 0, 2);
+            Controls.Add(Theme.InCard(_grid), 0, 3);
         }
 
         public async void Refresh(bool force)
@@ -496,6 +520,16 @@ public sealed class HardwarePage : Page
             _summaryHost.Controls.Clear();
             _summaryHost.Controls.Add(Theme.Label("Reading the event log...", Theme.Body, Theme.Muted));
             var events = await Task.Run(() => HardwareService.GetCriticalEvents(30));
+            var dumps = await Task.Run(() => CrashDumps.ReadRecent(20));
+            _dumps.Rows.Clear();
+            foreach (var d in dumps)
+            {
+                var cause = d.SuspectModule is null ? Localization.Loc.T("Not in the dump")
+                    : CrashDumps.IsKernel(d.SuspectModule) ? Localization.Loc.T($"Windows kernel ({d.SuspectModule})") : d.SuspectModule;
+                var i = _dumps.Rows.Add(d.Time.ToString("g", Localization.Loc.Culture), $"{d.CodeText}  {d.Name}", cause, Localization.Loc.T(CrashDumps.Hint(d)));
+                _dumps.Rows[i].Cells["code"].ToolTipText = $"{d.File}\n" + string.Join("  ", d.Parameters.Select((p, n) => $"P{n + 1} 0x{p:X}"));
+            }
+            _dumpsCard.Visible = dumps.Count > 0;
             _grid.Rows.Clear();
             foreach (var e in events)
                 _grid.Rows.Add(e.Time.ToString("g"), e.Source.Replace("Microsoft-Windows-", ""), e.EventId, e.Summary);

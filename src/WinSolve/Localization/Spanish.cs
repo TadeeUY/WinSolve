@@ -6,7 +6,7 @@ public static partial class Spanish
     // Strings of the safety fixes live in their own files (Spanish.Safety*.cs) and are merged here.
     static Spanish()
     {
-        foreach (var extra in new[] { SafetyCleanup, SafetyDrivers, SafetyTweaks, SafetyApps, SafeModeStrings, TransparencyStrings, ProfileStrings })
+        foreach (var extra in new[] { SafetyCleanup, SafetyDrivers, SafetyTweaks, SafetyApps, SafeModeStrings, TransparencyStrings, ProfileStrings, CrashDumpStrings })
             foreach (var (key, value) in extra) Table[key] = value;
     }
 

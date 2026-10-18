@@ -78,6 +78,17 @@ jobs:
           }
           pnputil /enum-drivers | Select-String -Context 0,6 winsolvetest
 
+      - name: Live kernel dump (a real dump file, without crashing)
+        continue-on-error: true
+        timeout-minutes: 8
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'livedump'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Get-StorageSubSystem | Select-Object -First 1 | Get-StorageDiagnosticInfo -DestinationPath $dir -IncludeLiveDump -ErrorAction Continue | Out-Null
+          $dump = Get-ChildItem $dir -Recurse -Filter *.dmp -ErrorAction SilentlyContinue | Sort-Object Length | Select-Object -First 1
+          if ($dump) { "Live dump: $($dump.FullName) ($([math]::Round($dump.Length / 1MB)) MB)"; "WINSOLVE_E2E_LIVEDUMP=$($dump.FullName)" >> $env:GITHUB_ENV }
+          else { 'No live dump was produced.'; Get-ChildItem $dir -Recurse | Select-Object -First 20 | Format-Table FullName, Length }
+
       - name: Driver tests on real Windows
         env:
           WINSOLVE_E2E: "1"

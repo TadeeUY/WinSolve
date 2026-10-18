@@ -15,8 +15,11 @@ public sealed class WinSolveProfile
     public const int CurrentVersion = 1;
     public const string Extension = ".winsolve";
 
-    public string Format { get; set; } = FormatName;
-    public int Version { get; set; } = CurrentVersion;
+    /// <summary>Must be "winsolve-profile" in the file (filled in when saving).</summary>
+    public string? Format { get; set; }
+
+    /// <summary>Format version; must be in the file (filled in when saving).</summary>
+    public int Version { get; set; }
     public string? Name { get; set; }
     public string? CreatedWith { get; set; }
     public DateTime? Created { get; set; }
@@ -97,7 +100,12 @@ public static class ProfileService
         AllowTrailingCommas = true,
     };
 
-    public static string Serialize(WinSolveProfile profile) => JsonSerializer.Serialize(profile, Json);
+    public static string Serialize(WinSolveProfile profile)
+    {
+        profile.Format = WinSolveProfile.FormatName;
+        profile.Version = WinSolveProfile.CurrentVersion;
+        return JsonSerializer.Serialize(profile, Json);
+    }
 
     /// <summary>Reads a profile; throws <see cref="InvalidDataException"/> with a readable reason.</summary>
     public static WinSolveProfile Parse(string json)
@@ -105,9 +113,9 @@ public static class ProfileService
         WinSolveProfile? profile;
         try { profile = JsonSerializer.Deserialize<WinSolveProfile>(json, Json); }
         catch (JsonException ex) { throw new InvalidDataException($"The file is not a valid WinSolve profile (JSON error at line {(ex.LineNumber ?? 0) + 1})."); }
-        if (profile is null || !string.Equals(profile.Format, WinSolveProfile.FormatName, StringComparison.Ordinal))
+        if (profile is null || !string.Equals(profile.Format, WinSolveProfile.FormatName, StringComparison.Ordinal) || profile.Version < 1)
             throw new InvalidDataException("The file is not a WinSolve profile.");
-        if (profile.Version < 1 || profile.Version > WinSolveProfile.CurrentVersion)
+        if (profile.Version > WinSolveProfile.CurrentVersion)
             throw new InvalidDataException($"This profile was made by a newer WinSolve (format {profile.Version}). Update WinSolve to use it.");
         return profile;
     }

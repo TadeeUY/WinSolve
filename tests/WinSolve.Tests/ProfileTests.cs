@@ -50,6 +50,7 @@ public class ProfileTests
     [InlineData("""{ "format": "something-else", "version": 1 }""")]
     [InlineData("""{ "version": 1 }""")]
     [InlineData("null")]
+    [InlineData("""{ "format": "winsolve-profile" }""")]
     public void Files_that_are_not_profiles_are_refused(string json)
         => Assert.Throws<InvalidDataException>(() => ProfileService.Parse(json));
 
