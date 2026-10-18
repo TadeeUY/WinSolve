@@ -77,6 +77,18 @@ public class PerformanceE2ETests(ITestOutputHelper output)
     }
 
     [E2EFact]
+    public async Task Scan_speed_by_folder()
+    {
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        foreach (var dir in new[] { Path.Combine(windows, "System32"), Path.Combine(windows, "WinSxS"), Path.Combine(windows, "System32"), @"C:\Program Files" })
+        {
+            var progress = new DiskScanner.Progress();
+            var r = await DiskScanner.ScanAsync(dir, progress, default);
+            output.WriteLine($"{dir}: {progress.Files:N0} files in {r.Elapsed.TotalSeconds:0.0} s ({progress.Files / Math.Max(0.1, r.Elapsed.TotalSeconds):N0} files/s)");
+        }
+    }
+
+    [E2EFact]
     public void CPU_temperature_reports_its_source()
     {
         var reading = CpuTemperature.Read(10);
