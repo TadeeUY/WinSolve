@@ -153,6 +153,18 @@ public static class InteractiveUser
         // No \\?\ prefix or 8.3 short names (C:\Users\BOB~1) that would slip past the comparison.
         try { full = (SafePath.Normalize(path) ?? Path.GetFullPath(path)).TrimEnd('\\'); }
         catch { return false; }
+        return IsOtherUsersDataNormalized(full);
+    }
+
+    /// <summary>
+    /// <see cref="IsOtherUsersData"/> for a path that is already full and in its long form, such as
+    /// one built from a normalized folder and names read from directory listings (which are always
+    /// long names). Doesn't touch the disk: normalizing (GetLongPathName) reads every folder of the
+    /// path, which made scanning deep trees slow.
+    /// </summary>
+    internal static bool IsOtherUsersDataNormalized(string full)
+    {
+        full = full.TrimEnd('\\');
         foreach (var profile in OtherProfileFolders.Value)
             if (SafePath.IsSameOrInside(full, profile)) return true;
 

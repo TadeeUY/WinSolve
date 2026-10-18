@@ -95,6 +95,9 @@ public static class DiskScanner
             if (InteractiveUser.IsOtherUsersData(path))
                 throw new UnauthorizedAccessException(Localization.Loc.T("This folder belongs to another user of this PC."));
             var sw = System.Diagnostics.Stopwatch.StartNew();
+            // Normalized once: every folder below is built from names read from directory listings,
+            // which are already full long names, so the per-folder checks are plain string compares.
+            path = SafePath.Normalize(path) ?? path;
             var root = new SpaceNode(path.TrimEnd('\\') + (path.Length <= 3 ? "\\" : ""), null, isFile: false);
             var ext = new ConcurrentDictionary<string, (long Size, long Count)>(StringComparer.OrdinalIgnoreCase);
             long inaccessible = 0;
@@ -140,7 +143,7 @@ public static class DiskScanner
                         if (entry.IsDirectory)
                         {
                             // Other Windows users' folders stay private.
-                            if (InteractiveUser.IsOtherUsersData(Path.Combine(dirPath, entry.Name))) continue;
+                            if (InteractiveUser.IsOtherUsersDataNormalized(Path.Combine(dirPath, entry.Name))) continue;
                             var child = new SpaceNode(entry.Name, node, isFile: false);
                             lock (node.Children) node.Children.Add(child);
                             subdirs.Add((child, Path.Combine(dirPath, entry.Name)));
