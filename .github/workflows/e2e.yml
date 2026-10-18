@@ -96,6 +96,10 @@ jobs:
             }
           }
 
+      - name: Profiles from the command line
+        if: success() || failure()
+        run: ./.github/e2e/profile.ps1 -App out/app/WinSolve.exe
+
       - name: Portable mode (NTFS, marker file, FAT32 stick)
         if: success() || failure()
         run: ./.github/e2e/portable.ps1 -Portable out/portable/WinSolve.exe -App out/app/WinSolve.exe

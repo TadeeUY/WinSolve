@@ -49,6 +49,14 @@ internal static class Program
             return;
         }
 
+        // Apply a profile without opening the app (for technicians and scripts).
+        if (ProfileCli.IsProfileCommand(args))
+        {
+            Environment.ExitCode = ProfileCli.Run(args);
+            DataLocation.CleanUpOnExit();
+            return;
+        }
+
         // Single instance: if WinSolve is already running (e.g. in the notification area), don't start another.
         using var mutex = new Mutex(true, @"Local\WinSolve.SingleInstance", out var isNew);
         if (!isNew && args.Any(a => a.Equals("--restarted", StringComparison.OrdinalIgnoreCase)))

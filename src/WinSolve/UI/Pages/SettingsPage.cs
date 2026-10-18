@@ -1,5 +1,6 @@
 using WinSolve.Core;
 using WinSolve.Services;
+using WinSolve.Localization;
 
 namespace WinSolve.UI.Pages;
 
@@ -158,8 +159,15 @@ public sealed class SettingsPage : Page
 
         if (PortableStorageText() is { } where) about.Add(Theme.Paragraph(where, Theme.Muted));
 
+        var profiles = new StackCard().Add(
+            Theme.SectionHeader("\uE8B7", "Profiles", "Save this PC's tweaks, DNS and one-click settings to a .winsolve file, and apply it on other PCs."),
+            Theme.Row(
+                Theme.Button("Export profile", async (_, _) => await ExportProfileAsync(), glyph: "\uEDE1"),
+                Theme.Button("Import profile", async (_, _) => await ImportProfileAsync(), glyph: "\uE8B5")),
+            Theme.Paragraph("From a console: WinSolve.exe --apply-profile file.winsolve [--silent] [--dry-run]", Theme.Muted));
+
         var save = Theme.Button("Save", async (_, _) => await SaveAsync(), primary: true, glyph: "\uE74E");
-        var body = new Stack(scroll: true).Add(general, background, updates, appearance, oneClick, about);
+        var body = new Stack(scroll: true).Add(general, background, updates, appearance, oneClick, profiles, about);
         AddRow(body, fill: true);
         AddRow(Theme.Row(save));
         LoadChecks();
@@ -178,6 +186,63 @@ public sealed class SettingsPage : Page
     }
 
     private Task CheckUpdatesNow() => Main.CheckForUpdatesNowAsync();
+
+    private async Task ExportProfileAsync()
+    {
+        if (Pickers.PickersBlocked(FindForm()!)) return;
+        using var dlg = new SaveFileDialog
+        {
+            Filter = Loc.T("WinSolve profile") + $" (*{WinSolveProfile.Extension})|*{WinSolveProfile.Extension}",
+            FileName = $"{Environment.MachineName}{WinSolveProfile.Extension}",
+            Title = Loc.T("Export profile"),
+        };
+        if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
+        try
+        {
+            var profile = await ProfileService.ExportAsync(Path.GetFileNameWithoutExtension(dlg.FileName));
+            await File.WriteAllTextAsync(dlg.FileName, ProfileService.Serialize(profile));
+            Logger.Write($"[profile] Exported {dlg.FileName}: {profile.Tweaks?.Apply.Count ?? 0} tweaks, DNS {profile.Dns?.Preset ?? "unchanged"}.");
+            Info(string.Format(Loc.T("Profile saved: {0}"), dlg.FileName));
+        }
+        catch (Exception ex) { Info(ex.Message); }
+    }
+
+    private async Task ImportProfileAsync()
+    {
+        if (Pickers.PickersBlocked(FindForm()!)) return;
+        using var dlg = new OpenFileDialog
+        {
+            Filter = Loc.T("WinSolve profile") + $" (*{WinSolveProfile.Extension};*.json)|*{WinSolveProfile.Extension};*.json",
+            Title = Loc.T("Import profile"),
+            DereferenceLinks = false,
+        };
+        if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
+        ProfilePlan plan;
+        try
+        {
+            var profile = ProfileService.Load(dlg.FileName);
+            plan = await Task.Run(() => ProfileService.Check(profile, TweakCatalog.All, TaskCatalog.All));
+        }
+        catch (Exception ex) { Info(Loc.T(ex.Message)); return; }
+
+        if (plan.HasErrors)
+        {
+            Info(Loc.T("This profile can't be applied:") + "\n\n- " + string.Join("\n- ", plan.Issues.Where(i => i.IsError).Select(i => Loc.T(i.Message))));
+            return;
+        }
+        var lines = ProfileService.Describe(plan).Where(l => !l.StartsWith(' ')).Select(Loc.T).ToList();
+        var notes = plan.Issues.Select(i => Loc.T(i.Message)).Concat(plan.Warnings.Select(Loc.T)).ToList();
+        var message = Loc.T("Apply this profile?") + "\n\n- " + string.Join("\n- ", lines.Take(30))
+                      + (lines.Count > 30 ? "\n" + Loc.T($"...and {lines.Count - 30} more") : "")
+                      + (notes.Count == 0 ? "" : "\n\n" + string.Join("\n", notes));
+        if (!(plan.Warnings.Count > 0 ? ConfirmDanger(message) : Confirm(message))) return;
+        RunDialog.Run(FindForm()!, "Applying profile", async (log, _, ct) =>
+        {
+            var result = await ProfileService.ApplyAsync(plan, AppSettings.Current.CreateRestorePoint, warningsAccepted: true, log, ct);
+            if (result.Failed > 0) throw new InvalidOperationException(Loc.T($"{result.Failed} step(s) failed. Details are above and in the log."));
+        });
+        if (!Main.Reload("settings")) Info(RestartToApply);
+    }
 
     /// <summary>Where the portable edition keeps its data on this PC; null for the installed edition.</summary>
     private static string? PortableStorageText() => DataLocation.Mode switch
