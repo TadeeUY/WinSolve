@@ -162,6 +162,7 @@ public static class DataLocation
     public static void CleanUpOnExit()
     {
         if (Mode == DataMode.Installed) return;
+        RemoveExtractedRuntimeAfterExit();
         try
         {
             CleanUp(TrustedPath, removeWhenEmpty: Mode != DataMode.BesideExe);
@@ -169,6 +170,34 @@ public static class DataLocation
         catch (Exception ex)
         {
             Logger.Write($"Portable cleanup: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The self-contained portable .exe unpacks a few runtime files into %TEMP%\.net\WinSolve-Portable
+    /// on start. They are in use until the process ends, so a hidden cmd removes them right after.
+    /// </summary>
+    public static void RemoveExtractedRuntimeAfterExit()
+    {
+        if (!Edition.IsPortableBuild || Environment.ProcessPath is not { } exe) return;
+        try
+        {
+            var baseDir = Environment.GetEnvironmentVariable("DOTNET_BUNDLE_EXTRACT_BASE_DIR") is { Length: > 0 } custom
+                ? custom : Path.Combine(Path.GetTempPath(), ".net");
+            var dir = new DirectoryInfo(Path.Combine(baseDir, Path.GetFileNameWithoutExtension(exe)));
+            // Never follow a link someone put there.
+            if (!dir.Exists || (dir.Attributes & FileAttributes.ReparsePoint) != 0 || dir.FullName.Contains('"')) return;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ProcessRunner.Resolve("cmd.exe"),
+                $"/d /c ping -n 4 127.0.0.1 >nul & rmdir /s /q \"{dir.FullName}\"")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = Environment.SystemDirectory,
+            })?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Logger.Write($"Portable: could not schedule removing the unpacked runtime: {ex.Message}");
         }
     }
 

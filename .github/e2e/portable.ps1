@@ -26,8 +26,16 @@ function Run-Portable([string]$exe, [string]$name) {
     Start-Sleep -Seconds 12
     Screenshot $name
     # Closing the window exits (CloseToTray is off in the seeded settings), which runs the exit cleanup.
+    $p.Refresh()
+    Write-Host "  main window before closing: '$($p.MainWindowTitle)' ($($p.MainWindowHandle))"
     $p.CloseMainWindow() | Out-Null
-    Check ($p.WaitForExit(30000)) "$name closes when its window is closed"
+    $closed = $p.WaitForExit(30000)
+    if (-not $closed) {
+        $p.Refresh()
+        Write-Host "  still running: window '$($p.MainWindowTitle)' ($($p.MainWindowHandle)), responding $($p.Responding), $($p.Threads.Count) threads"
+        Screenshot "$name-not-closed"
+    }
+    Check $closed "$name closes when its window is closed"
     if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force; $p.WaitForExit(10000) | Out-Null }
 }
 
@@ -58,7 +66,9 @@ $ntfs = Join-Path $env:RUNNER_TEMP 'portable-ntfs'
 New-Item -ItemType Directory -Force $ntfs | Out-Null
 Copy-Item $Portable (Join-Path $ntfs 'WinSolve-Portable.exe')
 Test-Portable (Join-Path $ntfs 'WinSolve-Portable.exe') 'portable-ntfs'
+Start-Sleep -Seconds 6   # the unpacked runtime is removed a few seconds after WinSolve exits
 $extract = Get-ChildItem "$env:TEMP\.net" -Directory -ErrorAction SilentlyContinue | Where-Object Name -like 'WinSolve*'
+if ($extract) { Get-ChildItem $extract.FullName -Recurse -File | ForEach-Object { Write-Host "    unpacked: $($_.FullName) ($($_.Length))" } }
 Check ($null -eq $extract) "nothing extracted to $env:TEMP\.net$(if ($extract) { ': ' + ($extract.FullName -join ', ') })"
 
 Write-Host "== Installed build with a WinSolve.portable marker"

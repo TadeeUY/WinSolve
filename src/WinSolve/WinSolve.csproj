@@ -42,6 +42,17 @@
   </PropertyGroup>
 
   <!--
+    El runtime de escritorio trae las DLL nativas de WPF, QUIC y el GC independiente, que una app
+    Windows Forms no usa. En la portable se quitan: el .exe pesa menos y se desempaqueta menos en %TEMP%.
+  -->
+  <Target Name="DropUnusedNativeLibraries" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(Portable)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+        Condition="'%(Filename)' == 'PenImc_cor3' Or '%(Filename)' == 'PresentationNative_cor3' Or '%(Filename)' == 'wpfgfx_cor3' Or '%(Filename)' == 'vcruntime140_cor3' Or '%(Filename)' == 'msquic' Or '%(Filename)' == 'clrgc' Or '%(Filename)' == 'D3DCompiler_47_cor3'" />
+    </ItemGroup>
+  </Target>
+
+  <!--
     La UI está hecha en Windows Forms 100% en código (sin diseñador), así que
     alcanza con referenciar el framework de escritorio. Compila tanto en Windows
     como en Linux/CI gracias a EnableWindowsTargeting.
