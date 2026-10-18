@@ -96,3 +96,59 @@ public class PerformanceE2ETests(ITestOutputHelper output)
         Assert.True(reading.Celsius is null || reading.Celsius is > 0 and < 125);
     }
 }
+
+public class DiskScannerTests
+{
+    [Fact]
+    public async Task A_deep_tree_adds_up_exactly()
+    {
+        var root = Directory.CreateTempSubdirectory("winsolve-scan").FullName;
+        try
+        {
+            long expectedBytes = 0, expectedFiles = 0;
+            var rnd = new Random(7);
+            void Make(string dir, int depth)
+            {
+                for (var f = 0; f < 3; f++)
+                {
+                    var size = rnd.Next(0, 5000) + (f == 0 && depth == 5 ? (2 << 20) : 0); // some files over the 1 MB grouping limit
+                    File.WriteAllBytes(Path.Combine(dir, $"f{f}.bin"), new byte[size]);
+                    expectedBytes += size;
+                    expectedFiles++;
+                }
+                if (depth == 6) return;
+                for (var d = 0; d < 2; d++)
+                {
+                    var sub = Directory.CreateDirectory(Path.Combine(dir, $"d{depth}{d}")).FullName;
+                    Make(sub, depth + 1);
+                }
+            }
+            Make(root, 0);
+
+            var progress = new DiskScanner.Progress();
+            var r = await DiskScanner.ScanAsync(root, progress, default);
+            Assert.Equal(expectedBytes, r.Root.Size);
+            Assert.Equal(expectedFiles, r.Root.FileCount);
+            Assert.Equal(expectedFiles, progress.Files);
+            // Every folder's total is its own files plus its subfolders'.
+            void Check(SpaceNode n)
+            {
+                if (n.IsFile) return;
+                Assert.Equal(n.Size, n.Children.Sum(c => c.Size));
+                foreach (var c in n.Children) Check(c);
+            }
+            Check(r.Root);
+            // Largest first at every level.
+            Assert.Equal(r.Root.Children.OrderByDescending(c => c.Size).Select(c => c.Name), r.Root.Children.Select(c => c.Name));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Cancelling_stops_the_scan()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => DiskScanner.ScanAsync(Path.GetTempPath(), new DiskScanner.Progress(), cts.Token));
+    }
+}

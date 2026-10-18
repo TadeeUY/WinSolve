@@ -101,6 +101,10 @@ public static class DiskScanner
             var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
             string? winSxS = windows.Length > 0 ? Path.Combine(windows, "WinSxS") : null;
 
+            // Several folders are read at once: a directory read mostly waits for the disk.
+            var queue = new System.Collections.Concurrent.BlockingCollection<(SpaceNode Node, string Path, int Depth)>();
+            var pending = 1;
+
             void ScanDir(SpaceNode node, string dirPath, int depth)
             {
                 ct.ThrowIfCancellationRequested();
@@ -182,30 +186,50 @@ public static class DiskScanner
 
                 if (depth <= 2) progress.Current = dirPath;
 
-                if (depth < 3 && subdirs.Count > 1)
-                {
-                    Parallel.ForEach(subdirs, new ParallelOptions { CancellationToken = ct, MaxDegreeOfParallelism = Environment.ProcessorCount },
-                        s => ScanDir(s.Node, s.Path, depth + 1));
-                }
-                else
-                {
-                    foreach (var s in subdirs) ScanDir(s.Node, s.Path, depth + 1);
-                }
-
+                // Subfolders go to the shared queue: every level is read in parallel, not only the
+                // first ones (deep trees such as Program Files were read one folder at a time).
                 foreach (var s in subdirs)
                 {
-                    node.Size += s.Node.Size;
-                    node.FileCount += s.Node.FileCount;
+                    Interlocked.Increment(ref pending);
+                    queue.Add((s.Node, s.Path, depth + 1));
                 }
             }
 
-            ScanDir(root, path, 0);
+            queue.Add((root, path, 0));
+            var workers = Enumerable.Range(0, Workers).Select(_ => Task.Factory.StartNew(() =>
+            {
+                foreach (var (node, dir, depth) in queue.GetConsumingEnumerable(ct))
+                {
+                    try { ScanDir(node, dir, depth); }
+                    finally { if (Interlocked.Decrement(ref pending) == 0) queue.CompleteAdding(); }
+                }
+            }, ct, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+            try { Task.WaitAll(workers, ct); }
+            catch (AggregateException ex) when (ex.InnerExceptions.All(e => e is OperationCanceledException)) { throw new OperationCanceledException(ct); }
+            ct.ThrowIfCancellationRequested();
+
+            AddUp(root);
             root.SortRecursive();
 
             var stats = ext.Select(kv => new ExtensionStat(kv.Key, kv.Value.Size, kv.Value.Count))
                 .OrderByDescending(s => s.Size).ToList();
             return new SpaceScanResult { Root = root, Extensions = stats, Elapsed = sw.Elapsed, Inaccessible = inaccessible };
         }, ct);
+
+    /// <summary>Folders read at the same time (directory reads mostly wait for the disk).</summary>
+    internal static int Workers => Math.Clamp(Environment.ProcessorCount * 2, 4, 16);
+
+    /// <summary>Each folder's own files were counted while scanning; this adds its subfolders' totals.</summary>
+    internal static void AddUp(SpaceNode node)
+    {
+        foreach (var child in node.Children)
+        {
+            if (child.IsFile) continue;
+            AddUp(child);
+            node.Size += child.Size;
+            node.FileCount += child.FileCount;
+        }
+    }
 
     /// <summary>How many names (hard links) the file has; 1 when it can't be read.</summary>
     private static uint LinkCount(string path)
