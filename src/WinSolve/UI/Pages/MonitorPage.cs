@@ -71,7 +71,13 @@ public sealed class MonitorPage : Page
             if (IsDisposed) return;
 
             Set("cpu", $"{s.CpuPercent:0}%", s.CpuGhz is { } ghz ? $"{ghz:0.00} GHz" : "", s.CpuPercent);
-            Set("cputemp", s.CpuTempC is { } ct ? $"{ct:0} °C" : "N/A", s.CpuTempC is null ? "Not reported by this PC" : "ACPI thermal zone", s.CpuTempC ?? 0, TempColor(s.CpuTempC, 85));
+            Set("cputemp", s.CpuTempC is { } ct ? $"{ct:0} °C" : "N/A", s.CpuTempSource switch
+            {
+                CpuTempSource.LibreHardwareMonitor => "CPU sensor (LibreHardwareMonitor)",
+                CpuTempSource.OpenHardwareMonitor => "CPU sensor (OpenHardwareMonitor)",
+                CpuTempSource.AcpiThermalZone => "ACPI thermal zone (approximate)",
+                _ => "Not reported by this PC",
+            }, s.CpuTempC ?? 0, TempColor(s.CpuTempC, 85));
             Set("ram", $"{s.RamUsedPercent:0}%", $"{Format.Bytes(s.RamUsedBytes)} of {Format.Bytes(s.RamTotalBytes)}", s.RamUsedPercent);
             Set("gpu", s.GpuPercent is { } gp ? $"{gp:0}%" : "N/A", s.Gpus.FirstOrDefault()?.Name ?? "", s.GpuPercent ?? 0);
 

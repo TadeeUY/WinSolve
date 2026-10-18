@@ -15,6 +15,7 @@ public sealed class LiveSample
     public double CpuPercent { get; set; }
     public double? CpuGhz { get; set; }
     public double? CpuTempC { get; set; }
+    public CpuTempSource CpuTempSource { get; set; }
     public double RamUsedPercent { get; set; }
     public long RamUsedBytes { get; set; }
     public long RamTotalBytes { get; set; }
@@ -28,7 +29,8 @@ public sealed class LiveSample
 /// Live sensors without third-party kernel drivers:
 /// CPU/RAM/disk/network/GPU load from WMI performance classes (language-independent),
 /// GPU temperature from D3DKMT (the same source Task Manager uses) with NVML as fallback,
-/// and CPU temperature from the ACPI thermal zone when the firmware reports one.
+/// and CPU temperature from a running LibreHardwareMonitor/OpenHardwareMonitor or the ACPI thermal
+/// zone (see <see cref="CpuTemperature"/>).
 /// </summary>
 public static class LiveMonitor
 {
@@ -54,10 +56,9 @@ public static class LiveMonitor
             if (perf > 0 && _baseMhz is > 0) s.CpuGhz = _baseMhz.Value * perf / 100.0 / 1000.0;
         }
 
-        // ACPI thermal zones report Kelvin; many desktops expose none or a fixed value.
-        var zones = Wmi.Query("SELECT Temperature FROM Win32_PerfFormattedData_Counters_ThermalZoneInformation")
-            .Select(z => z.Get<uint>("Temperature")).Where(k => k > 273 && k < 400).ToList();
-        if (zones.Count > 0) s.CpuTempC = zones.Max() - 273.15;
+        var temp = CpuTemperature.Read(s.CpuPercent);
+        s.CpuTempC = temp.Celsius;
+        s.CpuTempSource = temp.Source;
 
         foreach (var os in Wmi.Query("SELECT TotalVisibleMemorySize, FreePhysicalMemory FROM Win32_OperatingSystem"))
         {

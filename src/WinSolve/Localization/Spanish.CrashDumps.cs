@@ -5,6 +5,9 @@ public static partial class Spanish
     /// <summary>Spanish strings for the blue screen dumps on the Hardware page.</summary>
     private static readonly Dictionary<string, string> CrashDumpStrings = new(StringComparer.Ordinal)
     {
+        ["CPU sensor (LibreHardwareMonitor)"] = "Sensor de la CPU (LibreHardwareMonitor)",
+        ["CPU sensor (OpenHardwareMonitor)"] = "Sensor de la CPU (OpenHardwareMonitor)",
+        ["ACPI thermal zone (approximate)"] = "Zona térmica ACPI (aproximada)",
         ["Stop code"] = "Código de error",
         ["Probable cause"] = "Causa probable",
         ["What to do"] = "Qué hacer",
