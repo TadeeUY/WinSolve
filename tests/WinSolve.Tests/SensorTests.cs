@@ -77,45 +77,6 @@ public class PerformanceE2ETests(ITestOutputHelper output)
     }
 
     [E2EFact]
-    public async Task Scan_speed_by_folder()
-    {
-        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-        foreach (var dir in new[] { Path.Combine(windows, "System32"), Path.Combine(windows, "WinSxS"), Path.Combine(windows, "System32"), @"C:\Program Files" })
-        {
-            var progress = new DiskScanner.Progress();
-            var r = await DiskScanner.ScanAsync(dir, progress, default);
-            output.WriteLine($"{dir}: {progress.Files:N0} files in {r.Elapsed.TotalSeconds:0.0} s ({progress.Files / Math.Max(0.1, r.Elapsed.TotalSeconds):N0} files/s)");
-        }
-    }
-
-    [E2EFact]
-    public async Task Find_the_slow_folders()
-    {
-        // Baseline: the plain .NET recursive enumeration of the same tree, then our scanner per subfolder.
-        foreach (var top in new[] { Environment.GetFolderPath(Environment.SpecialFolder.Windows), @"C:\Program Files" })
-        {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            long n = 0;
-            foreach (var _ in Directory.EnumerateFiles(top, "*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint })) n++;
-            output.WriteLine($"Plain .NET enumeration of {top}: {n:N0} files in {sw.Elapsed.TotalSeconds:0.0} s");
-
-            var times = new List<(string Dir, double Seconds, long Files)>();
-            foreach (var dir in Directory.EnumerateDirectories(top))
-            {
-                var progress = new DiskScanner.Progress();
-                try
-                {
-                    var r = await DiskScanner.ScanAsync(dir, progress, default);
-                    times.Add((dir, r.Elapsed.TotalSeconds, progress.Files));
-                }
-                catch (Exception ex) { output.WriteLine($"{dir}: {ex.Message}"); }
-            }
-            foreach (var t in times.OrderByDescending(t => t.Seconds).Take(6))
-                output.WriteLine($"  {t.Dir}: {t.Files:N0} files in {t.Seconds:0.0} s");
-        }
-    }
-
-    [E2EFact]
     public void CPU_temperature_reports_its_source()
     {
         var reading = CpuTemperature.Read(10);
