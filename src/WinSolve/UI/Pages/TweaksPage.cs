@@ -102,7 +102,11 @@ public sealed class TweaksPage : Page
             var info = new Label { Text = "", Font = Theme.IconsSmall, ForeColor = Theme.Muted, AutoSize = true, Cursor = Cursors.Help, Margin = new Padding(0, 6, 0, 0) };
             var tip = Loc.T(t.Description) + (t.Warning is null ? "" : "\n\n" + Loc.T(t.Warning)) + (t.NeedsReboot ? "\n\n" + Loc.T("Requires a restart.") : "")
                       + (t.AllUsers ? "\n\n" + Loc.T("Applies to all users of this PC.") : "");
-            _tips.SetToolTip(info, tip);
+            var changes = TweakDetails.Summary(t);
+            _tips.SetToolTip(info, changes.Length == 0 ? tip : tip + "\n\n" + changes);
+            // The (i) opens the full list of registry values, services and commands.
+            info.Click += (_, _) => ShowChanges(t);
+            A11y.Clickable(info, Loc.T("What does this change?"), Loc.T(t.Title), AccessibleRole.PushButton);
             _tips.SetToolTip(box, tip);
 
             row.Controls.Add(box, 0, 0);
@@ -347,7 +351,11 @@ public sealed class TweaksPage : Page
             label.Anchor = AnchorStyles.Left;
             var toggle = Theme.Toggle("", false);
             toggle.Anchor = AnchorStyles.Right;
-            _tips.SetToolTip(label, Loc.T(t.Description) + (t.AllUsers ? "\n\n" + Loc.T("Applies to all users of this PC.") : ""));
+            var prefTip = Loc.T(t.Description) + (t.AllUsers ? "\n\n" + Loc.T("Applies to all users of this PC.") : "");
+            var prefChanges = TweakDetails.Summary(t);
+            _tips.SetToolTip(label, prefChanges.Length == 0 ? prefTip : prefTip + "\n\n" + prefChanges);
+            label.Cursor = Cursors.Help;
+            label.Click += (_, _) => ShowChanges(t);
             toggle.CheckedChanged += (_, _) =>
             {
                 if (_loading) return;
@@ -645,5 +653,12 @@ public sealed class TweaksPage : Page
     {
         if (disposing) _tips.Dispose();
         base.Dispose(disposing);
+    }
+
+    private void ShowChanges(Tweak tweak)
+    {
+        if (tweak.Changes.Count == 0) return;
+        using var dialog = new TweakDetailsDialog(tweak);
+        dialog.ShowDialog(FindForm());
     }
 }

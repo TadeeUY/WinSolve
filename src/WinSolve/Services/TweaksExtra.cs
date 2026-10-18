@@ -92,9 +92,10 @@ public static partial class TweakCatalog
         foreach (var t in list) t.Group = Groups.GetValueOrDefault(t.Id, TweakGroup.Advanced);
     }
 
-    private static Tweak ActionTweak(string id, string category, string title, string description, Action run) => new()
+    private static Tweak ActionTweak(string id, string category, string title, string description, string[] tasks, Action run) => new()
     {
         Id = id, Category = category, Title = title, Description = description, IsAction = true,
+        Changes = [.. tasks.Select(t => new TweakChange(TweakChangeKind.Command, t, "Runs once", "Nothing to undo (files are deleted)"))],
         IsApplied = () => false,
         Apply = run,
         Revert = () => { },
@@ -113,9 +114,11 @@ public static partial class TweakCatalog
             // ───────────── Essential ─────────────
             ActionTweak("ess-temp-files", "System", "Delete temporary files",
                 "Deletes the user and Windows temporary folders (files in use are skipped).",
+                [@"Deletes the contents of %TEMP% and %WINDIR%\Temp (files over a day old, not in use)"],
                 () => { RunTask("clean-temp-user"); RunTask("clean-temp-windows"); }),
             ActionTweak("ess-disk-cleanup", "System", "Run disk cleanup",
                 "Removes superseded Windows components (DISM component cleanup). Can take several minutes.",
+                ["DISM /Online /Cleanup-Image /StartComponentCleanup"],
                 () => RunTask("clean-component-store")),
             RegTweak("ess-consumer-features", "Privacy", "Disable Consumer Features",
                 "Stops Windows from automatically installing suggested games and third-party apps (Candy Crush, etc.).",
@@ -194,6 +197,11 @@ public static partial class TweakCatalog
                 Id = "adv-explorer-home-gallery", Category = "Interface",
                 Title = "Remove Home and Gallery from File Explorer",
                 Description = "Hides the Home and Gallery entries in the File Explorer navigation pane (Windows 11).",
+                Changes =
+                [
+                    TweakChange.Value(HKCU, HomeClsid, "System.IsPinnedToNameSpaceTree", 0, RegistryValueKind.DWord, "Removes the value (Windows default)"),
+                    TweakChange.Value(HKCU, GalleryClsid, "System.IsPinnedToNameSpaceTree", 0, RegistryValueKind.DWord, "Removes the value (Windows default)"),
+                ],
                 NeedsExplorerRestart = true,
                 // Unpinned for this user only (older versions deleted Home for everyone).
                 IsApplied = () => Reg.ValueEquals(Reg.Get(HKCU, HomeClsid, "System.IsPinnedToNameSpaceTree"), 0)
@@ -328,6 +336,10 @@ public static partial class TweakCatalog
     private static Tweak Ipv6BitsTweak(string id, string title, string description, int bits, string? warning = null) => new()
     {
         Id = id, Category = "Network", Title = title, Description = description, NeedsReboot = true, Warning = warning,
+        Changes =
+        [
+            new(TweakChangeKind.RegistryValue, $@"HKLM\{Tcpip6Parameters}\DisabledComponents", $"Bits 0x{bits:X2} set (DWORD; other bits kept)", $"Clears bits 0x{bits:X2} (the value is removed when it reaches 0)"),
+        ],
         IsApplied = () => (Ipv6Components() & bits) == bits,
         Apply = () => SetIpv6Components(Ipv6Components() | bits),
         Revert = () => SetIpv6Components(Ipv6Components() & ~bits),
@@ -348,6 +360,7 @@ public static partial class TweakCatalog
         Id = "ess-services-manual", Category = "Performance",
         Title = "Set unneeded services to Manual",
         Description = "Sets ~25 background services (Xbox, Maps, Fax, telemetry, updaters...) to start only when needed. The original startup types are saved and restored by Undo.",
+        Changes = [.. ManualServices.Select(s => new TweakChange(TweakChangeKind.Service, s.Name, s.Start == 4 ? "Startup: Disabled" : "Startup: Manual", "Puts back the saved startup type"))],
         IsApplied = ServicesAreManual,
         // Undo stays possible even if an update has since set one service back to Automatic, and is
         // offered without a backup too, so it can explain why it can't restore them.
@@ -522,6 +535,10 @@ public static partial class TweakCatalog
         Title = "Remove OneDrive",
         Description = "Uninstalls the OneDrive app. Files already in your OneDrive folder stay on the PC; online-only files will no longer be available. Undo reinstalls it.",
         Warning = "Make sure every OneDrive file you need is downloaded to this PC first.",
+        Changes =
+        [
+            new(TweakChangeKind.Command, "OneDriveSetup.exe /uninstall", "Uninstalls the OneDrive app for this account", "Reinstalls OneDrive"),
+        ],
         // Only shown when there is something to do: OneDrive is installed, or WinSolve removed it (for Undo).
         IsAvailable = () => OneDriveInstalled() || TweakBackup.HasFlag(OneDriveRemovedFlag),
         IsApplied = () => TweakBackup.HasFlag(OneDriveRemovedFlag) && !OneDriveInstalled(),

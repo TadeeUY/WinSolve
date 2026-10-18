@@ -49,6 +49,9 @@ public sealed class Tweak
     /// </summary>
     public bool TouchesPolicies { get; init; }
 
+    /// <summary>Exactly what the tweak changes (registry values, keys, services, commands), shown in "What does this change?".</summary>
+    public IReadOnlyList<TweakChange> Changes { get; init; } = [];
+
     /// <summary>False when the tweak doesn't apply to this PC (e.g. OneDrive isn't installed); it is then hidden.</summary>
     public Func<bool>? IsAvailable { get; init; }
 
@@ -67,6 +70,41 @@ public sealed class Tweak
     {
         try { return CanUndo?.Invoke() ?? IsApplied(); } catch { return false; }
     }
+}
+
+public enum TweakChangeKind { RegistryValue, RegistryKey, Service, Command }
+
+/// <summary>
+/// One thing a tweak changes, in the form shown to the user: the registry value, key, service or
+/// command, what it becomes, and what Undo does.
+/// </summary>
+public sealed record TweakChange(TweakChangeKind Kind, string Target, string NewValue, string Undo)
+{
+    public static string HiveName(RegistryHive hive) => hive switch
+    {
+        RegistryHive.CurrentUser => "HKCU",
+        RegistryHive.LocalMachine => "HKLM",
+        RegistryHive.Users => "HKU",
+        RegistryHive.ClassesRoot => "HKCR",
+        _ => hive.ToString(),
+    };
+
+    /// <summary>A registry value as data: <c>DWORD 0 (0x0)</c>, <c>SZ "Disabled"</c>, <c>BINARY 9012...</c>.</summary>
+    public static string Describe(object value, RegistryValueKind kind) => kind switch
+    {
+        RegistryValueKind.DWord => $"DWORD {Convert.ToInt64(value) & 0xFFFFFFFF} (0x{Convert.ToInt64(value) & 0xFFFFFFFF:X})",
+        RegistryValueKind.QWord => $"QWORD {value}",
+        RegistryValueKind.Binary when value is byte[] b => "BINARY " + Convert.ToHexString(b),
+        RegistryValueKind.MultiString when value is string[] m => "MULTI_SZ " + string.Join(" | ", m.Select(x => $"\"{x}\"")),
+        _ => $"SZ \"{value}\"",
+    };
+
+    public static TweakChange Value(RegistryHive hive, string path, string name, object value, RegistryValueKind kind, string undo)
+        => new(TweakChangeKind.RegistryValue, $@"{HiveName(hive)}\{path}\{(name.Length == 0 ? "(Default)" : name)}", Describe(value, kind), undo);
+
+    /// <summary>The usual Undo of a registry value: what was there before, else the Windows default.</summary>
+    public static string RestoreUndo(object? off, RegistryValueKind kind)
+        => off is null ? "Puts back the previous value (or removes it)" : $"Puts back the previous value (or {Describe(off, kind)})";
 }
 
 /// <summary>A registry value that is part of a tweak.</summary>
@@ -108,6 +146,7 @@ public static partial class TweakCatalog
     {
         Id = id, Category = category, Title = title, Description = description, Warning = warning,
         Recommended = recommended, NeedsExplorerRestart = explorer, NeedsReboot = reboot,
+        Changes = [.. values.Select(v => TweakChange.Value(v.Hive, v.Path, v.Name, v.On, v.Kind, TweakChange.RestoreUndo(v.Off, v.Kind)))],
         AllUsers = values.Any(v => v.Hive is RegistryHive.LocalMachine or RegistryHive.Users),
         TouchesPolicies = values.Any(v => IsPolicyPath(v.Path)),
         IsApplied = () => values.All(v => Reg.ValueEquals(Reg.Get(v.Hive, v.Path, v.Name), v.On)),
@@ -150,35 +189,62 @@ public static partial class TweakCatalog
     private static readonly byte[] PerformanceMask = [0x90, 0x12, 0x03, 0x80, 0x10, 0x00, 0x00, 0x00];
     private static readonly byte[] DefaultMask = [0x9E, 0x1E, 0x07, 0x80, 0x12, 0x00, 0x00, 0x00];
 
+    /// <summary>The values "best performance" sets, with the Windows defaults used when no backup exists.</summary>
+    private static readonly RegValue[] VisualEffectsValues =
+    [
+        new(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects", "VisualFXSetting", 3, 0),
+        new(HKCU, @"Control Panel\Desktop", "UserPreferencesMask", PerformanceMask, DefaultMask, RegistryValueKind.Binary),
+        new(HKCU, @"Control Panel\Desktop\WindowMetrics", "MinAnimate", "0", "1", RegistryValueKind.String),
+        new(HKCU, Adv, "TaskbarAnimations", 0, 1),
+        new(HKCU, Adv, "ListviewAlphaSelect", 0, 1),
+        new(HKCU, Adv, "ListviewShadow", 0, 1),
+        new(HKCU, @"Software\Microsoft\Windows\DWM", "EnableAeroPeek", 0, 1),
+    ];
+
     private static Tweak VisualEffectsTweak() => new()
     {
         Id = "perf-visual-effects", Category = "Performance", Title = "Visual effects: best performance",
         Description = "Turns off animations, fades and shadows (keeps smooth fonts and thumbnails). Only recommended on slow PCs.",
         NeedsExplorerRestart = true,
+        Changes =
+        [
+            .. VisualEffectsValues.Select(v => TweakChange.Value(v.Hive, v.Path, v.Name, v.On, v.Kind, TweakChange.RestoreUndo(v.Off, v.Kind))),
+            new(TweakChangeKind.Command, "SystemParametersInfo SPI_SETANIMATION / SPI_SETUIEFFECTS / SPI_SETCLIENTAREAANIMATION", "Off (current session)", "Back on if the restored settings have animations"),
+        ],
         IsApplied = () => Reg.Get(HKCU, @"Control Panel\Desktop\WindowMetrics", "MinAnimate") is "0"
-                          && Reg.Get(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarAnimations") is 0,
-        Apply = () => SetVisualEffects(performance: true),
-        Revert = () => SetVisualEffects(performance: false),
+                          && Reg.Get(HKCU, Adv, "TaskbarAnimations") is 0,
+        Apply = () =>
+        {
+            // Remembers each value as it was, so Undo puts back the user's own choice, not Windows' defaults.
+            TweakBackup.Remember("perf-visual-effects", VisualEffectsValues.Select(v => (v.Hive, v.Path, v.Name, v.On)));
+            foreach (var v in VisualEffectsValues) Reg.Set(v.Hive, v.Path, v.Name, v.On, v.Kind);
+            ApplyAnimationsNow(on: false);
+        },
+        Revert = () =>
+        {
+            foreach (var v in VisualEffectsValues)
+            {
+                if (TweakBackup.TryRestore("perf-visual-effects", v.Hive, v.Path, v.Name)) continue;
+                if (v.Off is null) Reg.Delete(v.Hive, v.Path, v.Name);
+                else Reg.Set(v.Hive, v.Path, v.Name, v.Off, v.Kind);
+            }
+            TweakBackup.Forget("perf-visual-effects", VisualEffectsValues.Select(v => (v.Hive, v.Path, v.Name)));
+            ApplyAnimationsNow(on: Reg.Get(HKCU, @"Control Panel\Desktop\WindowMetrics", "MinAnimate") is not "0");
+        },
     };
 
-    private static void SetVisualEffects(bool performance)
+    /// <summary>
+    /// Applies the animation switches to the signed-in session right away (only possible when
+    /// WinSolve runs as that user; otherwise they take effect at the next sign-in).
+    /// </summary>
+    private static void ApplyAnimationsNow(bool on)
     {
-        var on = performance ? 0 : 1;
-        Reg.Set(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects", "VisualFXSetting", performance ? 3 : 0, RegistryValueKind.DWord);
-        Reg.Set(HKCU, @"Control Panel\Desktop", "UserPreferencesMask", performance ? PerformanceMask : DefaultMask, RegistryValueKind.Binary);
-        Reg.Set(HKCU, @"Control Panel\Desktop\WindowMetrics", "MinAnimate", on.ToString(), RegistryValueKind.String);
-        Reg.Set(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarAnimations", on, RegistryValueKind.DWord);
-        Reg.Set(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "ListviewAlphaSelect", on, RegistryValueKind.DWord);
-        Reg.Set(HKCU, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "ListviewShadow", on, RegistryValueKind.DWord);
-        Reg.Set(HKCU, @"Software\Microsoft\Windows\DWM", "EnableAeroPeek", on, RegistryValueKind.DWord);
-
-        // Apply now for the signed-in session (only possible when WinSolve runs as that user;
-        // otherwise it takes effect at the next sign-in).
         if (InteractiveUser.IsDifferent) return;
-        var anim = new ANIMATIONINFO { cbSize = (uint)Marshal.SizeOf<ANIMATIONINFO>(), iMinAnimate = on };
+        var value = on ? 1 : 0;
+        var anim = new ANIMATIONINFO { cbSize = (uint)Marshal.SizeOf<ANIMATIONINFO>(), iMinAnimate = value };
         SystemParametersInfo(SPI_SETANIMATION, anim.cbSize, ref anim, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
-        SystemParametersInfo(SPI_SETUIEFFECTS, 0, (IntPtr)on, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
-        SystemParametersInfo(SPI_SETCLIENTAREAANIMATION, 0, (IntPtr)on, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+        SystemParametersInfo(SPI_SETUIEFFECTS, 0, (IntPtr)value, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+        SystemParametersInfo(SPI_SETCLIENTAREAANIMATION, 0, (IntPtr)value, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -341,6 +407,10 @@ public static partial class TweakCatalog
                 Id = "sys-hibernation-off", Category = "System",
                 Title = "Disable hibernation",
                 Description = "Frees the space used by hiberfil.sys (roughly the size of your RAM). Also disables Fast Startup.",
+                Changes =
+                [
+                    new(TweakChangeKind.Command, "powercfg /hibernate off", "Deletes hiberfil.sys and sets HibernateEnabled = 0", "powercfg /hibernate on"),
+                ],
                 IsApplied = () => !File.Exists(Path.Combine(Path.GetPathRoot(Environment.SystemDirectory)!, "hiberfil.sys"))
                                   && Reg.ValueEquals(Reg.Get(HKLM, @"SYSTEM\CurrentControlSet\Control\Power", "HibernateEnabled"), 0),
                 Apply = () => Powercfg("/hibernate off"),
@@ -357,6 +427,10 @@ public static partial class TweakCatalog
                     Id = "ui-classic-context-menu", Category = "Interface",
                     Title = "Classic context menu (Windows 11)",
                     Description = "Shows the full right-click menu without going through 'Show more options'.",
+                    Changes =
+                    [
+                        new(TweakChangeKind.RegistryKey, $@"HKCU\{ClassicMenuKey}\InprocServer32", "Created, (Default) = empty", "Deletes the key"),
+                    ],
                     NeedsExplorerRestart = true,
                     IsApplied = () => Reg.KeyExists(HKCU, ClassicMenuKey + @"\InprocServer32"),
                     Apply = () => Reg.Set(HKCU, ClassicMenuKey + @"\InprocServer32", "", "", RegistryValueKind.String),
