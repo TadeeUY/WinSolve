@@ -247,6 +247,40 @@ public class ScreenTimeE2ETests(Xunit.Abstractions.ITestOutputHelper output)
                 System.Windows.Forms.Application.DoEvents();
                 w.Tick();   // reads idle time and the display state from Windows; the schedule is off, so it never locks
                 Assert.Null(w.LockAt);
+
+                // Pictures of the page with a week of sample usage, in English and Spanish, to look at.
+                var now = DateTime.Now;
+                int[] minutes = [190, 245, 130, 310, 275, 420, 95];
+                for (var i = 0; i < 7; i++) w.Data.Add(now.AddDays(i - 6), minutes[i] * 60, lockHours: false);
+                w.Data.Add(now.AddDays(-1), 50 * 60, lockHours: true);
+                w.Data.CountUnlock(now.AddDays(-1));
+                w.Data.CountUnlock(now.AddDays(-1));
+                w.Data.Schedule = new LockSchedule { Enabled = true };
+                var language = WinSolve.Core.AppSettings.Current.Language;
+                try
+                {
+                    foreach (var lang in new[] { "en", "es" })
+                    {
+                        WinSolve.Core.AppSettings.Current.Language = lang;
+                        using var form = new System.Windows.Forms.Form { Size = new System.Drawing.Size(1100, 900), BackColor = WinSolve.UI.Theme.Background };
+                        var page = new WinSolve.UI.Pages.ScreenTimePage();
+                        form.Controls.Add(page);
+                        form.CreateControl();
+                        page.Fill();
+                        form.PerformLayout();
+                        using var shot = new System.Drawing.Bitmap(form.ClientSize.Width, form.ClientSize.Height);
+                        page.DrawToBitmap(shot, new System.Drawing.Rectangle(0, 0, shot.Width, shot.Height));
+                        using var ms = new MemoryStream();
+                        shot.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                        if (Environment.GetEnvironmentVariable("WINSOLVE_E2E_OUT") is { Length: > 0 } outDir)
+                            File.WriteAllBytes(Path.Combine(outDir, $"screentime-{lang}.png"), ms.ToArray());
+                        output.WriteLine($"SCREENTIME-PNG-{lang}:{Convert.ToBase64String(ms.ToArray())}");
+                    }
+                }
+                finally { WinSolve.Core.AppSettings.Current.Language = language; }
+                w.Data.Schedule = new LockSchedule();
+                w.Data.Days.Clear();
+
                 WinSolve.UI.ScreenTimeWatcher.Stop();
                 Assert.True(File.Exists(ScreenTimeStore.CurrentPath), ScreenTimeStore.CurrentPath);
                 output.WriteLine($"Saved {ScreenTimeStore.CurrentPath}: {File.ReadAllText(ScreenTimeStore.CurrentPath).Length} bytes");

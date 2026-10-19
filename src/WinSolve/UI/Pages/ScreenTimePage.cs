@@ -139,7 +139,7 @@ public sealed class ScreenTimePage : Page
 
     public override void OnHidden() => _refresh.Stop();
 
-    private void Fill()
+    internal void Fill()
     {
         if (Data is not { } data) return;
         var today = DateOnly.FromDateTime(DateTime.Now);
