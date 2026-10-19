@@ -478,7 +478,7 @@ public abstract class Page : UserControl
         ["home"] = "\uE80F", ["optimize"] = "\uE945", ["tools"] = "\uE90F", ["space"] = "\uEDA2",
         ["monitor"] = "\uE9D9", ["hardware"] = "\uE950", ["drivers"] = "\uE772", ["tweaks"] = "\uE9E9",
         ["startup"] = "\uE7E8", ["apps"] = "\uE71D", ["activation"] = "\uE8D7", ["settings"] = "\uE713",
-        ["toolbox"] = "\uEC7A", ["winupdate"] = "\uE895",
+        ["toolbox"] = "\uEC7A", ["winupdate"] = "\uE895", ["screentime"] = "\uE823",
     };
 
     // Not FindForm(): a page that isn't on screen (e.g. after navigating away mid-await) has no form.

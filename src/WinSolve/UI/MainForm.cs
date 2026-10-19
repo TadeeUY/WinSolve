@@ -61,6 +61,7 @@ public sealed class MainForm : Form
             ["settings"] = () => new SettingsPage(),
             ["toolbox"] = () => new ToolboxPage(),
             ["winupdate"] = () => new WindowsUpdatePage(),
+            ["screentime"] = () => new ScreenTimePage(),
         };
 
         // Content area: optional info bar (updates) above the current page.
@@ -91,6 +92,7 @@ public sealed class MainForm : Form
                 AppSettings.Current.InstalledOn = DateTime.Now;
                 AppSettings.Current.Save();
             }
+            ScreenTimeWatcher.Start();
             ErrorMonitor.Instance.AlertRaised += OnAlert;
             ErrorMonitor.Instance.Apply();
             _ = CheckForUpdateAsync(atStartup: true);
@@ -152,6 +154,7 @@ public sealed class MainForm : Form
         menu.Items.Add("One-click optimization", null, (_, _) => { ShowFromTray(); Navigate("optimize"); });
         menu.Items.Add("Disk space", null, (_, _) => { ShowFromTray(); Navigate("space"); });
         menu.Items.Add("Toolbox", null, (_, _) => { ShowFromTray(); Navigate("toolbox"); });
+        menu.Items.Add("Screen time", null, (_, _) => { ShowFromTray(); Navigate("screentime"); });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) =>
         {
@@ -653,6 +656,7 @@ public sealed class MainForm : Form
             (null, "", "System"),
             ("toolbox", "\uEC7A", "Toolbox"),
             ("winupdate", "\uE895", "Windows Update"),
+            ("screentime", "\uE823", "Screen time"),
             ("tweaks", "", "Tweaks"),
             ("activation", "", "Activation"),
         ];
@@ -743,7 +747,12 @@ public sealed class MainForm : Form
         {
             var key = b.Key;
             items.Add(new PaletteItem(b.Text, "Open this page", Page.PageGlyphs.GetValueOrDefault(key, b.Glyph), "Page", () => Navigate(key),
-                key == "winupdate" ? "pause resume hide history rollback driver pausar reanudar ocultar historial revertir" : ""));
+                key switch
+                {
+                    "winupdate" => "pause resume hide history rollback driver pausar reanudar ocultar historial revertir",
+                    "screentime" => "lock schedule hours usage break bloqueo horario horas uso pantalla descanso",
+                    _ => "",
+                }));
         }
         items.Add(new PaletteItem("Pause Windows Update for a week", "Nothing is downloaded or installed for 7 days.", "\uE769", "Action", () =>
         {
@@ -755,6 +764,8 @@ public sealed class MainForm : Form
             catch (Exception ex) { Localization.Loc.Show(this, ex.Message, "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
             if (CurrentPage?.Key == "winupdate") CurrentPage.OnShown();
         }, "pausar actualizaciones"));
+        items.Add(new PaletteItem("Lock the PC now", "Locks Windows; your apps stay open.", "\uE72E", "Action",
+            ScreenTimeWatcher.LockNow, "bloquear lock"));
         items.Add(new PaletteItem("Free up memory", "Releases the standby cache so more RAM shows as free.", "\uE964", "Action",
             () => QuickAction(QuickFreeMemory), "ram liberar"));
         foreach (var t in TaskCatalog.All)
