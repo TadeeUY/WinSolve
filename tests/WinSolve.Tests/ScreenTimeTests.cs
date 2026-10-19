@@ -262,14 +262,20 @@ public class ScreenTimeE2ETests(Xunit.Abstractions.ITestOutputHelper output)
                     foreach (var lang in new[] { "en", "es" })
                     {
                         WinSolve.Core.AppSettings.Current.Language = lang;
-                        using var form = new System.Windows.Forms.Form { Size = new System.Drawing.Size(1100, 900), BackColor = WinSolve.UI.Theme.Background };
+                        using var form = new System.Windows.Forms.Form
+                        {
+                            Size = new System.Drawing.Size(1100, 900), BackColor = WinSolve.UI.Theme.Background,
+                            StartPosition = System.Windows.Forms.FormStartPosition.Manual, Location = new System.Drawing.Point(0, 0),
+                            FormBorderStyle = System.Windows.Forms.FormBorderStyle.None, ShowInTaskbar = false,
+                        };
                         var page = new WinSolve.UI.Pages.ScreenTimePage();
                         form.Controls.Add(page);
-                        form.CreateControl();
+                        form.Show();
                         page.Fill();
-                        form.PerformLayout();
+                        for (var i = 0; i < 20; i++) { System.Windows.Forms.Application.DoEvents(); Thread.Sleep(25); }
                         using var shot = new System.Drawing.Bitmap(form.ClientSize.Width, form.ClientSize.Height);
-                        page.DrawToBitmap(shot, new System.Drawing.Rectangle(0, 0, shot.Width, shot.Height));
+                        form.DrawToBitmap(shot, new System.Drawing.Rectangle(0, 0, shot.Width, shot.Height));
+                        form.Close();
                         using var ms = new MemoryStream();
                         shot.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
                         if (Environment.GetEnvironmentVariable("WINSOLVE_E2E_OUT") is { Length: > 0 } outDir)
