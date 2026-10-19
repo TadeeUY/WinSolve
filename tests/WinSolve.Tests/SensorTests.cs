@@ -71,6 +71,7 @@ public class PerformanceE2ETests(ITestOutputHelper output)
         var progress = new DiskScanner.Progress();
         var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         var r = await DiskScanner.ScanAsync(windows, progress, default);
+        output.WriteLine($"Hard links read {(DiskScanner.HasStatByName ? "by name" : "by handle")}.");
         output.WriteLine($"{windows}: {progress.Files:N0} files, {progress.Bytes / 1e9:0.0} GB in {r.Elapsed.TotalSeconds:0.0} s ({progress.Files / Math.Max(0.1, r.Elapsed.TotalSeconds):N0} files/s), {r.Inaccessible} folders inaccessible");
         Assert.True(progress.Files > 10_000);
         Assert.True(r.Elapsed < TimeSpan.FromMinutes(3), $"took {r.Elapsed}");
@@ -131,6 +132,29 @@ public class DiskScannerTests
         }
         finally { Directory.Delete(root, recursive: true); }
     }
+
+    [Fact]
+    public void Hard_links_are_counted_by_name_and_by_handle_alike()
+    {
+        var root = Directory.CreateTempSubdirectory("winsolve-links").FullName;
+        try
+        {
+            var a = Path.Combine(root, "a.bin");
+            var b = Path.Combine(root, "b.bin");
+            File.WriteAllBytes(a, new byte[100]);
+            Assert.Equal(1u, DiskScanner.LinkCount(a));
+            Assert.True(CreateHardLink(b, a, IntPtr.Zero));
+            Assert.Equal(2u, DiskScanner.LinkCount(a));
+            Assert.Equal(2u, DiskScanner.LinkCountByHandle(b));
+            if (DiskScanner.HasStatByName) Assert.Equal(2u, DiskScanner.LinkCountByName(b));
+            Assert.Null(DiskScanner.HasStatByName ? DiskScanner.LinkCountByName(Path.Combine(root, "missing.bin")) : null);
+            Assert.Equal(1u, DiskScanner.LinkCount(Path.Combine(root, "missing.bin")));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern bool CreateHardLink(string newName, string existing, IntPtr security);
 
     [Fact]
     public async Task Cancelling_stops_the_scan()

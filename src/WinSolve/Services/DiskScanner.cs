@@ -235,7 +235,30 @@ public static class DiskScanner
     }
 
     /// <summary>How many names (hard links) the file has; 1 when it can't be read.</summary>
-    private static uint LinkCount(string path)
+    internal static uint LinkCount(string path)
+    {
+        // Windows 11 24H2 / Server 2025 read it by name, without opening the file (several times
+        // faster on WinSxS, where every file is checked).
+        if (HasStatByName && LinkCountByName(path) is { } byName) return byName;
+        return LinkCountByHandle(path);
+    }
+
+    internal static readonly bool HasStatByName =
+        System.Runtime.InteropServices.NativeLibrary.TryLoad("kernel32.dll", out var k32)
+        && System.Runtime.InteropServices.NativeLibrary.TryGetExport(k32, "GetFileInformationByName", out _);
+
+    /// <summary>FILE_STAT_INFORMATION.NumberOfLinks, or null when the file system doesn't answer by name.</summary>
+    internal static unsafe uint? LinkCountByName(string path)
+    {
+        // FILE_STAT_INFORMATION: 7 LARGE_INTEGERs, then FileAttributes, ReparseTag, NumberOfLinks, EffectiveAccess.
+        var buffer = stackalloc byte[72];
+        if (!GetFileInformationByName(path, FileStatByNameInfo, buffer, 72)) return null;
+        return *(uint*)(buffer + 64);
+    }
+
+    private const int FileStatByNameInfo = 0;
+
+    internal static uint LinkCountByHandle(string path)
     {
         using var h = CreateFile(path, 0, FileShare.ReadWrite | FileShare.Delete, IntPtr.Zero, FileMode.Open,
             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, IntPtr.Zero);
@@ -256,6 +279,9 @@ public static class DiskScanner
     [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
     private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string name, uint access, FileShare share, IntPtr security,
         FileMode mode, uint flags, IntPtr template);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern unsafe bool GetFileInformationByName(string name, int infoClass, byte* buffer, uint size);
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle h, out BY_HANDLE_FILE_INFORMATION info);
