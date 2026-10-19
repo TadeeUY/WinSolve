@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 16, 2),
+        [
+            new("\uE823", "New: Screen time. See how long you use the PC today, in the last 7 days and on each day, and set lock hours (for example 23:00 to 07:00): the PC locks with a one-minute warning, and if you unlock it, it locks again every 10 minutes. Time used during lock hours is shown apart.",
+                "Nuevo: Tiempo en pantalla. Mira cuánto usas la PC hoy, en los últimos 7 días y cada día, y pon un horario de bloqueo (por ejemplo de 23:00 a 07:00): la PC se bloquea con un aviso un minuto antes, y si la desbloqueas se vuelve a bloquear cada 10 minutos. El tiempo usado en horario de bloqueo se muestra aparte."),
+        ]),
         new(new Version(0, 16, 1),
         [
             new("\uE88E", "Portable mode: the portable WinSolve keeps its settings, logs and Undo backups next to the .exe (also on FAT32/exFAT USB sticks) and leaves no trace on the PC when you close it.",

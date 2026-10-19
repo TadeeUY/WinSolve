@@ -24,7 +24,7 @@ public sealed class ScreenTimePage : Page
 
     public ScreenTimePage() : base("Screen time", "How long you use the PC each day, and lock hours to take a break from it.")
     {
-        var tiles = new TableLayoutPanel { ColumnCount = 3, Height = 116, BackColor = Color.Transparent, Margin = new Padding(0) };
+        var tiles = new TableLayoutPanel { ColumnCount = 3, Height = 150, BackColor = Color.Transparent, Margin = new Padding(0) };
         for (var i = 0; i < 3; i++) tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
         tiles.Controls.Add(Tile("Today", _today, _todayDetail, 8), 0, 0);
         tiles.Controls.Add(Tile("Last 7 days", _week, _weekDetail, 8), 1, 0);
