@@ -10,6 +10,21 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 16, 1),
+        [
+            new("\uE88E", "Portable mode: the portable WinSolve keeps its settings, logs and Undo backups next to the .exe (also on FAT32/exFAT USB sticks) and leaves no trace on the PC when you close it.",
+                "Modo portable: el WinSolve portable guarda su configuración, registros y copias para deshacer junto al .exe (también en memorias USB FAT32/exFAT) y no deja rastros en la PC al cerrarlo."),
+            new("\uE8E5", "Profiles: Settings > Profiles saves your tweaks, DNS and optimization choices to a .winsolve file and applies them on another PC. They also apply unattended: WinSolve.exe --apply-profile file.winsolve [--silent] [--dry-run].",
+                "Perfiles: Configuración > Perfiles guarda tus ajustes, DNS y opciones de optimización en un archivo .winsolve y los aplica en otra PC. También se aplican sin intervención: WinSolve.exe --apply-profile archivo.winsolve [--silent] [--dry-run]."),
+            new("\uE946", "\"What does this change?\": click the (i) next to a tweak to see every registry value, service and command it changes, what it becomes and how Undo puts it back.",
+                "\"¿Qué modifica esto?\": haz clic en la (i) junto a un ajuste para ver cada valor del registro, servicio y comando que cambia, cómo queda y cómo lo vuelve atrás Deshacer."),
+            new("\uE7BA", "Hardware > Events reads blue screen dumps: date, stop code, the driver that probably caused it and what to do.",
+                "Hardware > Eventos lee los volcados de los pantallazos azules: fecha, código de error, el driver que probablemente lo causó y qué hacer."),
+            new("\uE9D9", "More accurate CPU temperature: it uses LibreHardwareMonitor or OpenHardwareMonitor when one is running, and no longer shows the fixed value some PCs report.",
+                "Temperatura de CPU más precisa: usa LibreHardwareMonitor u OpenHardwareMonitor si hay uno abierto, y ya no muestra el valor fijo que reportan algunas PCs."),
+            new("\uE945", "Faster disk space analysis: folders are read in parallel, and the Windows folder is analyzed faster.",
+                "Análisis de espacio en disco más rápido: las carpetas se leen en paralelo y la carpeta de Windows se analiza más rápido."),
+        ]),
         new(new Version(0, 15, 5),
         [
             new("\uE895", "Automatic updates never interrupt you: they wait until nothing is running or open in WinSolve and no game, video or presentation is full screen. From the notification area they install silently, without opening any window; with WinSolve open, they wait until you've been away for 10 minutes.",
