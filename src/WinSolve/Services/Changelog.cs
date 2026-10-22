@@ -14,6 +14,8 @@ public static class Changelog
         [
             new("\uE823", "New: Screen time. See how long you use the PC today, in the last 7 days and on each day, and set lock hours (for example 23:00 to 07:00): the PC locks with a one-minute warning, and if you unlock it, it locks again every 10 minutes. Time used during lock hours is shown apart.",
                 "Nuevo: Tiempo en pantalla. Mira cuánto usas la PC hoy, en los últimos 7 días y cada día, y pon un horario de bloqueo (por ejemplo de 23:00 a 07:00): la PC se bloquea con un aviso un minuto antes, y si la desbloqueas se vuelve a bloquear cada 10 minutos. El tiempo usado en horario de bloqueo se muestra aparte."),
+            new("\uE895", "New versions show up within 2 minutes of being published, with a notification and an \"Update now\" button. If a task is running, the update waits and installs by itself as soon as it finishes.",
+                "Las versiones nuevas aparecen a los 2 minutos de publicarse, con una notificación y un botón \"Actualizar ahora\". Si hay una tarea en curso, la actualización espera y se instala sola apenas termina."),
         ]),
         new(new Version(0, 16, 1),
         [

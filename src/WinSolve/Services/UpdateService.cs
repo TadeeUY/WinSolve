@@ -38,18 +38,53 @@ public static class UpdateService
         }
     }
 
+    // The last answer from GitHub and its ETag: asking again with If-None-Match costs nothing
+    // against GitHub's rate limit when nothing changed, so WinSolve can ask every few minutes.
+    private static readonly SemaphoreSlim CheckGate = new(1, 1);
+    private static string? _etag;
+    private static UpdateInfo? _lastAnswer;
+
     /// <summary>Returns the latest release if it is newer than this build, otherwise null.</summary>
     public static async Task<UpdateInfo?> CheckAsync(CancellationToken ct = default)
     {
-        using var doc = JsonDocument.Parse(await Http.GetStringAsync(LatestApi, ct));
+        await CheckGate.WaitAsync(ct);
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, LatestApi);
+            if (_etag is not null) request.Headers.TryAddWithoutValidation("If-None-Match", _etag);
+            using var response = await Http.SendAsync(request, ct);
+            RememberCheck();
+            if (response.StatusCode == System.Net.HttpStatusCode.NotModified && _etag is not null) return _lastAnswer;
+            response.EnsureSuccessStatusCode();
+            var answer = Parse(await response.Content.ReadAsStringAsync(ct), CurrentVersion);
+            _etag = response.Headers.ETag?.ToString();
+            _lastAnswer = answer;
+            return answer;
+        }
+        finally { CheckGate.Release(); }
+    }
+
+    /// <summary>Saved at most once an hour (the check itself runs every few minutes).</summary>
+    private static void RememberCheck()
+    {
+        var s = AppSettings.Current;
+        var saveIt = s.LastUpdateCheck is not { } last || DateTime.Now - last >= TimeSpan.FromHours(1);
+        s.LastUpdateCheck = DateTime.Now;
+        if (saveIt) s.Save();
+    }
+
+    /// <summary>
+    /// The update in a releases/latest answer, or null when it isn't newer or isn't complete yet
+    /// (the installer and its SHA-256 are both needed). Pure.
+    /// </summary>
+    internal static UpdateInfo? Parse(string json, Version current)
+    {
+        using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         var tag = root.GetProperty("tag_name").GetString() ?? "";
         if (!Version.TryParse(tag.TrimStart('v', 'V'), out var latest)) return null;
         latest = new Version(latest.Major, latest.Minor, Math.Max(0, latest.Build));
-
-        AppSettings.Current.LastUpdateCheck = DateTime.Now;
-        AppSettings.Current.Save();
-        if (latest <= CurrentVersion) return null;
+        if (latest <= current) return null;
 
         string? setup = null, sha = null;
         foreach (var asset in root.GetProperty("assets").EnumerateArray())
@@ -59,7 +94,7 @@ public static class UpdateService
             if (string.Equals(name, "WinSolveSetup.exe", StringComparison.OrdinalIgnoreCase)) setup = url;
             if (string.Equals(name, "WinSolveSetup.exe.sha256", StringComparison.OrdinalIgnoreCase)) sha = url;
         }
-        if (setup is null) return null;
+        if (setup is null || sha is null) return null;
 
         return new UpdateInfo(latest, tag, setup, sha,
             SafeReleaseUrl(root.TryGetProperty("html_url", out var html) && html.ValueKind == JsonValueKind.String ? html.GetString() : null),
@@ -85,15 +120,13 @@ public static class UpdateService
         return ok ? uri.AbsoluteUri : ReleasesPage;
     }
 
-    /// <summary>
-    /// Automatic check: every time WinSolve starts (a version published since the last check
-    /// shows up right away) and every hour while it runs.
-    /// </summary>
-    public static async Task<UpdateInfo?> CheckIfDueAsync(bool atStartup = false)
+    /// <summary>How often WinSolve asks GitHub while it runs (a new version shows up within this time).</summary>
+    public static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(2);
+
+    /// <summary>Automatic check: when WinSolve starts and every <see cref="CheckInterval"/> while it runs.</summary>
+    public static async Task<UpdateInfo?> CheckIfDueAsync()
     {
-        var s = AppSettings.Current;
-        if (!s.CheckForUpdates) return null;
-        if (!atStartup && s.LastUpdateCheck is { } last && DateTime.Now - last < TimeSpan.FromMinutes(50)) return null;
+        if (!AppSettings.Current.CheckForUpdates) return null;
         try
         {
             return await CheckAsync();

@@ -95,10 +95,10 @@ public sealed class MainForm : Form
             ScreenTimeWatcher.Start();
             ErrorMonitor.Instance.AlertRaised += OnAlert;
             ErrorMonitor.Instance.Apply();
-            _ = CheckForUpdateAsync(atStartup: true);
-            // Keep checking while WinSolve sits in the notification area.
-            // Every 10 minutes: GitHub is asked at most once an hour; a waiting automatic update is retried.
-            var updateTimer = new System.Windows.Forms.Timer { Interval = (int)TimeSpan.FromMinutes(10).TotalMilliseconds };
+            _ = CheckForUpdateAsync();
+            // Keep checking while WinSolve sits in the notification area, so a new version shows up
+            // within a couple of minutes of being published; a waiting automatic update is retried.
+            var updateTimer = new System.Windows.Forms.Timer { Interval = (int)UpdateService.CheckInterval.TotalMilliseconds };
             updateTimer.Tick += async (_, _) => await CheckForUpdateAsync();
             updateTimer.Start();
             if (!_startHidden)
@@ -351,7 +351,7 @@ public sealed class MainForm : Form
     private UpdateInfo? _deferredUpdate;
 
     /// <summary>True while a page task, a run window or a tray quick action is working (installing would kill it).</summary>
-    private bool WorkRunning => IsBusy || _quickBusy || Application.OpenForms.OfType<RunDialog>().Any();
+    private bool WorkRunning => IsBusy || _quickBusy || Application.OpenForms.OfType<RunDialog>().Any(d => d.IsBusy);
 
     /// <summary>
     /// Any other WinSolve window is open (a tool such as the disk speed test or secure delete,
@@ -379,10 +379,10 @@ public sealed class MainForm : Form
 
     private string? _notifiedTag;
 
-    private async Task CheckForUpdateAsync(bool atStartup = false)
+    private async Task CheckForUpdateAsync()
     {
-        var update = _deferredUpdate ?? await UpdateService.CheckIfDueAsync(atStartup);
-        if (update is null || _updating) return;
+        var update = _deferredUpdate ?? await UpdateService.CheckIfDueAsync();
+        if (update is null || _updating || _queuedUpdate is not null) return;
         _deferredUpdate = null;
         var auto = AppSettings.Current.AutoInstallUpdates && !Edition.IsPortable;
         if (auto && CanUpdateInBackground(out var hidden))
@@ -391,16 +391,16 @@ public sealed class MainForm : Form
             return;
         }
         if (auto) _deferredUpdate = update; // tried again on the next timer tick
-        // The bar (and, from the notification area, one toast per version) instead of interrupting.
-        if (update.Tag != _notifiedTag || Visible)
+        // As soon as a version is published: the bar and one notification with "Update now".
+        if (update.Tag != _notifiedTag)
         {
             _notifiedTag = update.Tag;
-            ShowUpdate(update);
+            ShowUpdate(update, notify: true);
         }
     }
 
-    /// <summary>Shows the "update available" bar at the top of every page.</summary>
-    public void ShowUpdate(UpdateInfo update)
+    /// <summary>Shows the "update available" bar at the top of every page (and, with <paramref name="notify"/>, a notification).</summary>
+    public void ShowUpdate(UpdateInfo update, bool notify = false)
     {
         _update = update;
         var notes = Theme.Button("What's new", (_, _) => ProcessRunner.ShellOpen(update.ReleaseUrl));
@@ -415,7 +415,7 @@ public sealed class MainForm : Form
         var install = Theme.Button("Update now", async (_, _) => await InstallUpdateAsync(update), primary: true, glyph: "\uE896");
         _infoBar.Show($"WinSolve {update.Tag} is available",
             $"You have {UpdateService.CurrentVersion}. Updating takes less than a minute and keeps your settings.", install, notes);
-        if (!Visible)
+        if (notify)
             Toast.Show(new ToastOptions
             {
                 Title = "WinSolve update available",
@@ -447,12 +447,12 @@ public sealed class MainForm : Form
         if (_updating) return;
         if (WorkRunning)
         {
-            // Installing closes WinSolve, which would stop the running task half-way.
-            ShowFromTray();
-            Localization.Loc.Show(this, Localization.Loc.T("WinSolve is still running a task. Wait until it finishes, then update."),
-                "WinSolve", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            // Installing closes WinSolve, which would stop the running task half-way: it waits for it.
+            QueueUpdate(update);
             return;
         }
+        _queuedUpdate = null;
+        _queueTimer?.Stop();
         _deferredUpdate = null;
         _updating = true;
         if (!background) ShowFromTray();
@@ -482,6 +482,38 @@ public sealed class MainForm : Form
             _infoBar.Show("The update could not be installed", ex.Message, retry, manual);
             if (background) _notifiedTag = null; // the next check offers it again
         }
+    }
+
+    /// <summary>"Update now" while a task runs: installed by itself as soon as nothing is running.</summary>
+    private UpdateInfo? _queuedUpdate;
+    private System.Windows.Forms.Timer? _queueTimer;
+
+    private void QueueUpdate(UpdateInfo update)
+    {
+        if (_queuedUpdate is null) Logger.Write($"[update] {update.Tag} waits for the running task to finish.");
+        _queuedUpdate = update;
+        var cancel = Theme.Button("Cancel", (_, _) =>
+        {
+            _queuedUpdate = null;
+            _queueTimer?.Stop();
+            Logger.Write($"[update] Waiting update to {update.Tag} cancelled.");
+            ShowUpdate(update);
+        });
+        _infoBar.Show($"WinSolve {update.Tag} installs when the running task finishes",
+            "Keep using WinSolve: as soon as the task ends, it updates and reopens by itself.", cancel);
+        if (_queueTimer is null)
+        {
+            _queueTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+            _queueTimer.Tick += async (_, _) =>
+            {
+                if (_queuedUpdate is not { } queued || WorkRunning) return;
+                _queuedUpdate = null;
+                _queueTimer.Stop();
+                Logger.Write($"[update] The task finished; installing {queued.Tag}.");
+                await InstallUpdateAsync(queued, background: !Visible);
+            };
+        }
+        _queueTimer.Start();
     }
 
     /// <summary>Manual check from Settings: shows the bar, or says you're up to date.</summary>
@@ -942,7 +974,8 @@ public sealed class MainForm : Form
         foreach (var b in _nav) b.Invalidate();
         if (_brandSubtitle is not null) _brandSubtitle.Text = BrandSubtitle;
         if (_versionLabel is not null) _versionLabel.Text = VersionText;
-        if (_update is not null && !_updating) ShowUpdate(_update);
+        if (_queuedUpdate is not null) QueueUpdate(_queuedUpdate);
+        else if (_update is not null && !_updating) ShowUpdate(_update);
         _tray.Text = Localization.Loc.T("WinSolve - watching for Windows errors");
         Navigate(current);
         PreloadPages();

@@ -8,6 +8,9 @@ public sealed class RunDialog : Form
     private readonly TaskRunnerView _runner = new();
     private readonly FlatBtn _close;
 
+    /// <summary>Still working (a finished run only waits to be closed).</summary>
+    public bool IsBusy => _runner.IsBusy;
+
     private RunDialog(string title)
     {
         Text = Localization.Loc.T(title);

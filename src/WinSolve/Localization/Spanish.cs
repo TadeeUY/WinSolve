@@ -843,7 +843,9 @@ public static partial class Spanish
         ["Starts hidden in the notification area."] = "Se inicia oculto en el área de notificación.",
         ["Requires an all-users install (in Program Files)."] = "Requiere instalación para todos los usuarios (en Archivos de programa).",
         ["Updates"] = "Actualizaciones",
-        ["At startup and every hour."] = "Al iniciar y cada hora.",
+        ["A new version shows up within 2 minutes of being published."] = "Una versión nueva aparece a los 2 minutos de publicarse.",
+        ["WinSolve {0} installs when the running task finishes"] = "WinSolve {0} se instala cuando termine la tarea en curso",
+        ["Keep using WinSolve: as soon as the task ends, it updates and reopens by itself."] = "Sigue usando WinSolve: apenas termine la tarea, se actualiza y se vuelve a abrir solo.",
         ["Verified (SHA-256) and installed while you are not using WinSolve, never in the middle of a task."] = "Se verifican (SHA-256) y se instalan cuando no estás usando WinSolve, nunca en medio de una tarea.",
 
         // ── Startup apps ──
