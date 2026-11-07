@@ -56,6 +56,7 @@ public sealed class InternetPage : Page
                 Theme.Button("Flush DNS cache", async (_, _) => await FlushDnsAsync(), glyph: ""),
                 Theme.Button("Network test", (_, _) => OpenTool("network"), glyph: ""),
                 Theme.Button("Saved Wi-Fi passwords", (_, _) => OpenTool("wifi"), glyph: ""),
+                Theme.Button("Wi-Fi QR code", (_, _) => OpenTool("wifi-qr"), glyph: "\uE701"),
                 Theme.Button("Block a website", (_, _) => OpenTool("hosts"), glyph: "")));
 
         var router = new StackCard().Add(
@@ -83,6 +84,7 @@ public sealed class InternetPage : Page
                 _scanBtn,
                 Theme.Button("Copy address", (_, _) => CopySelected(), glyph: ""),
                 Theme.Button("Block or remove in the router", (_, _) => BlockSelected(), glyph: "")),
+            Theme.Paragraph("Double-click a device's name to give it your own (for example 'Mom's phone'). WinSolve remembers it.", Theme.Muted, Theme.Small),
             gridHost,
             _deviceStatus,
             Theme.Paragraph("Windows can't disconnect other devices by itself: removing or blocking one is done in the router. The button copies the device's address and opens the router so you can paste it in its MAC filter.", Theme.Muted, Theme.Small));
@@ -132,13 +134,21 @@ public sealed class InternetPage : Page
     private void ConfigureGrid()
     {
         Theme.StyleGrid(_grid);
-        _grid.ReadOnly = true;
+        // Only the name can be edited (double-click it): it is saved against the device's physical address.
+        _grid.ReadOnly = false;
+        _grid.CellBeginEdit += (_, e) =>
+        {
+            if (e.ColumnIndex != 0 || _grid.Rows[e.RowIndex].Tag is not LanDevice { IsRouter: false, IsThisPc: false }) e.Cancel = true;
+        };
+        _grid.CellEndEdit += RenameEnded;
+        _grid.CellDoubleClick += (_, e) => { if (e.ColumnIndex == 0 && e.RowIndex >= 0) _grid.BeginEdit(true); };
         _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
         foreach (var (name, header, weight) in new[] { ("name", "Device", 30), ("ip", "IP address", 18), ("mac", "Physical address", 22), ("note", "Details", 30) })
         {
             var i = _grid.Columns.Add(name, header);
             _grid.Columns[i].FillWeight = weight;
         }
+        for (var c = 1; c < _grid.Columns.Count; c++) _grid.Columns[c].ReadOnly = true;
         Theme.EmptyState(_grid, "Press 'Scan the network' to see the devices connected to your router.");
     }
 
@@ -262,6 +272,20 @@ public sealed class InternetPage : Page
         }
         catch (Exception ex) { _deviceStatus.Text = ex.Message; }
         finally { SetBusy(false); }
+    }
+
+    private void RenameEnded(object? sender, DataGridViewCellEventArgs e)
+    {
+        if (e.ColumnIndex != 0 || e.RowIndex < 0 || _grid.Rows[e.RowIndex].Tag is not LanDevice d) return;
+        var text = (_grid[0, e.RowIndex].Value as string ?? "").Trim();
+        if (text == Loc.T("Unknown device")) text = "";
+        try
+        {
+            DeviceBook.Set(d.Mac, text);
+            _deviceStatus.Text = Loc.T(text.Length == 0 ? "The name was forgotten." : "Name saved.");
+        }
+        catch (Exception ex) { _deviceStatus.Text = ex.Message; }
+        if (text.Length == 0) _grid[0, e.RowIndex].Value = Loc.T("Unknown device");
     }
 
     private LanDevice? Selected => _grid.CurrentRow?.Tag as LanDevice;

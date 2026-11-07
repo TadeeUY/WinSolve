@@ -140,26 +140,18 @@ public static class RouterService
         var seen = ParseArp(arp.Output, lan.Local, lan.Mask);
         if (!seen.Any(s => s.Ip == lan.Local.ToString())) seen.Add((lan.Local.ToString(), lan.Mac));
 
-        var devices = await Task.WhenAll(seen.Select(async s =>
+        var names = await DeviceNames.ResolveAsync(lan, seen.Select(s => s.Ip).ToList(), ct);
+        var nicknames = DeviceBook.Load();
+        var devices = seen.Select(s =>
         {
             var isMe = s.Ip == lan.Local.ToString();
-            var name = await ResolveNameAsync(s.Ip, isMe);
-            return new LanDevice(s.Ip, s.Mac, name, Describe(s.Mac), s.Ip == lan.Gateway.ToString(), isMe);
-        }));
+            names.TryGetValue(s.Ip, out var identity);
+            // What the user called it wins; then what the device says about itself.
+            var name = isMe ? Environment.MachineName : nicknames.GetValueOrDefault(s.Mac) ?? identity?.Name ?? "";
+            var note = identity is { Detail.Length: > 0 } ? identity.Detail : Describe(s.Mac);
+            return new LanDevice(s.Ip, s.Mac, name, note, s.Ip == lan.Gateway.ToString(), isMe);
+        }).ToArray();
         return devices.OrderBy(d => d.IsRouter ? 0 : d.IsThisPc ? 1 : 2).ThenBy(d => AddressKey(d.Ip)).ToList();
-    }
-
-    private static async Task<string> ResolveNameAsync(string ip, bool isMe)
-    {
-        if (isMe) return Environment.MachineName;
-        try
-        {
-            var lookup = Dns.GetHostEntryAsync(ip);
-            if (await Task.WhenAny(lookup, Task.Delay(1500)) != lookup) return "";
-            var host = (await lookup).HostName;
-            return host == ip ? "" : host;
-        }
-        catch { return ""; }
     }
 
     private static long AddressKey(string ip) => IPAddress.TryParse(ip, out var a)

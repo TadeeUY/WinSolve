@@ -232,3 +232,111 @@ public class SidebarSettingTests
     public void The_side_menu_starts_expanded()
         => Assert.False(new WinSolve.Core.AppSettings().SidebarCollapsed);
 }
+
+public class DeviceNameTests
+{
+    private static byte[] Name(params string[] labels)
+    {
+        var bytes = new List<byte>();
+        foreach (var l in labels) { bytes.Add((byte)l.Length); bytes.AddRange(System.Text.Encoding.ASCII.GetBytes(l)); }
+        bytes.Add(0);
+        return [.. bytes];
+    }
+
+    [Fact]
+    public void The_mDNS_question_asks_for_the_reverse_name_of_the_address()
+    {
+        var q = DeviceNames.BuildPtrQuery("192.168.1.20");
+        Assert.Equal(1, q[5]);                                   // one question
+        Assert.Equal(2, q[12]);                                  // "20"
+        Assert.Equal((byte)'2', q[13]);
+        Assert.Equal(new byte[] { 0, 12, 0x80, 0x01 }, q[^4..]); // PTR, IN, answer directly
+    }
+
+    [Fact]
+    public void A_PTR_answer_gives_the_device_name_without_its_domain()
+    {
+        var packet = new List<byte> { 0, 0, 0x84, 0, 0, 1, 0, 1, 0, 0, 0, 0 };
+        packet.AddRange(Name("20", "1", "168", "192", "in-addr", "arpa"));
+        packet.AddRange(new byte[] { 0, 12, 0, 1 });
+        packet.AddRange(new byte[] { 0xC0, 12, 0, 12, 0, 1, 0, 0, 0, 120 });   // answer: pointer to the question name, PTR, IN, ttl
+        var data = Name("iPhone-de-Ana", "local");
+        packet.Add(0); packet.Add((byte)data.Length);
+        packet.AddRange(data);
+        Assert.Equal("iPhone-de-Ana", DeviceNames.ParsePtrAnswer([.. packet]));
+    }
+
+    [Fact]
+    public void Garbage_is_not_a_name()
+    {
+        Assert.Null(DeviceNames.ParsePtrAnswer([1, 2, 3]));
+        Assert.Null(DeviceNames.ParsePtrAnswer(new byte[40]));
+    }
+
+    [Fact]
+    public void The_NetBIOS_question_is_a_node_status_query_for_the_wildcard_name()
+    {
+        var q = DeviceNames.BuildNetBiosQuery();
+        Assert.Equal(50, q.Length);
+        Assert.Equal(0x20, q[12]);
+        Assert.Equal("CK" + new string('A', 30), System.Text.Encoding.ASCII.GetString(q, 13, 32));
+        Assert.Equal(new byte[] { 0, 0x21, 0, 1 }, q[^4..]);
+    }
+
+    [Fact]
+    public void A_NetBIOS_answer_gives_the_computer_name_not_the_workgroup()
+    {
+        var packet = new List<byte> { 0x13, 0x37, 0x84, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0x20 };
+        packet.AddRange(System.Text.Encoding.ASCII.GetBytes("CK" + new string('A', 30)));
+        packet.Add(0);
+        packet.AddRange(new byte[] { 0, 0x21, 0, 1, 0, 0, 0, 0, 0, 38 });   // type, class, ttl, data length
+        packet.Add(2);                                                        // two names
+        packet.AddRange(System.Text.Encoding.ASCII.GetBytes("WORKGROUP      ")); packet.AddRange(new byte[] { 0x00, 0x84, 0x00 }); // group
+        packet.AddRange(System.Text.Encoding.ASCII.GetBytes("DESKTOP-ANA    ")); packet.AddRange(new byte[] { 0x00, 0x04, 0x00 }); // computer
+        Assert.Equal("DESKTOP-ANA", DeviceNames.ParseNetBiosAnswer([.. packet]));
+    }
+
+    [Fact]
+    public void A_UPnP_description_gives_the_friendly_name_and_model()
+    {
+        const string xml = "<root xmlns=\"urn:schemas-upnp-org:device-1-0\"><device><friendlyName>Living room TV</friendlyName><manufacturer>Samsung</manufacturer><modelName>UE55</modelName></device></root>";
+        var id = DeviceNames.ParseDescription(xml);
+        Assert.Equal("Living room TV", id!.Name);
+        Assert.Equal("Samsung UE55", id.Detail);
+    }
+
+    [Fact]
+    public void Names_lose_their_domain()
+    {
+        Assert.Equal("PC-SALA", DeviceNames.FirstLabel("PC-SALA.lan."));
+        Assert.Equal("phone", DeviceNames.FirstLabel("phone"));
+    }
+}
+
+public class WifiQrTests
+{
+    [Fact]
+    public void The_payload_follows_the_WIFI_format_and_escapes_special_characters()
+    {
+        Assert.Equal("WIFI:T:WPA;S:Casa;P:clave123;;", WifiQr.Payload("Casa", "clave123", WifiQrSecurity.Wpa, false));
+        Assert.Equal("WIFI:T:WPA;S:A\;B;P:p\\:w\\\\d\\,x;H:true;;", WifiQr.Payload("A;B", "p:w\\d,x", WifiQrSecurity.Wpa, true));
+        Assert.Equal("WIFI:T:nopass;S:Cafe;;", WifiQr.Payload("Cafe", "ignored", WifiQrSecurity.Open, false));
+        Assert.Equal("WIFI:T:WEP;S:Old;P:12345;;", WifiQr.Payload("Old", "12345", WifiQrSecurity.Wep, false).Replace("P:\"12345\"", "P:12345"));
+    }
+
+    [Fact]
+    public void Hexadecimal_only_values_go_between_quotes()
+        => Assert.Equal("\"1234ab\"", WifiQr.Field("1234ab"));
+
+    [Fact]
+    public void The_code_is_a_square_with_the_three_finder_squares_and_a_quiet_margin()
+    {
+        var m = WifiQr.Modules(WifiQr.Payload("Casa", "clave123", WifiQrSecurity.Wpa, false));
+        var n = m.GetLength(0);
+        Assert.Equal(n, m.GetLength(1));
+        Assert.True(n >= 29);
+        Assert.False(m[0, 0]);                                   // quiet margin
+        Assert.True(m[4, 4] && m[4, 10] && m[10, 4] && m[10, 10]); // top-left finder square corners
+        Assert.True(m[4, n - 5] && m[n - 5, 4]);                 // top-right and bottom-left
+    }
+}
