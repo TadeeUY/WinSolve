@@ -94,7 +94,11 @@ jobs:
           WINSOLVE_E2E: "1"
           WINSOLVE_E2E_OUT: ${{ github.workspace }}\e2e
         run: |
-          dotnet test tests/WinSolve.Tests/WinSolve.Tests.csproj -c Release --filter "Category=E2E" --logger "console;verbosity=detailed"
+          # The output is also kept in a file, so the last step can print just what failed
+          # (the full log is long, and the PC report that follows buries it).
+          New-Item -ItemType Directory -Force e2e | Out-Null
+          dotnet test tests/WinSolve.Tests/WinSolve.Tests.csproj -c Release --filter "Category=E2E" --logger "console;verbosity=detailed" | Tee-Object -FilePath e2e\driver-tests.log
+          exit $LASTEXITCODE
 
       - name: Sample PC report (base64, to read it from the log)
         if: success() || failure()
@@ -142,3 +146,12 @@ jobs:
             e2e/*.png
             e2e/*.log
             e2e/*.txt
+
+      - name: Show which e2e tests failed
+        if: failure()
+        shell: pwsh
+        run: |
+          if (-not (Test-Path e2e\driver-tests.log)) { 'No e2e test output was saved.'; return }
+          '===== Failed e2e tests ====='
+          Select-String -Path e2e\driver-tests.log -Pattern '^\s*Failed ' -Context 0,12 |
+            Select-Object -First 12 | ForEach-Object { $_.ToString() }

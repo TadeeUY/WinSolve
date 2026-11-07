@@ -367,16 +367,21 @@ public sealed class InternetPage : Page
         ShowHistory();
     }
 
+    private TimeSpan RangeSpan() => _range.SelectedIndex switch { 0 => TimeSpan.FromHours(1), 2 => TimeSpan.FromDays(7), _ => TimeSpan.FromHours(24) };
+
     private (DateTime From, DateTime To, List<QualitySample> Samples) HistoryData()
     {
-        var span = _range.SelectedIndex switch { 0 => TimeSpan.FromHours(1), 2 => TimeSpan.FromDays(7), _ => TimeSpan.FromHours(24) };
         var to = DateTime.Now;
-        return (to - span, to, QualityLog.Load(to - span));
+        return (to - RangeSpan(), to, QualityLog.Load(to - RangeSpan()));
     }
 
-    private void ShowHistory()
+    private async void ShowHistory()
     {
-        var (from, to, samples) = HistoryData();
+        // The file is read off the UI thread: a week of checks is thousands of lines.
+        var to = DateTime.Now;
+        var from = to - RangeSpan();
+        var samples = await Task.Run(() => QualityLog.Load(from));
+        if (IsDisposed) return;
         var hours = (to - from).TotalHours;
         _history.SetData(QualityLog.Buckets(samples, from, to, hours <= 1 ? 60 : hours <= 24 ? 96 : 84), from, to);
         if (samples.Count == 0)

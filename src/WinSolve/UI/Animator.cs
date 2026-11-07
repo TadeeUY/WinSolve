@@ -1,47 +1,29 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace WinSolve.UI;
 
 /// <summary>
-/// Drives small UI animations (hover fades, switch knobs, indicators) from a single UI-thread
-/// timer, so dozens of controls don't each need their own timer.
+/// Drives small UI animations (hover fades, switch knobs, the side menu...) from one clock, so dozens
+/// of controls don't each need their own timer.
 /// </summary>
+/// <remarks>
+/// The clock is tied to the screen refresh: a helper thread waits for the next frame of the Windows
+/// compositor (DwmFlush) and asks the UI thread to move every animation once. A WinForms Timer is
+/// the last message Windows delivers (after input and painting), so under load its ticks bunch up
+/// and the motion stutters; and <see cref="Environment.TickCount64"/> only changes every ~15 ms,
+/// so progress was measured in steps. Progress now comes from the high-resolution clock.
+/// </remarks>
 public static class Animator
 {
-    // A 15 ms timer only ticks every 15.6 ms at best, and the system clock is that coarse by default:
-    // frames come out uneven. Asking Windows for a 1 ms clock while something animates makes them even.
-    [DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint milliseconds);
-    [DllImport("winmm.dll")] private static extern uint timeEndPeriod(uint milliseconds);
-    private static bool _fineClock;
+    [DllImport("dwmapi.dll")] private static extern int DwmFlush();
 
-    private static void FineClock(bool on)
-    {
-        if (on == _fineClock) return;
-        try { if (on) timeBeginPeriod(1); else timeEndPeriod(1); _fineClock = on; }
-        catch { /* the default clock is fine, just less even */ }
-    }
-
-    private static readonly System.Windows.Forms.Timer Timer = new() { Interval = 8 };
     private static readonly Dictionary<object, Func<bool>> Running = [];
-
-    static Animator()
-    {
-        Timer.Tick += (_, _) =>
-        {
-            foreach (var (key, step) in Running.ToList())
-            {
-                bool done;
-                try { done = step(); }
-                catch { done = true; }
-                if (done) Running.Remove(key);
-            }
-            if (Running.Count == 0)
-            {
-                Timer.Stop();
-                FineClock(false);
-            }
-        };
-    }
+    private static readonly object PumpLock = new();
+    private static Thread? _pump;
+    private static bool _active;
+    private static int _queued;   // a step is already waiting in the UI queue: don't pile up more
+    private static SynchronizationContext? _ui;
 
     public static bool Enabled => Core.AppSettings.Current.Animations;
 
@@ -64,17 +46,64 @@ public static class Animator
             apply(target);
             return;
         }
-        var began = Environment.TickCount64;
+        var began = Stopwatch.GetTimestamp();
         Running[owner] = () =>
         {
-            var t = Math.Clamp((Environment.TickCount64 - began) / (double)ms, 0, 1);
+            var t = Math.Clamp(Stopwatch.GetElapsedTime(began).TotalMilliseconds / ms, 0, 1);
             apply(start + (target - start) * Ease.OutCubic(t));
             return t >= 1;
         };
-        if (!Timer.Enabled)
+        Wake();
+    }
+
+    /// <summary>Starts the frame clock if it is not running (UI thread).</summary>
+    private static void Wake()
+    {
+        _ui ??= SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+        lock (PumpLock)
         {
-            FineClock(true);
-            Timer.Start();
+            _active = true;
+            if (_pump is not null) return;
+            _pump = new Thread(Pump) { IsBackground = true, Name = "WinSolve animation clock", Priority = ThreadPriority.AboveNormal };
+            _pump.Start();
+        }
+    }
+
+    private static void Pump()
+    {
+        while (true)
+        {
+            lock (PumpLock)
+            {
+                if (!_active)
+                {
+                    _pump = null;
+                    return;
+                }
+            }
+            // Blocks until the next screen frame (about every 16 ms); if the compositor is not there, a plain wait.
+            int hr;
+            try { hr = DwmFlush(); }
+            catch { hr = -1; }
+            if (hr != 0) Thread.Sleep(8);
+            if (Interlocked.Exchange(ref _queued, 1) == 0)
+                _ui!.Post(_ => { Interlocked.Exchange(ref _queued, 0); Step(); }, null);
+        }
+    }
+
+    /// <summary>One frame, on the UI thread.</summary>
+    private static void Step()
+    {
+        foreach (var (key, step) in Running.ToList())
+        {
+            bool done;
+            try { done = step(); }
+            catch { done = true; }
+            if (done) Running.Remove(key);
+        }
+        if (Running.Count == 0)
+        {
+            lock (PumpLock) _active = false;
         }
     }
 

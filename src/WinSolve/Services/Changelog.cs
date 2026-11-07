@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 4),
+        [
+            new("\uE945", "Smoother and snappier animations: they now follow the screen refresh instead of a slow timer, they are shorter, and the menu and the page next to it no longer flicker.",
+                "Animaciones más fluidas y ágiles: ahora siguen el refresco de la pantalla en vez de un temporizador lento, son más cortas, y el menú y la página de al lado ya no parpadean."),
+        ]),
         new(new Version(0, 17, 3),
         [
             new("\uE701", "The Wi-Fi QR code now finds your network by itself, even when the PC is on the cable: it recognizes your router's Wi-Fi among the networks around, and fills in the name and the password Windows saved. No need to type anything.",
