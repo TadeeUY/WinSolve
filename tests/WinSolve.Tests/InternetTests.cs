@@ -95,7 +95,7 @@ public class InternetTests
             "This PC can't reach the router. Check the cable or the Wi-Fi connection, then restart the router.",
             "Everything works: the router, the Internet and the DNS.",
             "Private address (phone, tablet or virtual machine)",
-            "Through {0}. This PC: {1}", "Collapse the menu", "Expand the menu",
+            "Through {0}. This PC: {1}", "Collapse the menu", "Expand the menu", "Connection history", "Alert me when a new device joins my network", "Copy report",
         ];
         foreach (var k in keys) Assert.True(WinSolve.Localization.Spanish.Table.ContainsKey(k), k);
     }
@@ -231,4 +231,219 @@ public class SidebarSettingTests
     [Fact]
     public void The_side_menu_starts_expanded()
         => Assert.False(new WinSolve.Core.AppSettings().SidebarCollapsed);
+}
+
+public class DeviceNameTests
+{
+    private static byte[] Name(params string[] labels)
+    {
+        var bytes = new List<byte>();
+        foreach (var l in labels) { bytes.Add((byte)l.Length); bytes.AddRange(System.Text.Encoding.ASCII.GetBytes(l)); }
+        bytes.Add(0);
+        return [.. bytes];
+    }
+
+    [Fact]
+    public void The_mDNS_question_asks_for_the_reverse_name_of_the_address()
+    {
+        var q = DeviceNames.BuildPtrQuery("192.168.1.20");
+        Assert.Equal(1, q[5]);                                   // one question
+        Assert.Equal(2, q[12]);                                  // "20"
+        Assert.Equal((byte)'2', q[13]);
+        Assert.Equal(new byte[] { 0, 12, 0x80, 0x01 }, q[^4..]); // PTR, IN, answer directly
+    }
+
+    [Fact]
+    public void A_PTR_answer_gives_the_device_name_without_its_domain()
+    {
+        var packet = new List<byte> { 0, 0, 0x84, 0, 0, 1, 0, 1, 0, 0, 0, 0 };
+        packet.AddRange(Name("20", "1", "168", "192", "in-addr", "arpa"));
+        packet.AddRange(new byte[] { 0, 12, 0, 1 });
+        packet.AddRange(new byte[] { 0xC0, 12, 0, 12, 0, 1, 0, 0, 0, 120 });   // answer: pointer to the question name, PTR, IN, ttl
+        var data = Name("iPhone-de-Ana", "local");
+        packet.Add(0); packet.Add((byte)data.Length);
+        packet.AddRange(data);
+        Assert.Equal("iPhone-de-Ana", DeviceNames.ParsePtrAnswer([.. packet]));
+    }
+
+    [Fact]
+    public void Garbage_is_not_a_name()
+    {
+        Assert.Null(DeviceNames.ParsePtrAnswer([1, 2, 3]));
+        Assert.Null(DeviceNames.ParsePtrAnswer(new byte[40]));
+    }
+
+    [Fact]
+    public void The_NetBIOS_question_is_a_node_status_query_for_the_wildcard_name()
+    {
+        var q = DeviceNames.BuildNetBiosQuery();
+        Assert.Equal(50, q.Length);
+        Assert.Equal(0x20, q[12]);
+        Assert.Equal("CK" + new string('A', 30), System.Text.Encoding.ASCII.GetString(q, 13, 32));
+        Assert.Equal(new byte[] { 0, 0x21, 0, 1 }, q[^4..]);
+    }
+
+    [Fact]
+    public void A_NetBIOS_answer_gives_the_computer_name_not_the_workgroup()
+    {
+        var packet = new List<byte> { 0x13, 0x37, 0x84, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0x20 };
+        packet.AddRange(System.Text.Encoding.ASCII.GetBytes("CK" + new string('A', 30)));
+        packet.Add(0);
+        packet.AddRange(new byte[] { 0, 0x21, 0, 1, 0, 0, 0, 0, 0, 38 });   // type, class, ttl, data length
+        packet.Add(2);                                                        // two names
+        packet.AddRange(System.Text.Encoding.ASCII.GetBytes("WORKGROUP      ")); packet.AddRange(new byte[] { 0x00, 0x84, 0x00 }); // group
+        packet.AddRange(System.Text.Encoding.ASCII.GetBytes("DESKTOP-ANA    ")); packet.AddRange(new byte[] { 0x00, 0x04, 0x00 }); // computer
+        Assert.Equal("DESKTOP-ANA", DeviceNames.ParseNetBiosAnswer([.. packet]));
+    }
+
+    [Fact]
+    public void A_UPnP_description_gives_the_friendly_name_and_model()
+    {
+        const string xml = "<root xmlns=\"urn:schemas-upnp-org:device-1-0\"><device><friendlyName>Living room TV</friendlyName><manufacturer>Samsung</manufacturer><modelName>UE55</modelName></device></root>";
+        var id = DeviceNames.ParseDescription(xml);
+        Assert.Equal("Living room TV", id!.Name);
+        Assert.Equal("Samsung UE55", id.Detail);
+    }
+
+    [Fact]
+    public void Names_lose_their_domain()
+    {
+        Assert.Equal("PC-SALA", DeviceNames.FirstLabel("PC-SALA.lan."));
+        Assert.Equal("phone", DeviceNames.FirstLabel("phone"));
+    }
+}
+
+public class WifiQrTests
+{
+    [Fact]
+    public void The_payload_follows_the_WIFI_format_and_escapes_special_characters()
+    {
+        Assert.Equal("WIFI:T:WPA;S:Casa;P:clave123;;", WifiQr.Payload("Casa", "clave123", WifiQrSecurity.Wpa, false));
+        Assert.Equal("WIFI:T:WPA;S:A\\;B;P:p\\:w\\\\d\\,x;H:true;;", WifiQr.Payload("A;B", "p:w\\d,x", WifiQrSecurity.Wpa, true));
+        Assert.Equal("WIFI:T:nopass;S:Bar;;", WifiQr.Payload("Bar", "ignored", WifiQrSecurity.Open, false));
+        Assert.Equal("WIFI:T:WEP;S:Old;P:\"12345\";;", WifiQr.Payload("Old", "12345", WifiQrSecurity.Wep, false));   // digits only: quoted
+    }
+
+    [Fact]
+    public void Hexadecimal_only_values_go_between_quotes()
+        => Assert.Equal("\"1234ab\"", WifiQr.Field("1234ab"));
+
+    [Fact]
+    public void The_code_is_a_square_with_the_three_finder_squares_and_a_quiet_margin()
+    {
+        var m = WifiQr.Modules(WifiQr.Payload("Casa", "clave123", WifiQrSecurity.Wpa, false));
+        var n = m.GetLength(0);
+        Assert.Equal(n, m.GetLength(1));
+        Assert.True(n >= 29);
+        Assert.False(m[0, 0]);                                   // quiet margin
+        Assert.True(m[4, 4] && m[4, 10] && m[10, 4] && m[10, 10]); // top-left finder square corners
+        Assert.True(m[4, n - 5] && m[n - 5, 4]);                 // top-right and bottom-left
+    }
+}
+
+public class NetworkHistoryTests
+{
+    private static QualitySample S(int minute, int router, int internet)
+        => new(new DateTime(2026, 11, 7, 12, 0, 0).AddMinutes(minute), router, internet);
+
+    [Fact]
+    public void Two_failed_checks_in_a_row_are_an_outage_and_a_single_one_is_not()
+    {
+        var sum = QualityLog.Summarize([S(0, 2, 20), S(1, 2, -1), S(2, 2, 20), S(3, 2, -1), S(4, 2, -1), S(5, 2, -1), S(6, 2, 20)]);
+        Assert.Single(sum.Outages);
+        Assert.Equal(new DateTime(2026, 11, 7, 12, 3, 0), sum.Outages[0].Start);
+        Assert.Equal(TimeSpan.FromMinutes(3), sum.Outages[0].Length);
+        Assert.False(sum.Outages[0].LocalNetwork);
+        Assert.Equal(7, sum.Samples);
+        Assert.Equal(3 * 100.0 / 7, sum.UptimePercent, 3);
+        Assert.Equal(20.0, sum.AverageMs!.Value);
+    }
+
+    [Fact]
+    public void An_outage_where_the_router_is_silent_too_is_a_local_one()
+        => Assert.True(QualityLog.Summarize([S(0, -1, -1), S(1, -1, -1), S(2, 2, 20)]).Outages.Single().LocalNetwork);
+
+    [Fact]
+    public void A_long_silence_between_checks_splits_outages_and_is_not_counted_as_one()
+    {
+        var sum = QualityLog.Summarize([S(0, 2, -1), S(1, 2, -1), S(30, 2, -1), S(31, 2, -1)]);
+        Assert.Equal(2, sum.Outages.Count);
+        Assert.All(sum.Outages, o => Assert.Equal(TimeSpan.FromMinutes(2), o.Length));
+        Assert.Equal(TimeSpan.FromMinutes(4), sum.Downtime);
+    }
+
+    [Fact]
+    public void No_checks_means_no_outages_and_full_uptime()
+    {
+        var sum = QualityLog.Summarize([]);
+        Assert.Empty(sum.Outages);
+        Assert.Equal(100, sum.UptimePercent);
+        Assert.Null(sum.AverageMs);
+    }
+
+    [Fact]
+    public void Buckets_split_the_period_and_count_failures()
+    {
+        var from = new DateTime(2026, 11, 7, 12, 0, 0);
+        var buckets = QualityLog.Buckets([S(5, 2, 20), S(7, 2, -1), S(75, 2, 30)], from, from.AddHours(1), 6);
+        Assert.Equal(6, buckets.Count);
+        Assert.Equal(2, buckets[0].Samples);
+        Assert.Equal(1, buckets[0].Failures);
+        Assert.Equal(20.0, buckets[0].AverageMs!.Value);
+        Assert.Equal(0, buckets[1].Samples);
+        Assert.Equal(0, buckets.Sum(b => b.Samples) - 2);   // the sample after the period is left out
+    }
+
+    [Fact]
+    public void A_check_is_written_and_read_back()
+    {
+        var s = S(3, 4, -1);
+        var back = QualityLog.Parse(QualityLog.Format(s))!;
+        Assert.Equal(s.Time, back.Time);
+        Assert.Equal(4, back.RouterMs);
+        Assert.Equal(-1, back.InternetMs);
+        Assert.Null(QualityLog.Parse("not,a,line"));
+        Assert.Null(QualityLog.Parse(""));
+    }
+
+    private static LanDevice Dev(string ip, string mac, bool router = false, bool me = false) => new(ip, mac, "", "", router, me);
+
+    [Fact]
+    public void The_first_time_everything_is_known_and_afterwards_only_new_devices_are_flagged()
+    {
+        var known = new Dictionary<string, KnownDevice>(StringComparer.OrdinalIgnoreCase);
+        var now = new DateTime(2026, 11, 7);
+        Assert.Empty(KnownDevices.Merge(known, [Dev("192.168.1.1", "AA:00:00:00:00:01", router: true), Dev("192.168.1.5", "AA:00:00:00:00:05")], now, firstRun: true));
+        Assert.All(known.Values, k => Assert.True(k.Trusted));
+
+        var fresh = KnownDevices.Merge(known, [Dev("192.168.1.5", "AA:00:00:00:00:05"), Dev("192.168.1.9", "AA:00:00:00:00:09")], now, firstRun: false);
+        Assert.Equal("AA:00:00:00:00:09", Assert.Single(fresh).Mac);
+        Assert.False(known["AA:00:00:00:00:09"].Trusted);
+
+        // Seen again: no second alert for the same device.
+        Assert.Empty(KnownDevices.Merge(known, [Dev("192.168.1.9", "AA:00:00:00:00:09")], now, firstRun: false));
+    }
+}
+
+public class OwnNetworkTests
+{
+    private static WifiAp Ap(string ssid, string bssid, int rssi) => new(ssid, bssid, 6, 2437, rssi, WifiBand.Ghz24);
+
+    [Fact]
+    public void A_router_networks_share_the_first_five_bytes_of_its_address()
+    {
+        Assert.True(OwnNetwork.SameRouter("AA:BB:CC:DD:EE:02", "aa:bb:cc:dd:ee:01"));
+        Assert.False(OwnNetwork.SameRouter("AA:BB:CC:DD:EF:02", "AA:BB:CC:DD:EE:01"));
+        Assert.False(OwnNetwork.SameRouter("", "AA:BB:CC:DD:EE:01"));
+    }
+
+    [Fact]
+    public void The_network_the_PC_is_on_wins_otherwise_the_routers_strongest_one()
+    {
+        var aps = new List<WifiAp> { Ap("Vecino", "11:22:33:44:55:66", -40), Ap("MiCasa-5G", "AA:BB:CC:DD:EE:05", -70), Ap("MiCasa", "AA:BB:CC:DD:EE:02", -50) };
+        Assert.Equal("MiCasa-5G", OwnNetwork.Find(new WifiScan(aps, "AA:BB:CC:DD:EE:05"), "AA:BB:CC:DD:EE:01"));   // connected
+        Assert.Equal("MiCasa", OwnNetwork.Find(new WifiScan(aps, null), "AA:BB:CC:DD:EE:01"));                     // on the cable: matched by address
+        Assert.Null(OwnNetwork.Find(new WifiScan(aps, null), null));
+        Assert.Null(OwnNetwork.Find(new WifiScan([Ap("Vecino", "11:22:33:44:55:66", -40)], null), "AA:BB:CC:DD:EE:01"));
+    }
 }

@@ -121,6 +121,28 @@ public static class WifiScanner
     }
 }
 
+/// <summary>Which of the Wi-Fi networks heard is the router's own.</summary>
+public static class OwnNetwork
+{
+    /// <summary>
+    /// A router gives each of its Wi-Fi networks (2.4 GHz, 5 GHz, guest) an address that only differs
+    /// from its own in the last byte or so: the first five bytes of both addresses are the same.
+    /// </summary>
+    public static bool SameRouter(string bssid, string gatewayMac)
+        => bssid.Length >= 14 && gatewayMac.Length >= 14
+           && string.Equals(bssid[..14], gatewayMac[..14], StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The name of the network this PC is on, or else the router's strongest named network.</summary>
+    public static string? Find(WifiScan scan, string? gatewayMac)
+    {
+        var connected = scan.Aps.FirstOrDefault(a => a.Bssid == scan.ConnectedBssid && a.Ssid.Length > 0);
+        if (connected is not null) return connected.Ssid;
+        if (gatewayMac is null) return null;
+        return scan.Aps.Where(a => a.Ssid.Length > 0 && SameRouter(a.Bssid, gatewayMac))
+            .OrderByDescending(a => a.Rssi).FirstOrDefault()?.Ssid;
+    }
+}
+
 /// <summary>Works out how crowded each Wi-Fi channel is and which one to move to.</summary>
 public static class ChannelPlanner
 {

@@ -10,6 +10,22 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 3),
+        [
+            new("\uE701", "The Wi-Fi QR code now finds your network by itself, even when the PC is on the cable: it recognizes your router's Wi-Fi among the networks around, and fills in the name and the password Windows saved. No need to type anything.",
+                "El código QR del Wi-Fi ahora encuentra tu red solo, incluso con la PC conectada por cable: reconoce el Wi-Fi de tu router entre las redes de alrededor y completa el nombre y la contraseña que Windows guardó. No hace falta escribir nada."),
+            new("\uE774", "New (optional): an alert when a device never seen before joins your network, and a history of your connection that shows when it dropped, with a report you can read to your Internet provider. Both are off until you turn them on in Internet.",
+                "Nuevo (opcional): un aviso cuando un dispositivo que nunca se vio entra a tu red, y un historial de tu conexión que muestra cuándo se cayó, con un informe que puedes leerle a tu proveedor de Internet. Los dos están apagados hasta que los actives en Internet."),
+            new("\uE76B", "Smoother animation when the side menu collapses or opens.",
+                "Animación más fluida al contraer o abrir el menú lateral."),
+        ]),
+        new(new Version(0, 17, 2),
+        [
+            new("\uE701", "New: Wi-Fi QR code. Pick a saved network or type one, and WinSolve draws the code your visitors scan with their phone to join the Wi-Fi without typing the password. Copy it or save it as an image. Find it in Internet and in the Toolbox.",
+                "Nuevo: código QR del Wi-Fi. Elige una red guardada o escribe una, y WinSolve dibuja el código que tus visitas escanean con el celular para conectarse al Wi-Fi sin escribir la clave. Cópialo o guárdalo como imagen. Está en Internet y en la Caja de herramientas."),
+            new("\uE774", "Devices on your network now show their names: each device is asked the way it answers (iPhone, Mac and printers; Windows PCs; smart TVs and consoles). Double-click any name to give the device your own, and WinSolve remembers it.",
+                "Los dispositivos de tu red ahora muestran su nombre: se le pregunta a cada uno como sabe responder (iPhone, Mac e impresoras; PCs con Windows; televisores y consolas). Haz doble clic en un nombre para ponerle el tuyo, y WinSolve lo recuerda."),
+        ]),
         new(new Version(0, 17, 1),
         [
             new("\uE76B", "Collapsible menu: the arrow at the top of the side menu shrinks it to just the icons (hover an icon to see its name) and opens it again. WinSolve remembers your choice.",

@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace WinSolve.UI;
 
 /// <summary>
@@ -6,7 +8,20 @@ namespace WinSolve.UI;
 /// </summary>
 public static class Animator
 {
-    private static readonly System.Windows.Forms.Timer Timer = new() { Interval = 15 };
+    // A 15 ms timer only ticks every 15.6 ms at best, and the system clock is that coarse by default:
+    // frames come out uneven. Asking Windows for a 1 ms clock while something animates makes them even.
+    [DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint milliseconds);
+    [DllImport("winmm.dll")] private static extern uint timeEndPeriod(uint milliseconds);
+    private static bool _fineClock;
+
+    private static void FineClock(bool on)
+    {
+        if (on == _fineClock) return;
+        try { if (on) timeBeginPeriod(1); else timeEndPeriod(1); _fineClock = on; }
+        catch { /* the default clock is fine, just less even */ }
+    }
+
+    private static readonly System.Windows.Forms.Timer Timer = new() { Interval = 8 };
     private static readonly Dictionary<object, Func<bool>> Running = [];
 
     static Animator()
@@ -20,7 +35,11 @@ public static class Animator
                 catch { done = true; }
                 if (done) Running.Remove(key);
             }
-            if (Running.Count == 0) Timer.Stop();
+            if (Running.Count == 0)
+            {
+                Timer.Stop();
+                FineClock(false);
+            }
         };
     }
 
@@ -52,7 +71,11 @@ public static class Animator
             apply(start + (target - start) * Ease.OutCubic(t));
             return t >= 1;
         };
-        if (!Timer.Enabled) Timer.Start();
+        if (!Timer.Enabled)
+        {
+            FineClock(true);
+            Timer.Start();
+        }
     }
 
     public static Color Blend(Color a, Color b, double t)

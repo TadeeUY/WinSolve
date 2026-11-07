@@ -25,7 +25,8 @@ public sealed class MainForm : Form
     private bool _updating;
     private Label? _brandSubtitle, _versionLabel, _brandName;
     private const int SidebarWide = 248, SidebarNarrow = 60;
-    private Panel? _side, _navViewport;
+    private Panel? _side, _navViewport, _main;
+    private bool _mainSuspended;
     private FlowLayoutPanel? _navList, _navFooter;
     private PictureBox? _logo;
     private Divider? _footerDivider;
@@ -77,7 +78,7 @@ public sealed class MainForm : Form
         };
 
         // Content area: optional info bar (updates) above the current page.
-        var main = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Padding = new Padding(0) };
+        var main = _main = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Padding = new Padding(0) };
         var barHost = new Panel { Dock = DockStyle.Top, AutoSize = true, BackColor = Theme.Background, Padding = new Padding(32, 14, 32, 0) };
         barHost.Controls.Add(_infoBar);
         barHost.Visible = false;
@@ -106,6 +107,7 @@ public sealed class MainForm : Form
                 AppSettings.Current.Save();
             }
             ScreenTimeWatcher.Start();
+            NetworkWatcher.Start();
             ErrorMonitor.Instance.AlertRaised += OnAlert;
             ErrorMonitor.Instance.Apply();
             _ = CheckForUpdateAsync();
@@ -814,12 +816,25 @@ public sealed class MainForm : Form
         }
         // Names disappear at once when collapsing and come back once there is room for them.
         if (collapsed) ApplyCompact(true);
+        // The page next to the menu is only measured once, at the end: re-measuring it for every
+        // frame of the animation is what made it stutter. Meanwhile it keeps its size and is clipped.
+        if (_main is not null && !_mainSuspended)
+        {
+            _main.SuspendLayout();
+            _mainSuspended = true;
+        }
         Animator.Animate(_side, () => _side.Width, target, w =>
         {
             _side.Width = (int)Math.Round(w);
             FitNav();
-            if (Math.Abs(w - target) < 0.5) ApplyCompact(collapsed);
-        }, 180);
+            if (Math.Abs(w - target) >= 0.5) return;
+            ApplyCompact(collapsed);
+            if (_mainSuspended)
+            {
+                _mainSuspended = false;
+                _main?.ResumeLayout(true);
+            }
+        }, 160);
     }
 
     /// <summary>Gives every menu entry the width the menu has now.</summary>
@@ -827,9 +842,14 @@ public sealed class MainForm : Form
     {
         if (_side is null) return;
         var width = _side.Width - _side.Padding.Horizontal - 2;
+        // One re-measure of the menu per frame, not one per entry.
+        _navList?.SuspendLayout();
+        _navFooter?.SuspendLayout();
         foreach (var b in _nav) b.Width = width;
         foreach (var h in _headers) h.Width = width;
         if (_footerDivider is not null) _footerDivider.Width = Math.Max(10, width - 24);
+        _navList?.ResumeLayout(true);
+        _navFooter?.ResumeLayout(true);
         if (_logo is not null) _logo.Left = _collapsed ? Math.Max(0, (_side.Width - _side.Padding.Horizontal - _logo.Width) / 2) : 10;
         PlaceToggle();
     }
