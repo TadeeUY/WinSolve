@@ -57,7 +57,23 @@ public static class AutoStart
         </Task>
         """;
 
+    /// <summary>Why the last <see cref="SetAsync"/> failed (what Windows said), to show to the user.</summary>
+    public static string LastError { get; private set; } = "";
+
     public static async Task<bool> SetAsync(bool enabled)
+    {
+        LastError = "";
+        try { return await SetCoreAsync(enabled); }
+        catch (Exception ex)
+        {
+            // Never let this escape: it runs from a click handler, where it would just vanish or crash the page.
+            LastError = ex.Message;
+            Logger.Write($"Start with Windows could not be {(enabled ? "enabled" : "disabled")}: {ex}");
+            return false;
+        }
+    }
+
+    private static async Task<bool> SetCoreAsync(bool enabled)
     {
         var exe = Environment.ProcessPath ?? Application.ExecutablePath;
         if (enabled && !IsAllowed)
@@ -85,6 +101,7 @@ public static class AutoStart
         else
             r = await ProcessRunner.RunAsync("schtasks.exe", $"/delete /f /tn \"{TaskName}\"");
         Logger.Write($"Start with Windows {(enabled ? "enabled" : "disabled")}: {r.Output.Trim()}");
+        if (!r.Success) LastError = r.Output.Trim();
         return r.Success;
     }
 }
