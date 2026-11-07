@@ -62,6 +62,7 @@ public sealed class MainForm : Form
             ["toolbox"] = () => new ToolboxPage(),
             ["winupdate"] = () => new WindowsUpdatePage(),
             ["screentime"] = () => new ScreenTimePage(),
+            ["internet"] = () => new InternetPage(),
         };
 
         // Content area: optional info bar (updates) above the current page.
@@ -689,6 +690,7 @@ public sealed class MainForm : Form
             ("toolbox", "\uEC7A", "Toolbox"),
             ("winupdate", "\uE895", "Windows Update"),
             ("screentime", "\uE823", "Screen time"),
+            ("internet", "\uE774", "Internet"),
             ("tweaks", "", "Tweaks"),
             ("activation", "", "Activation"),
         ];
@@ -783,6 +785,7 @@ public sealed class MainForm : Form
                 {
                     "winupdate" => "pause resume hide history rollback driver pausar reanudar ocultar historial revertir",
                     "screentime" => "lock schedule hours usage break bloqueo horario horas uso pantalla descanso",
+                    "internet" => "router wifi wi-fi password devices block gateway 192.168.1.1 modem contraseña dispositivos bloquear red conexion",
                     _ => "",
                 }));
         }

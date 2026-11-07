@@ -35,6 +35,7 @@ Fixed in 0.8.0:
 - **Settings JSON** only contains booleans, enums, colors and ids from the built-in catalogs; nothing in it is executed.
 - **Network:** only HTTPS to `nvidia.com` (driver lookup/download) and, in the installer, `aka.ms` → Microsoft's .NET download; TLS validation is never disabled. XML/JSON parsing uses the default (DTD-prohibited) settings.
 - **Error alerts:** event log text from other programs is only displayed. The **Fix** button only runs fixed tasks from the built-in catalog.
+- **Internet page / router:** the router password is stored with Windows DPAPI (current-user scope) in `router.json`, never logged. The router address must be a private LAN IPv4 (10/8, 172.16/12, 192.168/16, 100.64/10) without embedded credentials, and the sign-in script only runs on pages whose host is the saved router, so the password can't be typed into a redirect elsewhere. It signs in once per window (a wrong password is not retried, to avoid router lockouts). The device scan is a ping sweep of the PC's own /24 plus the ARP table; nothing leaves the local network.
 - **Disk space delete** moves to the Recycle Bin, is always user-initiated and warns for system/program folders; `pagefile.sys`/`hiberfil.sys` are blocked.
 
 ## Residual risks
