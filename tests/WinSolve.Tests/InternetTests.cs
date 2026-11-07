@@ -424,3 +424,26 @@ public class NetworkHistoryTests
         Assert.Empty(KnownDevices.Merge(known, [Dev("192.168.1.9", "AA:00:00:00:00:09")], now, firstRun: false));
     }
 }
+
+public class OwnNetworkTests
+{
+    private static WifiAp Ap(string ssid, string bssid, int rssi) => new(ssid, bssid, 6, 2437, rssi, WifiBand.Ghz24);
+
+    [Fact]
+    public void A_router_networks_share_the_first_five_bytes_of_its_address()
+    {
+        Assert.True(OwnNetwork.SameRouter("AA:BB:CC:DD:EE:02", "aa:bb:cc:dd:ee:01"));
+        Assert.False(OwnNetwork.SameRouter("AA:BB:CC:DD:EF:02", "AA:BB:CC:DD:EE:01"));
+        Assert.False(OwnNetwork.SameRouter("", "AA:BB:CC:DD:EE:01"));
+    }
+
+    [Fact]
+    public void The_network_the_PC_is_on_wins_otherwise_the_routers_strongest_one()
+    {
+        var aps = new List<WifiAp> { Ap("Vecino", "11:22:33:44:55:66", -40), Ap("MiCasa-5G", "AA:BB:CC:DD:EE:05", -70), Ap("MiCasa", "AA:BB:CC:DD:EE:02", -50) };
+        Assert.Equal("MiCasa-5G", OwnNetwork.Find(new WifiScan(aps, "AA:BB:CC:DD:EE:05"), "AA:BB:CC:DD:EE:01"));   // connected
+        Assert.Equal("MiCasa", OwnNetwork.Find(new WifiScan(aps, null), "AA:BB:CC:DD:EE:01"));                     // on the cable: matched by address
+        Assert.Null(OwnNetwork.Find(new WifiScan(aps, null), null));
+        Assert.Null(OwnNetwork.Find(new WifiScan([Ap("Vecino", "11:22:33:44:55:66", -40)], null), "AA:BB:CC:DD:EE:01"));
+    }
+}

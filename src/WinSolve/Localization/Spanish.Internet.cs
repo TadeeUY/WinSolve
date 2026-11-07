@@ -172,5 +172,11 @@ public static partial class Spanish
         ["Average answer time: {0:0} ms"] = "Tiempo de respuesta promedio: {0:0} ms",
         ["Cuts: {0}, {1} minutes without Internet in total"] = "Cortes: {0}, {1} minutos sin Internet en total",
         ["Report copied."] = "Informe copiado.",
+        ["Looking for your Wi-Fi network..."] = "Buscando tu red Wi-Fi...",
+        ["Detected your Wi-Fi network: {0}."] = "Se detectó tu red Wi-Fi: {0}.",
+        ["Detected {0}, but this PC has never connected to it: type its password."] = "Se detectó {0}, pero esta PC nunca se conectó a ella: escribe su contraseña.",
+        ["Found your saved Wi-Fi network: {0}."] = "Se encontró tu red Wi-Fi guardada: {0}.",
+        ["Using the first saved network ({0}). Change it above if it is not yours."] = "Se usa la primera red guardada ({0}). Cámbiala arriba si no es la tuya.",
+        ["No Wi-Fi network found on this PC. Type the name and password: they are on the router's sticker or in its Wi-Fi settings (Internet > Open my router)."] = "No se encontró ninguna red Wi-Fi en esta PC. Escribe el nombre y la contraseña: están en la etiqueta del router o en su configuración Wi-Fi (Internet > Abrir mi router).",
     };
 }

@@ -114,6 +114,17 @@ public static class RouterService
         catch { return null; }
     }
 
+    /// <summary>The router's physical address, from the ARP table (null if it does not answer).</summary>
+    public static async Task<string?> GatewayMacAsync(LanInfo lan, CancellationToken ct = default)
+    {
+        await PingAsync(lan.Gateway.ToString(), 800);
+        var arp = await ProcessRunner.RunAsync("arp.exe", "-a", ct: ct);
+        var gateway = lan.Gateway.ToString();
+        foreach (var (ip, mac) in ParseArp(arp.Output, lan.Local, lan.Mask))
+            if (ip == gateway) return mac;
+        return null;
+    }
+
     // ───────────── Devices ─────────────
 
     /// <summary>Lists the devices on the same network: wakes the /24 with pings, then reads the ARP table.</summary>

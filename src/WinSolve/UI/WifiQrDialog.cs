@@ -49,6 +49,7 @@ internal sealed class WifiQrDialog : ToolDialog
         {
             LoadSaved();
             Redraw();
+            _ = DetectAsync();
         };
     }
 
@@ -58,7 +59,45 @@ internal sealed class WifiQrDialog : ToolDialog
         catch { _profiles = []; }   // no Wi-Fi card (a PC on the cable): type the network by hand
         foreach (var p in _profiles) _saved.Items.Add(p.Name);
         _savedRow.Visible = _profiles.Count > 0;
-        if (_profiles.Count == 0) Status.Text = Loc.T("This PC has no saved Wi-Fi networks: type the name and password.");
+    }
+
+    /// <summary>
+    /// Finds the user's own Wi-Fi without asking: the network this PC is on, or the one whose address
+    /// matches the router's (so it also works while the PC is on the cable), and fills in its password
+    /// from what Windows saved.
+    /// </summary>
+    private async Task DetectAsync()
+    {
+        Status.Text = Loc.T("Looking for your Wi-Fi network...");
+        string? ssid = null;
+        try
+        {
+            var lan = await Task.Run(RouterService.Detect);
+            var gatewayMac = lan is null ? null : await RouterService.GatewayMacAsync(lan);
+            ssid = OwnNetwork.Find(await WifiScanner.ScanAsync(), gatewayMac);
+        }
+        catch { /* no Wi-Fi card, or Wi-Fi is off: only what Windows saved is left */ }
+        if (IsDisposed || _ssid.Text.Length > 0) return;   // the user already typed something
+
+        var index = ssid is null ? -1 : _profiles.FindIndex(p => p.Name == ssid);
+        if (index >= 0)
+        {
+            _saved.SelectedIndex = index;
+            Status.Text = string.Format(Loc.T("Detected your Wi-Fi network: {0}."), ssid);
+        }
+        else if (ssid is not null)
+        {
+            _ssid.Text = ssid;
+            Status.Text = string.Format(Loc.T("Detected {0}, but this PC has never connected to it: type its password."), ssid);
+        }
+        else if (_profiles.Count > 0)
+        {
+            _saved.SelectedIndex = 0;
+            Status.Text = _profiles.Count == 1
+                ? string.Format(Loc.T("Found your saved Wi-Fi network: {0}."), _profiles[0].Name)
+                : string.Format(Loc.T("Using the first saved network ({0}). Change it above if it is not yours."), _profiles[0].Name);
+        }
+        else Status.Text = Loc.T("No Wi-Fi network found on this PC. Type the name and password: they are on the router's sticker or in its Wi-Fi settings (Internet > Open my router).");
     }
 
     private void PickSaved()
