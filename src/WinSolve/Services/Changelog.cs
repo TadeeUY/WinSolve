@@ -10,6 +10,17 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 0),
+        [
+            new("\uE774", "New: Internet. Checks the router, the Internet and the DNS and says where the problem is, recognizes your router's brand and model by itself, lists every device connected to your network, and opens your router's own settings page already signed in (the password is saved encrypted for your Windows user), so you can change the Wi-Fi password or remove and block devices.",
+                "Nuevo: Internet. Revisa el router, Internet y el DNS y dice dónde está el problema, reconoce solo la marca y el modelo de tu router, lista todos los dispositivos conectados a tu red y abre la página de configuración de tu router ya con la sesión iniciada (la contraseña se guarda cifrada para tu usuario de Windows), para que cambies la clave del Wi-Fi o quites y bloquees dispositivos."),
+            new("\uE701", "Wi-Fi channels: shows how crowded each channel is with your neighbors' networks and recommends the least crowded one for your router, on 2.4 and 5 GHz.",
+                "Canales Wi-Fi: muestra qué tan saturado está cada canal por las redes de tus vecinos y recomienda el menos saturado para tu router, en 2,4 y 5 GHz."),
+            new("\uE945", "DNS speed test: compares your DNS with Cloudflare, Google, Quad9, AdGuard and OpenDNS and tells you if a faster one is worth setting.",
+                "Prueba de velocidad del DNS: compara tu DNS con Cloudflare, Google, Quad9, AdGuard y OpenDNS y te dice si vale la pena poner uno más rápido."),
+            new("\uE713", "Start with Windows: when it can't be turned on, Settings now says where WinSolve is running from and shows the reason Windows gave.",
+                "Iniciar con Windows: cuando no se puede activar, Configuración ahora dice desde dónde se ejecuta WinSolve y muestra el motivo que dio Windows."),
+        ]),
         new(new Version(0, 16, 2),
         [
             new("\uE823", "New: Screen time. See how long you use the PC today, in the last 7 days and on each day, and set lock hours (for example 23:00 to 07:00): the PC locks with a one-minute warning, and if you unlock it, it locks again every 10 minutes. Time used during lock hours is shown apart.",

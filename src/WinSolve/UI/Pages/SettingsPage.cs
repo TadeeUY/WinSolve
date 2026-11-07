@@ -182,7 +182,8 @@ public sealed class SettingsPage : Page
         _autoStart.Checked = await Task.Run(AutoStart.IsEnabled);
         _autoStart.Enabled = AutoStart.IsAllowed || _autoStart.Checked;
         _autoStartDescription.Text = Edition.IsPortable ? "Not available in the portable version."
-            : AutoStart.IsAllowed ? "Starts hidden in the notification area." : "Requires an all-users install (in Program Files).";
+            : AutoStart.IsAllowed ? "Starts hidden in the notification area."
+            : string.Format(Loc.T("Requires an all-users install (in Program Files). WinSolve is running from {0}."), Path.GetDirectoryName(Environment.ProcessPath ?? Application.ExecutablePath));
     }
 
     private Task CheckUpdatesNow() => Main.CheckForUpdatesNowAsync();
@@ -396,8 +397,13 @@ public sealed class SettingsPage : Page
         }
 
         if (_autoStart.Checked != await Task.Run(AutoStart.IsEnabled) && !await AutoStart.SetAsync(_autoStart.Checked))
-            Info("Start with Windows is only available when WinSolve is installed for all users (in Program Files). " +
-                 "Running it elevated at sign-in from a folder your user account can write to would let other programs gain administrator rights.");
+        {
+            if (!AutoStart.IsAllowed)
+                Info("Start with Windows is only available when WinSolve is installed for all users (in Program Files). " +
+                     "Running it elevated at sign-in from a folder your user account can write to would let other programs gain administrator rights.");
+            else
+                Info(Loc.T("Windows did not accept the Start with Windows setting.") + "\n\n" + AutoStart.LastError);
+        }
 
         ErrorMonitor.Instance.Apply();
 
