@@ -233,10 +233,19 @@ public sealed class ActionTile : Control
 /// <summary>Small uppercase section header for the sidebar.</summary>
 public sealed class NavHeader : Control
 {
+    private bool _compact;
+
+    /// <summary>Collapsed side menu: a thin line instead of the section name.</summary>
+    public bool Compact
+    {
+        get => _compact;
+        set { if (_compact == value) return; _compact = value; Invalidate(); }
+    }
+
     public NavHeader(string text)
     {
         Text = text;
-        Height = 30;
+        Height = 26;
         Margin = new Padding(0, 6, 0, 0);
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
     }
@@ -244,8 +253,62 @@ public sealed class NavHeader : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         e.Graphics.Clear(Theme.Sidebar);
+        if (_compact)
+        {
+            using var line = new Pen(Theme.Divider);
+            e.Graphics.DrawLine(line, 14, Height / 2 + 3, Width - 14, Height / 2 + 3);
+            return;
+        }
         TextRenderer.DrawText(e.Graphics, Loc.T(Text).ToUpperInvariant(), Theme.Small, new Rectangle(18, 8, Width - 20, Height - 8),
             Theme.Faint, TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.NoPrefix);
+    }
+}
+
+/// <summary>Arrow at the top of the side menu: collapses it to the icons, or opens it again.</summary>
+public sealed class NavToggle : Control
+{
+    private bool _collapsed;
+    private double _hoverT;
+
+    public NavToggle()
+    {
+        Size = new Size(30, 26);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        A11y.Clickable(this, "Collapse the menu", null, AccessibleRole.PushButton);
+        Cursor = Cursors.Hand;
+    }
+
+    public bool Collapsed
+    {
+        get => _collapsed;
+        set
+        {
+            _collapsed = value;
+            AccessibleName = Loc.T(value ? "Expand the menu" : "Collapse the menu");
+            Invalidate();
+        }
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { Fade(true); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { Fade(false); base.OnMouseLeave(e); }
+
+    private void Fade(bool on) => Animator.Animate((this, "hover"), () => _hoverT, on ? 1 : 0, v => { _hoverT = v; Invalidate(); }, 120);
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Theme.Sidebar);
+        if (_hoverT > 0.01)
+        {
+            using var path = Theme.RoundedRect(new Rectangle(1, 1, Width - 3, Height - 3), 4);
+            using var b = new SolidBrush(Animator.Blend(Theme.Sidebar, Theme.NavHover, _hoverT * 0.75));
+            g.FillPath(b, path);
+        }
+        // Chevron left: collapse. Chevron right: expand.
+        TextRenderer.DrawText(g, _collapsed ? "\uE76C" : "\uE76B", Theme.IconsSmall, ClientRectangle, Theme.NavText,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
+        A11y.DrawFocus(this, g);
     }
 }
 

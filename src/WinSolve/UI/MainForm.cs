@@ -23,7 +23,18 @@ public sealed class MainForm : Form
     private readonly InfoBar _infoBar = new() { Dock = DockStyle.Top, Visible = false };
     private UpdateInfo? _update;
     private bool _updating;
-    private Label? _brandSubtitle, _versionLabel;
+    private Label? _brandSubtitle, _versionLabel, _brandName;
+    private const int SidebarWide = 248, SidebarNarrow = 60;
+    private Panel? _side, _navViewport;
+    private FlowLayoutPanel? _navList, _navFooter;
+    private PictureBox? _logo;
+    private Divider? _footerDivider;
+    private NavToggle? _toggle;
+    private Panel? _topBar;
+    private bool _collapsed;
+    private readonly List<NavHeader> _headers = [];
+    private readonly ToolTip _navTip = new();
+    private SidebarWheel? _wheel;
 
     public const string Slogan = "The multitool for Windows";
 
@@ -84,6 +95,7 @@ public sealed class MainForm : Form
             // With --tray, OnLoad is called by hand and again by WinForms on the first Show().
             if (_loaded) return;
             _loaded = true;
+            Application.AddMessageFilter(_wheel = new SidebarWheel(this));
             // If WinSolve was closed during a driver install, put Windows Update's driver setting back.
             _ = Task.Run(() => DriverService.RestoreWindowsUpdateDrivers(Logger.Write));
             _ = Task.Run(Maintenance.UpgradeTaskAsync);
@@ -125,6 +137,7 @@ public sealed class MainForm : Form
         };
         HandleCreated += (_, _) => Theme.StyleWindow(this);
         FormClosing += OnFormClosing;
+        FormClosed += (_, _) => { if (_wheel is not null) Application.RemoveMessageFilter(_wheel); };
     }
 
     // ───────────── Hidden start (--tray) ─────────────
@@ -661,16 +674,17 @@ public sealed class MainForm : Form
 
     private Control BuildSidebar()
     {
-        var side = new Panel { Dock = DockStyle.Left, Width = 248, BackColor = Theme.Sidebar, Padding = new Padding(4, 12, 4, 10) };
+        var side = _side = new Panel { Dock = DockStyle.Left, Width = SidebarWide, BackColor = Theme.Sidebar, Padding = new Padding(4, 4, 4, 10) };
 
         var list = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             BackColor = Theme.Sidebar,
-            AutoScroll = false,
+            // Scrolls when the window is short; its scroll bar sits outside the visible area (see the viewport below).
+            AutoScroll = true,
         };
+        _navList = list;
 
         // A null key is a section header.
         (string? key, string glyph, string text)[] items =
@@ -698,13 +712,18 @@ public sealed class MainForm : Form
         var width = side.Width - side.Padding.Horizontal - 2;
         foreach (var (key, glyph, text) in items)
         {
-            if (key is null) list.Controls.Add(new NavHeader(text) { Width = width });
+            if (key is null)
+            {
+                var header = new NavHeader(text) { Width = width };
+                _headers.Add(header);
+                list.Controls.Add(header);
+            }
             else list.Controls.Add(NavItem(key, glyph, text, width));
         }
 
         // Brand: logo + name.
         var brand = new Panel { Dock = DockStyle.Top, Height = 62, BackColor = Theme.Sidebar };
-        brand.Controls.Add(new PictureBox
+        brand.Controls.Add(_logo = new PictureBox
         {
             // The logo is wider than tall: a bigger box keeps it legible.
             Image = Theme.AppIcon(64).ToBitmap(),
@@ -713,7 +732,7 @@ public sealed class MainForm : Form
             Location = new Point(10, 1),
             BackColor = Color.Transparent,
         });
-        brand.Controls.Add(new Label
+        brand.Controls.Add(_brandName = new Label
         {
             Text = "WinSolve",
             Font = Theme.H2,
@@ -733,8 +752,8 @@ public sealed class MainForm : Form
         });
 
         // Footer: settings + version.
-        var footer = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.TopDown, AutoSize = true, BackColor = Theme.Sidebar, WrapContents = false };
-        footer.Controls.Add(new Divider { Width = width - 24, Margin = new Padding(12, 4, 12, 4), BackColor = Theme.Border });
+        var footer = _navFooter = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.TopDown, AutoSize = true, BackColor = Theme.Sidebar, WrapContents = false };
+        footer.Controls.Add(_footerDivider = new Divider { Width = width - 24, Margin = new Padding(12, 4, 12, 4), BackColor = Theme.Border });
         footer.Controls.Add(NavItem("settings", "", "Settings", width));
         footer.Controls.Add(_versionLabel = new Localization.LocLabel
         {
@@ -745,10 +764,109 @@ public sealed class MainForm : Form
             Margin = new Padding(18, 6, 0, 0),
         });
 
-        side.Controls.Add(list);
+        // The list is wider than the visible strip so its scroll bar is clipped away; the wheel scrolls it.
+        var viewport = _navViewport = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Sidebar };
+        viewport.Controls.Add(list);
+        viewport.SizeChanged += (_, _) =>
+            list.SetBounds(0, 0, viewport.Width + SystemInformation.VerticalScrollBarWidth, viewport.Height);
+
+        // Top: the arrow that collapses the menu to the icons.
+        var topBar = _topBar = new Panel { Dock = DockStyle.Top, Height = 28, BackColor = Theme.Sidebar };
+        _toggle = new NavToggle();
+        _toggle.Click += (_, _) => SetSidebarCollapsed(!_collapsed, animate: true);
+        topBar.Controls.Add(_toggle);
+        topBar.SizeChanged += (_, _) => PlaceToggle();
+
+        side.Controls.Add(viewport);
         side.Controls.Add(footer);
         side.Controls.Add(brand);
+        side.Controls.Add(topBar);
+        SetSidebarCollapsed(AppSettings.Current.SidebarCollapsed, animate: false);
         return side;
+    }
+
+    // ───────────── Collapsing the side menu ─────────────
+
+    private void PlaceToggle()
+    {
+        if (_toggle is null || _topBar is null) return;
+        var x = _collapsed ? (_topBar.Width - _toggle.Width) / 2 : _topBar.Width - _toggle.Width - 6;
+        _toggle.Location = new Point(Math.Max(0, x), 1);
+    }
+
+    /// <summary>Shows only the icons (collapsed) or icons and names; the choice is remembered.</summary>
+    private void SetSidebarCollapsed(bool collapsed, bool animate)
+    {
+        if (_side is null) return;
+        _collapsed = collapsed;
+        var target = collapsed ? SidebarNarrow : SidebarWide;
+        if (animate)
+        {
+            AppSettings.Current.SidebarCollapsed = collapsed;
+            AppSettings.Current.Save();
+        }
+        if (!animate)
+        {
+            _side.Width = target;
+            FitNav();
+            ApplyCompact(collapsed);
+            return;
+        }
+        // Names disappear at once when collapsing and come back once there is room for them.
+        if (collapsed) ApplyCompact(true);
+        Animator.Animate(_side, () => _side.Width, target, w =>
+        {
+            _side.Width = (int)Math.Round(w);
+            FitNav();
+            if (Math.Abs(w - target) < 0.5) ApplyCompact(collapsed);
+        }, 180);
+    }
+
+    /// <summary>Gives every menu entry the width the menu has now.</summary>
+    private void FitNav()
+    {
+        if (_side is null) return;
+        var width = _side.Width - _side.Padding.Horizontal - 2;
+        foreach (var b in _nav) b.Width = width;
+        foreach (var h in _headers) h.Width = width;
+        if (_footerDivider is not null) _footerDivider.Width = Math.Max(10, width - 24);
+        if (_logo is not null) _logo.Left = _collapsed ? Math.Max(0, (_side.Width - _side.Padding.Horizontal - _logo.Width) / 2) : 10;
+        PlaceToggle();
+    }
+
+    private void ApplyCompact(bool compact)
+    {
+        foreach (var b in _nav)
+        {
+            b.Compact = compact;
+            // The name is not visible any more: show it when the mouse rests on the icon.
+            _navTip.SetToolTip(b, compact ? Localization.Loc.T(b.Text) : "");
+        }
+        foreach (var h in _headers)
+        {
+            h.Compact = compact;
+            h.Height = compact ? 20 : 26;
+        }
+        if (_brandName is not null) _brandName.Visible = !compact;
+        if (_brandSubtitle is not null) _brandSubtitle.Visible = !compact;
+        if (_versionLabel is not null) _versionLabel.Visible = !compact;
+        if (_toggle is not null) _toggle.Collapsed = compact;
+        FitNav();
+    }
+
+    // The wheel over the menu scrolls the menu (WinForms would send it to the page in front).
+    private sealed class SidebarWheel(MainForm form) : IMessageFilter
+    {
+        public bool PreFilterMessage(ref Message m) => m.Msg == 0x020A && form.ScrollSidebar(m.WParam);
+    }
+
+    private bool ScrollSidebar(IntPtr wParam)
+    {
+        if (_navViewport is not { IsHandleCreated: true } viewport || _navList is null || ActiveForm != this) return false;
+        if (!viewport.RectangleToScreen(viewport.ClientRectangle).Contains(Cursor.Position)) return false;
+        var delta = (short)((long)wParam >> 16);
+        _navList.AutoScrollPosition = new Point(0, Math.Max(0, -_navList.AutoScrollPosition.Y - Math.Sign(delta) * 54));
+        return true;
     }
 
     private NavButton NavItem(string key, string glyph, string text, int width)
@@ -975,6 +1093,7 @@ public sealed class MainForm : Form
         _content.ResumeLayout(false);
         _pages.Clear();
         foreach (var b in _nav) b.Invalidate();
+        if (_collapsed) ApplyCompact(true);   // tooltips in the new language
         if (_brandSubtitle is not null) _brandSubtitle.Text = BrandSubtitle;
         if (_versionLabel is not null) _versionLabel.Text = VersionText;
         if (_queuedUpdate is not null) QueueUpdate(_queuedUpdate);

@@ -95,7 +95,7 @@ public class InternetTests
             "This PC can't reach the router. Check the cable or the Wi-Fi connection, then restart the router.",
             "Everything works: the router, the Internet and the DNS.",
             "Private address (phone, tablet or virtual machine)",
-            "Through {0}. This PC: {1}",
+            "Through {0}. This PC: {1}", "Collapse the menu", "Expand the menu",
         ];
         foreach (var k in keys) Assert.True(WinSolve.Localization.Spanish.Table.ContainsKey(k), k);
     }
@@ -224,4 +224,11 @@ public class DnsBenchmarkTests
         Assert.Equal(11.0, DnsBenchmark.Median([10, 12])!.Value);
         Assert.Null(DnsBenchmark.Median([]));
     }
+}
+
+public class SidebarSettingTests
+{
+    [Fact]
+    public void The_side_menu_starts_expanded()
+        => Assert.False(new WinSolve.Core.AppSettings().SidebarCollapsed);
 }

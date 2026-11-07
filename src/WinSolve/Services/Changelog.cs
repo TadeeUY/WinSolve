@@ -10,6 +10,15 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 1),
+        [
+            new("\uE76B", "Collapsible menu: the arrow at the top of the side menu shrinks it to just the icons (hover an icon to see its name) and opens it again. WinSolve remembers your choice.",
+                "Menú plegable: la flecha de arriba del menú lateral lo reduce a solo los iconos (pasa el mouse por un icono para ver su nombre) y lo vuelve a abrir. WinSolve recuerda tu elección."),
+            new("\uE701", "Wi-Fi channels now work while you are on the cable: the Wi-Fi card only has to be on, not connected. If Wi-Fi is off or the PC has no Wi-Fi card, it says so and what to do.",
+                "Los canales Wi-Fi ahora funcionan estando conectado por cable: la tarjeta Wi-Fi solo tiene que estar encendida, no conectada. Si el Wi-Fi está apagado o la PC no tiene tarjeta Wi-Fi, lo dice y explica qué hacer."),
+            new("\uE80F", "Fixed: the last entries of the menu (Activation) were cut off on windows that are not very tall. The menu now scrolls with the mouse wheel.",
+                "Corregido: las últimas opciones del menú (Activación) quedaban cortadas en ventanas poco altas. Ahora el menú se desplaza con la rueda del mouse."),
+        ]),
         new(new Version(0, 17, 0),
         [
             new("\uE774", "New: Internet. Checks the router, the Internet and the DNS and says where the problem is, recognizes your router's brand and model by itself, lists every device connected to your network, and opens your router's own settings page already signed in (the password is saved encrypted for your Windows user), so you can change the Wi-Fi password or remove and block devices.",

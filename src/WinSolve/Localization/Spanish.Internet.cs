@@ -97,7 +97,8 @@ public static partial class Spanish
         ["You · Best"] = "Tú · Mejor",
         ["Best"] = "Mejor",
         ["You"] = "Tú",
-        ["This PC has no Wi-Fi adapter."] = "Esta PC no tiene adaptador Wi-Fi.",
+        ["This PC has no Wi-Fi adapter, so it can't listen to the Wi-Fi networks around. A cheap USB Wi-Fi adapter is enough, and the PC can stay on the cable."] = "Esta PC no tiene adaptador Wi-Fi, así que no puede escuchar las redes de alrededor. Basta un adaptador Wi-Fi USB barato, y la PC puede seguir conectada por cable.",
+        ["Wi-Fi is turned off on this PC. Turn it on in Windows (Wi-Fi in the quick settings, or the airplane mode off). You can stay connected by cable: it only needs to be on, not connected."] = "El Wi-Fi está apagado en esta PC. Enciéndelo en Windows (Wi-Fi en los ajustes rápidos, o desactiva el modo avión). Puedes seguir conectado por cable: solo tiene que estar encendido, no conectado.",
         ["Wi-Fi API error {0}."] = "Error de la API de Wi-Fi {0}.",
         ["Speed up your network"] = "Acelera tu red",
         ["Times the DNS servers (the 'phone book' your PC asks before opening any page) and tells you if a faster one exists."] = "Mide los servidores DNS (la 'guía telefónica' que consulta tu PC antes de abrir cualquier página) y te dice si hay uno más rápido.",
@@ -117,5 +118,7 @@ public static partial class Spanish
         ["{0} answers in {1:0} ms against {2:0} ms of your current DNS. Setting it in Tweaks makes pages start loading sooner."] = "{0} responde en {1:0} ms contra {2:0} ms de tu DNS actual. Configurarlo en Ajustes hace que las páginas empiecen a cargar antes.",
         ["Windows did not accept the Start with Windows setting."] = "Windows no aceptó la opción de iniciar con Windows.",
         ["Requires an all-users install (in Program Files). WinSolve is running from {0}."] = "Requiere la instalación para todos los usuarios (en Program Files). WinSolve se está ejecutando desde {0}.",
+        ["Collapse the menu"] = "Contraer el menú",
+        ["Expand the menu"] = "Expandir el menú",
     };
 }
