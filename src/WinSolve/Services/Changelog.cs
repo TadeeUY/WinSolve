@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 6),
+        [
+            new("\uE945", "More fluid animations: the window now fades in on the screen-refresh clock too, and when changing page the slide is skipped by itself if a page takes long to draw, so it never makes the app feel stuck.",
+                "Animaciones más fluidas: la ventana también aparece con el reloj de refresco de la pantalla, y al cambiar de página el deslizamiento se omite solo si una página tarda en dibujarse, para que nunca se sienta trabada la app."),
+        ]),
         new(new Version(0, 17, 5),
         [
             new("\uE701", "Wi-Fi QR code for PCs on the cable: the new \"Read it from my router\" button opens your router signed in, and when you show its Wi-Fi settings page WinSolve reads the network name and the password from it, so you don't have to type them. It works with any router brand whose page shows them in boxes.",

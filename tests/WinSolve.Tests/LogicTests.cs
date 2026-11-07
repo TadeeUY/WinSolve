@@ -178,6 +178,8 @@ public class SmartParsingTests
     }
 }
 
+// These tests change the app language, which is global: they all run one after another (never at the same time).
+[Collection("AppLanguage")]
 public class LocalizationTests
 {
     [Fact]
