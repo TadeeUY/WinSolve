@@ -319,7 +319,7 @@ public class WifiQrTests
     public void The_payload_follows_the_WIFI_format_and_escapes_special_characters()
     {
         Assert.Equal("WIFI:T:WPA;S:Casa;P:clave123;;", WifiQr.Payload("Casa", "clave123", WifiQrSecurity.Wpa, false));
-        Assert.Equal("WIFI:T:WPA;S:A\;B;P:p\\:w\\\\d\\,x;H:true;;", WifiQr.Payload("A;B", "p:w\\d,x", WifiQrSecurity.Wpa, true));
+        Assert.Equal("WIFI:T:WPA;S:A\\;B;P:p\\:w\\\\d\\,x;H:true;;", WifiQr.Payload("A;B", "p:w\\d,x", WifiQrSecurity.Wpa, true));
         Assert.Equal("WIFI:T:nopass;S:Bar;;", WifiQr.Payload("Bar", "ignored", WifiQrSecurity.Open, false));
         Assert.Equal("WIFI:T:WEP;S:Old;P:\"12345\";;", WifiQr.Payload("Old", "12345", WifiQrSecurity.Wep, false));   // digits only: quoted
     }
