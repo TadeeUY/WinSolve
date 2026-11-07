@@ -94,6 +94,12 @@ public sealed class AppSettings
     /// <summary>The side menu shows only the icons.</summary>
     public bool SidebarCollapsed { get; set; }
 
+    /// <summary>Alert when a device never seen before joins the network (checked every 15 minutes while WinSolve runs).</summary>
+    public bool NewDeviceAlerts { get; set; }
+
+    /// <summary>Keep a ping-a-minute history of the connection (7 days).</summary>
+    public bool RecordQuality { get; set; }
+
     /// <summary>Accent color as #RRGGBB.</summary>
     public string AccentColor { get; set; } = "#0067C0";
 

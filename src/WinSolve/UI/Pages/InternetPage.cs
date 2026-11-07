@@ -31,6 +31,11 @@ public sealed class InternetPage : Page
     private readonly Label _dnsVerdict = Theme.Paragraph("", Theme.Text);
     private readonly Label _dnsStatus = Theme.Label("", Theme.Small, Theme.Muted);
     private WifiScan? _wifi;
+    private readonly CheckBox _alertToggle = Theme.Toggle("", false), _recordToggle = Theme.Toggle("", false);
+    private readonly ComboBox _range = Theme.Combo("Last hour", "Last 24 hours", "Last 7 days");
+    private readonly QualityChart _history = new() { Margin = new Padding(0, 6, 0, 6) };
+    private readonly Label _historySummary = Theme.Paragraph("", Theme.Text), _historyCuts = Theme.Paragraph("", Theme.Muted, Theme.Small);
+    private bool _loadingToggles;
 
     public override string Key => "internet";
 
@@ -83,10 +88,12 @@ public sealed class InternetPage : Page
             Theme.Row(
                 _scanBtn,
                 Theme.Button("Copy address", (_, _) => CopySelected(), glyph: ""),
+                Theme.Button("Mark all as known", (_, _) => MarkAllKnown(), glyph: "\uE73E"),
                 Theme.Button("Block or remove in the router", (_, _) => BlockSelected(), glyph: "")),
             Theme.Paragraph("Double-click a device's name to give it your own (for example 'Mom's phone'). WinSolve remembers it.", Theme.Muted, Theme.Small),
             gridHost,
             _deviceStatus,
+            Theme.SettingRow("Alert me when a new device joins my network", "WinSolve looks at your network every 15 minutes while it is running (also from the notification area) and warns about a device it has never seen. The first time, everything connected now counts as known.", _alertToggle),
             Theme.Paragraph("Windows can't disconnect other devices by itself: removing or blocking one is done in the router. The button copies the device's address and opens the router so you can paste it in its MAC filter.", Theme.Muted, Theme.Small));
 
         _band.Width = 110;
@@ -116,7 +123,24 @@ public sealed class InternetPage : Page
             _dnsVerdict,
             _dnsStatus);
 
-        var stack = new Stack(scroll: true).Add(tiles, check, router, devices, wifi, speed);
+        _range.Width = 150;
+        _range.SelectedIndex = 1;
+        _range.SelectedIndexChanged += (_, _) => ShowHistory();
+        _alertToggle.CheckedChanged += (_, _) => SaveToggles();
+        _recordToggle.CheckedChanged += (_, _) => SaveToggles();
+        var history = new StackCard().Add(
+            Theme.SectionHeader("\uE9D9", "Connection history", "Records the router and the Internet once a minute while WinSolve runs, and shows when the connection dropped. Useful as proof for your Internet provider."),
+            Theme.SettingRow("Record my connection quality", "A tiny ping to the router and to 1.1.1.1 (Cloudflare) every minute, kept for 7 days on this PC.", _recordToggle),
+            Theme.Row(
+                Theme.Label("Show", Theme.Body, Theme.Muted), _range,
+                Theme.Button("Refresh", (_, _) => ShowHistory(), glyph: "\uE72C"),
+                Theme.Button("Copy report", (_, _) => CopyReport(), glyph: "\uE8C8"),
+                Theme.Button("Delete the history", (_, _) => ClearHistory(), glyph: "\uE74D")),
+            _history,
+            _historySummary,
+            _historyCuts);
+
+        var stack = new Stack(scroll: true).Add(tiles, check, router, devices, wifi, speed, history);
         AddRow(stack, fill: true);
     }
 
@@ -165,6 +189,11 @@ public sealed class InternetPage : Page
             }
         }
         _ = LoadConnectionAsync();
+        _loadingToggles = true;
+        _alertToggle.Checked = AppSettings.Current.NewDeviceAlerts;
+        _recordToggle.Checked = AppSettings.Current.RecordQuality;
+        _loadingToggles = false;
+        ShowHistory();
     }
 
     private async Task LoadConnectionAsync()
@@ -258,17 +287,22 @@ public sealed class InternetPage : Page
             var progress = new Progress<int>(p => _deviceStatus.Text = Loc.T($"Scanning the network... {p}%"));
             var devices = await RouterService.ScanAsync(_lan, progress);
             if (IsDisposed) return;
+            // Remember what is on the network: whatever was never seen before shows as new.
+            var fresh = await Task.Run(() => KnownDevices.Update(devices, DateTime.Now));
+            var known = KnownDevices.Load();
             foreach (var d in devices)
             {
                 var name = d.Name.Length > 0 ? d.Name : Loc.T("Unknown device");
                 if (d.IsRouter) name = Loc.T("Router") + (d.Name.Length > 0 ? $" ({d.Name})" : "");
                 if (d.IsThisPc) name += " " + Loc.T("(this PC)");
-                var row = _grid.Rows.Add(name, d.Ip, d.Mac, d.Note);
+                var isNew = known.TryGetValue(d.Mac, out var k) && !k.Trusted;
+                var row = _grid.Rows.Add(name, d.Ip, d.Mac, isNew ? Loc.T("New device") + (d.Note.Length > 0 ? " - " + Loc.T(d.Note) : "") : d.Note);
                 _grid.Rows[row].Tag = d;
+                if (isNew) _grid.Rows[row].Cells[0].Style.ForeColor = Theme.Warn;
             }
             _count.Text = devices.Count.ToString();
             _countDetail.Text = Loc.T("Connected right now");
-            _deviceStatus.Text = Loc.T($"{devices.Count} device(s) found.");
+            _deviceStatus.Text = fresh.Count == 0 ? Loc.T($"{devices.Count} device(s) found.") : Loc.T($"{devices.Count} device(s) found, {fresh.Count} new.");
         }
         catch (Exception ex) { _deviceStatus.Text = ex.Message; }
         finally { SetBusy(false); }
@@ -306,6 +340,85 @@ public sealed class InternetPage : Page
             return;
         }
         OpenRouter(d.Mac);
+    }
+
+    private void MarkAllKnown()
+    {
+        KnownDevices.TrustAll();
+        var prefix = Loc.T("New device");
+        foreach (DataGridViewRow row in _grid.Rows)
+        {
+            row.Cells[0].Style.ForeColor = Color.Empty;
+            if (row.Cells[3].Value is string note && note.StartsWith(prefix, StringComparison.Ordinal))
+                row.Cells[3].Value = note.Length > prefix.Length + 3 ? note[(prefix.Length + 3)..] : "";
+        }
+        _deviceStatus.Text = Loc.T("All devices marked as known.");
+    }
+
+    // ───────────── Connection history ─────────────
+
+    private void SaveToggles()
+    {
+        if (_loadingToggles) return;
+        AppSettings.Current.NewDeviceAlerts = _alertToggle.Checked;
+        AppSettings.Current.RecordQuality = _recordToggle.Checked;
+        AppSettings.Current.Save();
+        NetworkWatcher.Instance?.Apply();
+        ShowHistory();
+    }
+
+    private (DateTime From, DateTime To, List<QualitySample> Samples) HistoryData()
+    {
+        var span = _range.SelectedIndex switch { 0 => TimeSpan.FromHours(1), 2 => TimeSpan.FromDays(7), _ => TimeSpan.FromHours(24) };
+        var to = DateTime.Now;
+        return (to - span, to, QualityLog.Load(to - span));
+    }
+
+    private void ShowHistory()
+    {
+        var (from, to, samples) = HistoryData();
+        var hours = (to - from).TotalHours;
+        _history.SetData(QualityLog.Buckets(samples, from, to, hours <= 1 ? 60 : hours <= 24 ? 96 : 84), from, to);
+        if (samples.Count == 0)
+        {
+            _historySummary.Text = Loc.T(AppSettings.Current.RecordQuality ? "Nothing recorded in this period yet." : "Turn on the recording to start keeping the history.");
+            _historyCuts.Text = "";
+            return;
+        }
+        var s = QualityLog.Summarize(samples);
+        _historySummary.Text = string.Format(Loc.T("Internet reachable {0:0.0}% of the time. Average answer time: {1:0} ms. Cuts: {2} ({3} min in total)."),
+            s.UptimePercent, s.AverageMs ?? 0, s.Outages.Count, Math.Round(s.Downtime.TotalMinutes));
+        _historyCuts.Text = string.Join("\n", s.Outages.OrderByDescending(o => o.Start).Take(6).Select(o =>
+            $"{o.Start.ToString("g", Loc.Culture)} - {Math.Max(1, (int)Math.Round(o.Length.TotalMinutes))} min - "
+            + Loc.T(o.LocalNetwork ? "the router did not answer either" : "the router answered, the Internet did not")));
+    }
+
+    private void CopyReport()
+    {
+        var (from, to, samples) = HistoryData();
+        if (samples.Count == 0) { _historySummary.Text = Loc.T("Nothing recorded in this period yet."); return; }
+        var s = QualityLog.Summarize(samples);
+        var lines = new List<string>
+        {
+            Loc.T("Connection quality report"),
+            string.Format(Loc.T("Period: {0} - {1}"), from.ToString("g", Loc.Culture), to.ToString("g", Loc.Culture)),
+            string.Format(Loc.T("Checks: {0} (one per minute while WinSolve was running)"), s.Samples),
+            string.Format(Loc.T("Internet reachable: {0:0.0}% of the checks"), s.UptimePercent),
+            string.Format(Loc.T("Average answer time: {0:0} ms"), s.AverageMs ?? 0),
+            string.Format(Loc.T("Cuts: {0}, {1} minutes without Internet in total"), s.Outages.Count, Math.Round(s.Downtime.TotalMinutes)),
+        };
+        lines.AddRange(s.Outages.OrderByDescending(o => o.Start).Take(20).Select(o =>
+            $"  {o.Start.ToString("g", Loc.Culture)}  {Math.Max(1, (int)Math.Round(o.Length.TotalMinutes))} min  "
+            + Loc.T(o.LocalNetwork ? "the router did not answer either" : "the router answered, the Internet did not")));
+        Clipboard.SetText(string.Join(Environment.NewLine, lines));
+        _historySummary.Text += "  " + Loc.T("Report copied.");
+    }
+
+    private void ClearHistory()
+    {
+        if (!ConfirmDanger(Loc.T("Delete the recorded connection history?"))) return;
+        QualityLog.Clear();
+        ShowHistory();
     }
 
     // ───────────── Router ─────────────

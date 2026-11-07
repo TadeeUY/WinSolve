@@ -95,7 +95,7 @@ public class InternetTests
             "This PC can't reach the router. Check the cable or the Wi-Fi connection, then restart the router.",
             "Everything works: the router, the Internet and the DNS.",
             "Private address (phone, tablet or virtual machine)",
-            "Through {0}. This PC: {1}", "Collapse the menu", "Expand the menu",
+            "Through {0}. This PC: {1}", "Collapse the menu", "Expand the menu", "Connection history", "Alert me when a new device joins my network", "Copy report",
         ];
         foreach (var k in keys) Assert.True(WinSolve.Localization.Spanish.Table.ContainsKey(k), k);
     }
@@ -338,5 +338,89 @@ public class WifiQrTests
         Assert.False(m[0, 0]);                                   // quiet margin
         Assert.True(m[4, 4] && m[4, 10] && m[10, 4] && m[10, 10]); // top-left finder square corners
         Assert.True(m[4, n - 5] && m[n - 5, 4]);                 // top-right and bottom-left
+    }
+}
+
+public class NetworkHistoryTests
+{
+    private static QualitySample S(int minute, int router, int internet)
+        => new(new DateTime(2026, 11, 7, 12, 0, 0).AddMinutes(minute), router, internet);
+
+    [Fact]
+    public void Two_failed_checks_in_a_row_are_an_outage_and_a_single_one_is_not()
+    {
+        var sum = QualityLog.Summarize([S(0, 2, 20), S(1, 2, -1), S(2, 2, 20), S(3, 2, -1), S(4, 2, -1), S(5, 2, -1), S(6, 2, 20)]);
+        Assert.Single(sum.Outages);
+        Assert.Equal(new DateTime(2026, 11, 7, 12, 3, 0), sum.Outages[0].Start);
+        Assert.Equal(TimeSpan.FromMinutes(3), sum.Outages[0].Length);
+        Assert.False(sum.Outages[0].LocalNetwork);
+        Assert.Equal(7, sum.Samples);
+        Assert.Equal(3 * 100.0 / 7, sum.UptimePercent, 3);
+        Assert.Equal(20.0, sum.AverageMs!.Value);
+    }
+
+    [Fact]
+    public void An_outage_where_the_router_is_silent_too_is_a_local_one()
+        => Assert.True(QualityLog.Summarize([S(0, -1, -1), S(1, -1, -1), S(2, 2, 20)]).Outages.Single().LocalNetwork);
+
+    [Fact]
+    public void A_long_silence_between_checks_splits_outages_and_is_not_counted_as_one()
+    {
+        var sum = QualityLog.Summarize([S(0, 2, -1), S(1, 2, -1), S(30, 2, -1), S(31, 2, -1)]);
+        Assert.Equal(2, sum.Outages.Count);
+        Assert.All(sum.Outages, o => Assert.Equal(TimeSpan.FromMinutes(2), o.Length));
+        Assert.Equal(TimeSpan.FromMinutes(4), sum.Downtime);
+    }
+
+    [Fact]
+    public void No_checks_means_no_outages_and_full_uptime()
+    {
+        var sum = QualityLog.Summarize([]);
+        Assert.Empty(sum.Outages);
+        Assert.Equal(100, sum.UptimePercent);
+        Assert.Null(sum.AverageMs);
+    }
+
+    [Fact]
+    public void Buckets_split_the_period_and_count_failures()
+    {
+        var from = new DateTime(2026, 11, 7, 12, 0, 0);
+        var buckets = QualityLog.Buckets([S(5, 2, 20), S(7, 2, -1), S(75, 2, 30)], from, from.AddHours(1), 6);
+        Assert.Equal(6, buckets.Count);
+        Assert.Equal(2, buckets[0].Samples);
+        Assert.Equal(1, buckets[0].Failures);
+        Assert.Equal(20.0, buckets[0].AverageMs!.Value);
+        Assert.Equal(0, buckets[1].Samples);
+        Assert.Equal(0, buckets.Sum(b => b.Samples) - 2);   // the sample after the period is left out
+    }
+
+    [Fact]
+    public void A_check_is_written_and_read_back()
+    {
+        var s = S(3, 4, -1);
+        var back = QualityLog.Parse(QualityLog.Format(s))!;
+        Assert.Equal(s.Time, back.Time);
+        Assert.Equal(4, back.RouterMs);
+        Assert.Equal(-1, back.InternetMs);
+        Assert.Null(QualityLog.Parse("not,a,line"));
+        Assert.Null(QualityLog.Parse(""));
+    }
+
+    private static LanDevice Dev(string ip, string mac, bool router = false, bool me = false) => new(ip, mac, "", "", router, me);
+
+    [Fact]
+    public void The_first_time_everything_is_known_and_afterwards_only_new_devices_are_flagged()
+    {
+        var known = new Dictionary<string, KnownDevice>(StringComparer.OrdinalIgnoreCase);
+        var now = new DateTime(2026, 11, 7);
+        Assert.Empty(KnownDevices.Merge(known, [Dev("192.168.1.1", "AA:00:00:00:00:01", router: true), Dev("192.168.1.5", "AA:00:00:00:00:05")], now, firstRun: true));
+        Assert.All(known.Values, k => Assert.True(k.Trusted));
+
+        var fresh = KnownDevices.Merge(known, [Dev("192.168.1.5", "AA:00:00:00:00:05"), Dev("192.168.1.9", "AA:00:00:00:00:09")], now, firstRun: false);
+        Assert.Equal("AA:00:00:00:00:09", Assert.Single(fresh).Mac);
+        Assert.False(known["AA:00:00:00:00:09"].Trusted);
+
+        // Seen again: no second alert for the same device.
+        Assert.Empty(KnownDevices.Merge(known, [Dev("192.168.1.9", "AA:00:00:00:00:09")], now, firstRun: false));
     }
 }

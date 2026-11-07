@@ -103,7 +103,7 @@ public static class RouterService
         return new InternetCheckResult(router, internet, dns);
     }
 
-    private static async Task<long?> PingAsync(string host, int timeoutMs)
+    internal static async Task<long?> PingAsync(string host, int timeoutMs)
     {
         try
         {
@@ -117,7 +117,7 @@ public static class RouterService
     // ───────────── Devices ─────────────
 
     /// <summary>Lists the devices on the same network: wakes the /24 with pings, then reads the ARP table.</summary>
-    public static async Task<List<LanDevice>> ScanAsync(LanInfo lan, IProgress<int>? progress = null, CancellationToken ct = default)
+    public static async Task<List<LanDevice>> ScanAsync(LanInfo lan, IProgress<int>? progress = null, CancellationToken ct = default, bool names = true)
     {
         var local = lan.Local.GetAddressBytes();
         // Never sweep more than a /24 (a larger network would take minutes and look like a port scan).
@@ -140,12 +140,14 @@ public static class RouterService
         var seen = ParseArp(arp.Output, lan.Local, lan.Mask);
         if (!seen.Any(s => s.Ip == lan.Local.ToString())) seen.Add((lan.Local.ToString(), lan.Mac));
 
-        var names = await DeviceNames.ResolveAsync(lan, seen.Select(s => s.Ip).ToList(), ct);
+        var identities = names
+            ? await DeviceNames.ResolveAsync(lan, seen.Select(s => s.Ip).ToList(), ct)
+            : new Dictionary<string, DeviceIdentity>();
         var nicknames = DeviceBook.Load();
         var devices = seen.Select(s =>
         {
             var isMe = s.Ip == lan.Local.ToString();
-            names.TryGetValue(s.Ip, out var identity);
+            identities.TryGetValue(s.Ip, out var identity);
             // What the user called it wins; then what the device says about itself.
             var name = isMe ? Environment.MachineName : nicknames.GetValueOrDefault(s.Mac) ?? identity?.Name ?? "";
             var note = identity is { Detail.Length: > 0 } ? identity.Detail : Describe(s.Mac);
