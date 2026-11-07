@@ -117,5 +117,7 @@ public static partial class Spanish
         ["{0} answers in {1:0} ms against {2:0} ms of your current DNS. Setting it in Tweaks makes pages start loading sooner."] = "{0} responde en {1:0} ms contra {2:0} ms de tu DNS actual. Configurarlo en Ajustes hace que las páginas empiecen a cargar antes.",
         ["Windows did not accept the Start with Windows setting."] = "Windows no aceptó la opción de iniciar con Windows.",
         ["Requires an all-users install (in Program Files). WinSolve is running from {0}."] = "Requiere la instalación para todos los usuarios (en Program Files). WinSolve se está ejecutando desde {0}.",
+        ["Collapse the menu"] = "Contraer el menú",
+        ["Expand the menu"] = "Expandir el menú",
     };
 }

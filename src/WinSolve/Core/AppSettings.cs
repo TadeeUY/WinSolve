@@ -91,6 +91,9 @@ public sealed class AppSettings
     /// <summary>Color theme: System (follows Windows), Dark or Light.</summary>
     public string ThemeMode { get; set; } = "System";
 
+    /// <summary>The side menu shows only the icons.</summary>
+    public bool SidebarCollapsed { get; set; }
+
     /// <summary>Accent color as #RRGGBB.</summary>
     public string AccentColor { get; set; } = "#0067C0";
 

@@ -240,12 +240,21 @@ public sealed class NavButton : Control
     public string Glyph { get; }
     public string Key { get; }
 
+    private bool _compact;
+
+    /// <summary>Only the icon, centered (the collapsed side menu).</summary>
+    public bool Compact
+    {
+        get => _compact;
+        set { if (_compact == value) return; _compact = value; Invalidate(); }
+    }
+
     public NavButton(string key, string glyph, string text)
     {
         Key = key;
         Glyph = glyph;
         Text = text;
-        Height = 34;
+        Height = 32;
         Margin = new Padding(0, 1, 0, 1);
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             A11y.Clickable(this, text, null, AccessibleRole.PageTab);
@@ -299,6 +308,12 @@ public sealed class NavButton : Control
             g.FillPath(accent, bar);
         }
 
+        if (_compact)
+        {
+            TextRenderer.DrawText(g, Glyph, Theme.Icons, new Rectangle(0, 0, Width, Height), Theme.Text,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
+            return;
+        }
         TextRenderer.DrawText(g, Glyph, Theme.Icons, new Rectangle(18, 0, 24, Height), Theme.Text,
             TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
         TextRenderer.DrawText(g, Loc.T(Text), Theme.Body, new Rectangle(52, 0, Width - 56, Height), _selected ? Theme.Text : Theme.NavText,
