@@ -177,6 +177,13 @@ public static partial class Spanish
         ["Detected {0}, but this PC has never connected to it: type its password."] = "Se detectó {0}, pero esta PC nunca se conectó a ella: escribe su contraseña.",
         ["Found your saved Wi-Fi network: {0}."] = "Se encontró tu red Wi-Fi guardada: {0}.",
         ["Using the first saved network ({0}). Change it above if it is not yours."] = "Se usa la primera red guardada ({0}). Cámbiala arriba si no es la tuya.",
-        ["No Wi-Fi network found on this PC. Type the name and password: they are on the router's sticker or in its Wi-Fi settings (Internet > Open my router)."] = "No se encontró ninguna red Wi-Fi en esta PC. Escribe el nombre y la contraseña: están en la etiqueta del router o en su configuración Wi-Fi (Internet > Abrir mi router).",
+        ["Read it from my router"] = "Leerlo desde mi router",
+        ["Use this Wi-Fi for the QR code"] = "Usar este Wi-Fi para el código QR",
+        ["Sign in, open the router's Wi-Fi settings page (WLAN, Wireless or Wi-Fi) where the network name and the password are shown, then press the button. With several networks (2.4 and 5 GHz) the first one is used."] = "Inicia sesión, abre la página de configuración Wi-Fi del router (WLAN, Wireless o Wi-Fi) donde se ven el nombre de la red y la contraseña, y pulsa el botón. Si hay varias redes (2,4 y 5 GHz) se usa la primera.",
+        ["No Wi-Fi name was found on this page. Open the router's Wi-Fi settings page (where the network name is shown) and press the button again."] = "No se encontró ningún nombre de Wi-Fi en esta página. Abre la página de configuración Wi-Fi del router (donde se ve el nombre de la red) y pulsa el botón otra vez.",
+        ["First save your router's address, user and password in Internet > Your router, then try again."] = "Primero guarda la dirección, el usuario y la contraseña de tu router en Internet > Tu router, y vuelve a intentarlo.",
+        ["Read {0} from the router, but its password was not on that page: type it."] = "Se leyó {0} del router, pero su contraseña no estaba en esa página: escríbela.",
+        ["Read {0} and its password from the router."] = "Se leyó {0} y su contraseña del router.",
+        ["This PC has no Wi-Fi network saved. Press 'Read it from my router' (it opens your router and reads the name and password from its Wi-Fi page), or type them."] = "Esta PC no tiene ninguna red Wi-Fi guardada. Pulsa 'Leerlo desde mi router' (abre tu router y lee el nombre y la contraseña de su página Wi-Fi), o escríbelos.",
     };
 }

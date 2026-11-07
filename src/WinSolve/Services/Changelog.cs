@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 5),
+        [
+            new("\uE701", "Wi-Fi QR code for PCs on the cable: the new \"Read it from my router\" button opens your router signed in, and when you show its Wi-Fi settings page WinSolve reads the network name and the password from it, so you don't have to type them. It works with any router brand whose page shows them in boxes.",
+                "Código QR del Wi-Fi para PCs conectadas por cable: el nuevo botón \"Leerlo desde mi router\" abre tu router con la sesión iniciada y, cuando le muestras su página de configuración Wi-Fi, WinSolve lee de ahí el nombre de la red y la contraseña, para que no tengas que escribirlos. Sirve con cualquier marca de router cuya página los muestre en casillas."),
+        ]),
         new(new Version(0, 17, 4),
         [
             new("\uE945", "Smoother and snappier animations: they now follow the screen refresh instead of a slow timer, they are shorter, and the menu and the page next to it no longer flicker.",
