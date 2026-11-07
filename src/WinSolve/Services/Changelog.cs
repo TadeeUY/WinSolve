@@ -10,6 +10,13 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 2),
+        [
+            new("\uE701", "New: Wi-Fi QR code. Pick a saved network or type one, and WinSolve draws the code your visitors scan with their phone to join the Wi-Fi without typing the password. Copy it or save it as an image. Find it in Internet and in the Toolbox.",
+                "Nuevo: código QR del Wi-Fi. Elige una red guardada o escribe una, y WinSolve dibuja el código que tus visitas escanean con el celular para conectarse al Wi-Fi sin escribir la clave. Cópialo o guárdalo como imagen. Está en Internet y en la Caja de herramientas."),
+            new("\uE774", "Devices on your network now show their names: each device is asked the way it answers (iPhone, Mac and printers; Windows PCs; smart TVs and consoles). Double-click any name to give the device your own, and WinSolve remembers it.",
+                "Los dispositivos de tu red ahora muestran su nombre: se le pregunta a cada uno como sabe responder (iPhone, Mac e impresoras; PCs con Windows; televisores y consolas). Haz doble clic en un nombre para ponerle el tuyo, y WinSolve lo recuerda."),
+        ]),
         new(new Version(0, 17, 1),
         [
             new("\uE76B", "Collapsible menu: the arrow at the top of the side menu shrinks it to just the icons (hover an icon to see its name) and opens it again. WinSolve remembers your choice.",

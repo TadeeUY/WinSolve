@@ -25,7 +25,7 @@ public static class WifiQr
     /// </summary>
     internal static string Field(string value)
     {
-        var escaped = value.Replace("\\", "\\\\").Replace(";", "\;").Replace(",", "\\,").Replace(":", "\\:").Replace("\"", "\\\"");
+        var escaped = value.Replace("\\", "\\\\").Replace(";", "\\;").Replace(",", "\\,").Replace(":", "\\:").Replace("\"", "\\\"");
         return escaped.Length > 0 && Regex.IsMatch(escaped, "^[0-9A-Fa-f]+$") ? "\"" + escaped + "\"" : escaped;
     }
 
