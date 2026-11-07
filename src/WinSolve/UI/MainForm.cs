@@ -659,14 +659,17 @@ public sealed class MainForm : Form
         _animating = true;
         var top = Top;
         var slide = WindowState == FormWindowState.Normal;
-        const int steps = 16;
-        for (int i = 1; i <= steps; i++)
+        // On the animation clock (the screen refresh), not a loop of Task.Delay(11), which is really ~15 ms and uneven.
+        var done = new TaskCompletionSource();
+        double progress = 0;
+        Animator.Animate((this, "fade-in"), () => progress, 1, v =>
         {
-            var t = Ease.OutCubic(i / (double)steps);
-            Opacity = t;
-            if (slide) Top = top + (int)(28 * (1 - t));
-            await Task.Delay(11);
-        }
+            progress = v;
+            Opacity = v;
+            if (slide) Top = top + (int)(28 * (1 - v));
+            if (v >= 1) done.TrySetResult();
+        }, 200);
+        await done.Task;
         if (slide) Top = top;
         Opacity = 1;
         _animating = false;
@@ -1044,21 +1047,32 @@ public sealed class MainForm : Form
     private const int SlideDistance = 20;
     private Page? _currentPage;
 
+    private bool _slideSkipped;
+
     private void SlideIn(Page page)
     {
+        _slideSkipped = false;
         page.Update();
         double offset = SlideDistance;
         Animator.Animate((this, "page"), () => offset, 0, v =>
         {
             offset = v;
             if (page.IsDisposed || page.Parent != _content) return;
-            if (v <= 0.5)
+            if (_slideSkipped || v <= 0.5)
             {
                 page.Dock = DockStyle.Fill;
                 return;
             }
+            // A page that takes long to draw would make the slide crawl: when one frame is slow, the page
+            // just takes its place (the slide is decoration, never worth a delay).
+            var frame = System.Diagnostics.Stopwatch.StartNew();
             page.Top = (int)Math.Round(v);
             page.Update();
+            if (frame.ElapsedMilliseconds > 30)
+            {
+                _slideSkipped = true;
+                page.Dock = DockStyle.Fill;
+            }
         }, 170);
     }
 

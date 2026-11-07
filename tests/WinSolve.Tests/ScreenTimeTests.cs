@@ -230,6 +230,8 @@ public class ScreenTimeTests
 }
 
 [Trait("Category", "E2E")]
+// These tests change the app language, which is global: they all run one after another (never at the same time).
+[Collection("AppLanguage")]
 public class ScreenTimeE2ETests(Xunit.Abstractions.ITestOutputHelper output)
 {
     [E2EFact]
