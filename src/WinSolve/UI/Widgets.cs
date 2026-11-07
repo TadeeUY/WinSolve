@@ -264,6 +264,18 @@ public sealed class NavHeader : Control
     }
 }
 
+/// <summary>Panel that paints off screen: no flicker while it is resized, scrolled or animated.</summary>
+public class BufferedPanel : Panel
+{
+    public BufferedPanel() => DoubleBuffered = true;
+}
+
+/// <summary>Flow panel that paints off screen: no flicker while it is resized, scrolled or animated.</summary>
+public class BufferedFlow : FlowLayoutPanel
+{
+    public BufferedFlow() => DoubleBuffered = true;
+}
+
 /// <summary>Arrow at the top of the side menu: collapses it to the icons, or opens it again.</summary>
 public sealed class NavToggle : Control
 {

@@ -10,7 +10,7 @@ public sealed class MainForm : Form
     private const int SC_MINIMIZE = 0xF020;
     private const int SC_RESTORE = 0xF120;
 
-    private readonly Panel _content = new() { Dock = DockStyle.Fill, BackColor = Theme.Background };
+    private readonly Panel _content = new BufferedPanel { Dock = DockStyle.Fill, BackColor = Theme.Background };
     private readonly Dictionary<string, Func<Page>> _factories;
     private readonly Dictionary<string, Page> _pages = [];
     private readonly List<NavButton> _nav = [];
@@ -78,7 +78,7 @@ public sealed class MainForm : Form
         };
 
         // Content area: optional info bar (updates) above the current page.
-        var main = _main = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Padding = new Padding(0) };
+        var main = _main = new BufferedPanel { Dock = DockStyle.Fill, BackColor = Theme.Background, Padding = new Padding(0) };
         var barHost = new Panel { Dock = DockStyle.Top, AutoSize = true, BackColor = Theme.Background, Padding = new Padding(32, 14, 32, 0) };
         barHost.Controls.Add(_infoBar);
         barHost.Visible = false;
@@ -676,9 +676,9 @@ public sealed class MainForm : Form
 
     private Control BuildSidebar()
     {
-        var side = _side = new Panel { Dock = DockStyle.Left, Width = SidebarWide, BackColor = Theme.Sidebar, Padding = new Padding(4, 4, 4, 10) };
+        var side = _side = new BufferedPanel { Dock = DockStyle.Left, Width = SidebarWide, BackColor = Theme.Sidebar, Padding = new Padding(4, 4, 4, 10) };
 
-        var list = new FlowLayoutPanel
+        var list = new BufferedFlow
         {
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
@@ -754,7 +754,7 @@ public sealed class MainForm : Form
         });
 
         // Footer: settings + version.
-        var footer = _navFooter = new FlowLayoutPanel { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.TopDown, AutoSize = true, BackColor = Theme.Sidebar, WrapContents = false };
+        var footer = _navFooter = new BufferedFlow { Dock = DockStyle.Bottom, FlowDirection = FlowDirection.TopDown, AutoSize = true, BackColor = Theme.Sidebar, WrapContents = false };
         footer.Controls.Add(_footerDivider = new Divider { Width = width - 24, Margin = new Padding(12, 4, 12, 4), BackColor = Theme.Border });
         footer.Controls.Add(NavItem("settings", "", "Settings", width));
         footer.Controls.Add(_versionLabel = new Localization.LocLabel
@@ -767,7 +767,7 @@ public sealed class MainForm : Form
         });
 
         // The list is wider than the visible strip so its scroll bar is clipped away; the wheel scrolls it.
-        var viewport = _navViewport = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Sidebar };
+        var viewport = _navViewport = new BufferedPanel { Dock = DockStyle.Fill, BackColor = Theme.Sidebar };
         viewport.Controls.Add(list);
         viewport.SizeChanged += (_, _) =>
             list.SetBounds(0, 0, viewport.Width + SystemInformation.VerticalScrollBarWidth, viewport.Height);
@@ -1041,7 +1041,7 @@ public sealed class MainForm : Form
         Application.Idle += Ready;
     }
 
-    private const int SlideDistance = 28;
+    private const int SlideDistance = 20;
     private Page? _currentPage;
 
     private void SlideIn(Page page)
@@ -1059,7 +1059,7 @@ public sealed class MainForm : Form
             }
             page.Top = (int)Math.Round(v);
             page.Update();
-        }, 240);
+        }, 170);
     }
 
     /// <summary>Builds the other pages up front (while the splash is visible) so switching is instant.</summary>

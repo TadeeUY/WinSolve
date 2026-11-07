@@ -270,7 +270,7 @@ public sealed class NavButton : Control
             if (_selected == value) return;
             _selected = value;
             // The accent bar grows from the middle, like Windows 11.
-            Animator.Animate((this, "sel"), () => _selectT, value ? 1 : 0, v => { _selectT = v; Invalidate(); }, value ? 260 : 120);
+            Animator.Animate((this, "sel"), () => _selectT, value ? 1 : 0, v => { _selectT = v; Invalidate(); }, value ? 180 : 100);
         }
     }
 
