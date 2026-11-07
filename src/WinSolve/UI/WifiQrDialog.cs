@@ -28,6 +28,7 @@ internal sealed class WifiQrDialog : ToolDialog
 
         _savedRow = Theme.SettingRow("Saved network", "Choose one this PC knows, or type the name below.", _saved);
         AddRow(_savedRow);
+        AddRow(Theme.Row(Theme.Button("Read it from my router", (_, _) => ReadFromRouter(), glyph: "\uE839")));
         AddRow(Theme.SettingRow("Network name", null, _ssid));
         AddRow(Theme.SettingRow("Password", null, _password));
         AddRow(Theme.SettingRow("Show password", null, _show));
@@ -97,7 +98,33 @@ internal sealed class WifiQrDialog : ToolDialog
                 ? string.Format(Loc.T("Found your saved Wi-Fi network: {0}."), _profiles[0].Name)
                 : string.Format(Loc.T("Using the first saved network ({0}). Change it above if it is not yours."), _profiles[0].Name);
         }
-        else Status.Text = Loc.T("No Wi-Fi network found on this PC. Type the name and password: they are on the router's sticker or in its Wi-Fi settings (Internet > Open my router).");
+        else Status.Text = Loc.T("This PC has no Wi-Fi network saved. Press 'Read it from my router' (it opens your router and reads the name and password from its Wi-Fi page), or type them.");
+    }
+
+    /// <summary>
+    /// For a PC with no Wi-Fi (on the cable): the router has the network name and the password, in its
+    /// Wi-Fi settings page. It opens signed in and reads them from the page the user shows.
+    /// </summary>
+    private void ReadFromRouter()
+    {
+        var login = RouterVault.Load();
+        if (login is null || !RouterService.TryParseAddress(login.Address, out var home))
+        {
+            Tell(Loc.T("First save your router's address, user and password in Internet > Your router, then try again."));
+            return;
+        }
+        RouterDialog.UseModernEngine();
+        using var dialog = new RouterDialog(login, home, captureWifi: true);
+        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.CapturedWifi is not { } wifi) return;
+        _filling = true;
+        _ssid.Text = wifi.Ssid;
+        _password.Text = wifi.Password;
+        _security.SelectedIndex = wifi.Password.Length == 0 ? 2 : 0;
+        _filling = false;
+        Redraw();
+        Status.Text = wifi.Password.Length == 0
+            ? string.Format(Loc.T("Read {0} from the router, but its password was not on that page: type it."), wifi.Ssid)
+            : string.Format(Loc.T("Read {0} and its password from the router."), wifi.Ssid);
     }
 
     private void PickSaved()

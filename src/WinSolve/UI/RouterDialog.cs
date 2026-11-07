@@ -24,7 +24,10 @@ internal sealed class RouterDialog : ToolDialog
     private readonly Uri _home;
     private bool _autoSignedIn;
 
-    public RouterDialog(RouterLogin login, Uri home, string? macToBlock = null)
+    /// <summary>The Wi-Fi name and password read from the page, when the dialog was opened to read them.</summary>
+    public (string Ssid, string Password)? CapturedWifi { get; private set; }
+
+    public RouterDialog(RouterLogin login, Uri home, string? macToBlock = null, bool captureWifi = false)
         : base("", "Router", "Your router's own settings page. WinSolve signs in for you.", new Size(1180, 800))
     {
         _login = login;
@@ -45,6 +48,11 @@ internal sealed class RouterDialog : ToolDialog
             Theme.Button("Sign in again", (_, _) => { _autoSignedIn = false; _browser.Refresh(); }, glyph: ""),
             _address,
             Theme.Button("Go", (_, _) => GoTo(_address.Text), primary: true)));
+        if (captureWifi)
+        {
+            AddRow(Theme.Row(Theme.Button("Use this Wi-Fi for the QR code", (_, _) => CaptureWifi(), primary: true, glyph: "\uE701")));
+            AddRow(Theme.Paragraph(Loc.T("Sign in, open the router's Wi-Fi settings page (WLAN, Wireless or Wi-Fi) where the network name and the password are shown, then press the button. With several networks (2.4 and 5 GHz) the first one is used."), Theme.Info));
+        }
         if (macToBlock is not null)
         {
             Clipboard.SetText(macToBlock);
@@ -66,6 +74,19 @@ internal sealed class RouterDialog : ToolDialog
             Reg.Set(RegistryHive.CurrentUser, @"Software\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION", exe, 11001, RegistryValueKind.DWord);
         }
         catch { /* the page still loads, just with the old engine */ }
+    }
+
+    private void CaptureWifi()
+    {
+        var found = WifiFromPage.Read(_browser.Document);
+        if (found is null)
+        {
+            Status.Text = Loc.T("No Wi-Fi name was found on this page. Open the router's Wi-Fi settings page (where the network name is shown) and press the button again.");
+            return;
+        }
+        CapturedWifi = found;
+        DialogResult = DialogResult.OK;
+        Close();
     }
 
     private void GoTo(string text)

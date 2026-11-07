@@ -447,3 +447,37 @@ public class OwnNetworkTests
         Assert.Null(OwnNetwork.Find(new WifiScan([Ap("Vecino", "11:22:33:44:55:66", -40)], null), "AA:BB:CC:DD:EE:01"));
     }
 }
+
+public class WifiFromPageTests
+{
+    private static WifiFromPage.Field F(string id, string type, string value) => new(id, "", type, value);
+
+    [Fact]
+    public void A_router_wifi_page_gives_the_name_and_the_key()
+    {
+        // ZTE-like and Huawei-like box names.
+        Assert.Equal<(string, string)?>(("MiCasa", "clave12345"), WifiFromPage.Pick([F("Frm_ESSID", "text", "MiCasa"), F("Frm_KeyPassphrase", "text", "clave12345")]));
+        Assert.Equal<(string, string)?>(("MiCasa", "clave12345"), WifiFromPage.Pick([F("wlSsid", "text", "MiCasa"), F("wlWpaPsk", "password", "clave12345")]));
+    }
+
+    [Fact]
+    public void The_first_network_wins_and_a_plain_password_box_counts_only_next_to_a_name()
+    {
+        var fields = new[] { F("ssid_1", "text", "Red24"), F("pwd_1", "password", "unaclave123"), F("ssid_2", "text", "Red5"), F("pwd_2", "password", "otraclave456") };
+        Assert.Equal<(string, string)?>(("Red24", "unaclave123"), WifiFromPage.Pick(fields));
+    }
+
+    [Fact]
+    public void The_sign_in_page_of_the_router_is_not_a_wifi_page()
+    {
+        Assert.Null(WifiFromPage.Pick([F("Frm_Username", "text", "admin"), F("Frm_Password", "password", "adminadmin")]));
+        Assert.Null(WifiFromPage.Pick([]));
+    }
+
+    [Fact]
+    public void Admin_password_boxes_and_short_values_are_not_the_wifi_key()
+    {
+        var picked = WifiFromPage.Pick([F("ssid", "text", "MiCasa"), F("adminPassword", "password", "adminadmin1"), F("wpaKey", "password", "short")]);
+        Assert.Equal<(string, string)?>(("MiCasa", ""), picked);
+    }
+}
