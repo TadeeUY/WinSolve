@@ -70,7 +70,9 @@ public class InternetTests
     public void The_sign_in_script_keeps_the_credentials_as_plain_text_literals()
     {
         var script = RouterDialog.FillScript("ad\"min", "p');alert(1);//\\");
-        Assert.Contains("\"ad\\\"min\"", script);
+        // The serializer writes quotes and angle brackets as \uXXXX, so nothing typed can end the string literal.
+        Assert.Contains("\"ad\\u0022min\"", script);
+        Assert.DoesNotContain("ad\"min", script);
         Assert.DoesNotContain("p');alert(1)", script);
         Assert.EndsWith(")", script);
     }
