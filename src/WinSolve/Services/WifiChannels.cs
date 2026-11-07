@@ -24,6 +24,9 @@ public static class WifiScanner
     [DllImport("wlanapi.dll")] private static extern int WlanQueryInterface(IntPtr client, ref Guid iface, int opCode, IntPtr reserved, out int dataSize, out IntPtr data, IntPtr opcodeValueType);
     [DllImport("wlanapi.dll")] private static extern void WlanFreeMemory(IntPtr memory);
 
+    private const string NoAdapter = "This PC has no Wi-Fi adapter, so it can't listen to the Wi-Fi networks around. A cheap USB Wi-Fi adapter is enough, and the PC can stay on the cable.";
+    private const string RadioOff = "Wi-Fi is turned off on this PC. Turn it on in Windows (Wi-Fi in the quick settings, or the airplane mode off). You can stay connected by cable: it only needs to be on, not connected.";
+
     private const int InterfaceInfoSize = 532;   // GUID (16) + WCHAR[256] (512) + state (4) = 532
     private const int BssEntrySize = 360;        // WLAN_BSS_ENTRY on 64-bit Windows
     private const int CurrentConnection = 7;     // wlan_intf_opcode_current_connection
@@ -34,15 +37,24 @@ public static class WifiScanner
         if (err != 0) throw new InvalidOperationException(err == 1062 ? "The WLAN AutoConfig service isn't running (this PC may not have Wi-Fi)." : $"Wi-Fi API error {err}.");
         try
         {
-            if (WlanEnumInterfaces(client, IntPtr.Zero, out var list) != 0) throw new InvalidOperationException("This PC has no Wi-Fi adapter.");
+            if (WlanEnumInterfaces(client, IntPtr.Zero, out var list) != 0) throw new InvalidOperationException(NoAdapter);
             var guids = new List<Guid>();
+            var states = new List<int>();
             try
             {
                 var count = Marshal.ReadInt32(list, 0);
-                for (var i = 0; i < count; i++) guids.Add(Marshal.PtrToStructure<Guid>(list + 8 + i * InterfaceInfoSize));
+                for (var i = 0; i < count; i++)
+                {
+                    guids.Add(Marshal.PtrToStructure<Guid>(list + 8 + i * InterfaceInfoSize));
+                    // WLAN_INTERFACE_INFO: GUID (16) + description (512), then the state.
+                    states.Add(Marshal.ReadInt32(list + 8 + i * InterfaceInfoSize + 528));
+                }
             }
             finally { WlanFreeMemory(list); }
-            if (guids.Count == 0) throw new InvalidOperationException("This PC has no Wi-Fi adapter.");
+            if (guids.Count == 0) throw new InvalidOperationException(NoAdapter);
+            // wlan_interface_state_not_ready: the radio is off (airplane mode or the Wi-Fi switch).
+            // A card that is simply not connected (because the PC uses the cable) still scans fine.
+            if (states.All(s => s == 0)) throw new InvalidOperationException(RadioOff);
 
             // Ask each card to listen again, then give it a moment: a scan takes a few seconds.
             foreach (var g in guids)
