@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 10),
+        [
+            new("\uE80F", "New experimental Home page drawn with the Microsoft Edge engine (Chromium), like Discord, so it never opens torn or half-drawn. Turn it on in Settings (\"Experimental: draw the Home page with the Edge engine\") and restart WinSolve. It needs the Microsoft Edge WebView2 runtime; if it is missing or can't start, the classic page is used. Not available in the portable edition.",
+                "Nueva página de Inicio experimental dibujada con el motor de Microsoft Edge (Chromium), como Discord, para que nunca se abra cortada o a medio dibujar. Actívala en Ajustes (\"Experimental: dibujar la página de Inicio con el motor de Edge\") y reinicia WinSolve. Necesita el runtime Microsoft Edge WebView2; si falta o no puede arrancar, se usa la página clásica. No está disponible en la edición portable."),
+        ]),
         new(new Version(0, 17, 9),
         [
             new("\uE945", "The window no longer opens torn or half-drawn: it is now laid out and painted completely while hidden, and only then shown, on start and when opening it from the notification area.",
