@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="WinSolve"><defs>
+<linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#46B0EA"/><stop offset=".5" stop-color="#2B7CC3"/><stop offset="1" stop-color="#1B4A8C"/></linearGradient>
+<linearGradient id="bl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#58BDF2"/><stop offset="1" stop-color="#2F86CC"/></linearGradient>
+<linearGradient id="bd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2B78BE"/><stop offset="1" stop-color="#173F7C"/></linearGradient>
+<linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8FDB93"/><stop offset="1" stop-color="#2E9650"/></linearGradient>
+<linearGradient id="gl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9BE29F"/><stop offset="1" stop-color="#4CB86A"/></linearGradient>
+<linearGradient id="gd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3DA75E"/><stop offset="1" stop-color="#1F7A41"/></linearGradient>
+</defs><polygon points="14,56 54,56 112,204 72,204" fill="url(#bl)" stroke="url(#bl)" stroke-width="6" stroke-linejoin="round" /><polygon points="72,204 112,204 153,96 113,96" fill="url(#bd)" stroke="url(#bd)" stroke-width="6" stroke-linejoin="round" /><polygon points="113,96 153,96 194,204 154,204" fill="url(#gl)" stroke="url(#gl)" stroke-width="6" stroke-linejoin="round" /><polygon points="154,204 194,204 246,56 206,56" fill="url(#gd)" stroke="url(#gd)" stroke-width="6" stroke-linejoin="round" /></svg>

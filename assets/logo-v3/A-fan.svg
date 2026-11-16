@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="WinSolve"><defs>
+<linearGradient id="t" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22D3C5"/><stop offset="1" stop-color="#0EA5E9"/></linearGradient>
+<linearGradient id="i" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366F1"/><stop offset="1" stop-color="#3B2FB5"/></linearGradient>
+<linearGradient id="n" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1E2A5A"/><stop offset="1" stop-color="#0B1230"/></linearGradient>
+<linearGradient id="o" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFB547"/><stop offset="1" stop-color="#FF7A1A"/></linearGradient>
+</defs><rect x="40" y="174" width="176" height="44" rx="22" fill="url(#i)" stroke="#fff" stroke-width="5" paint-order="stroke" transform="rotate(-88 62 196)"/><rect x="40" y="174" width="164" height="44" rx="22" fill="url(#t)" stroke="#fff" stroke-width="5" paint-order="stroke" transform="rotate(-58 62 196)"/><rect x="40" y="174" width="150" height="44" rx="22" fill="url(#o)" stroke="#fff" stroke-width="5" paint-order="stroke" transform="rotate(-28 62 196)"/><circle cx="62" cy="196" r="15" fill="url(#n)" stroke="#fff" stroke-width="5"/><circle cx="62" cy="196" r="5" fill="#fff"/></svg>

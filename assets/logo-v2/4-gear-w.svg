@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="WinSolve"><defs>
+<linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#46B0EA"/><stop offset=".5" stop-color="#2B7CC3"/><stop offset="1" stop-color="#1B4A8C"/></linearGradient>
+<linearGradient id="bl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#58BDF2"/><stop offset="1" stop-color="#2F86CC"/></linearGradient>
+<linearGradient id="bd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2B78BE"/><stop offset="1" stop-color="#173F7C"/></linearGradient>
+<linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8FDB93"/><stop offset="1" stop-color="#2E9650"/></linearGradient>
+<linearGradient id="gl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9BE29F"/><stop offset="1" stop-color="#4CB86A"/></linearGradient>
+<linearGradient id="gd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3DA75E"/><stop offset="1" stop-color="#1F7A41"/></linearGradient>
+</defs><path d="M222.6 111.8 L245.2 114.7 L245.2 141.3 L222.6 144.2 L214.1 170.5 L230.7 186.1 L215.0 207.7 L195.0 196.7 L172.7 213.0 L176.9 235.4 L151.6 243.6 L141.8 223.0 L114.2 223.0 L104.4 243.6 L79.1 235.4 L83.3 213.0 L61.0 196.7 L41.0 207.7 L25.3 186.1 L41.9 170.5 L33.4 144.2 L10.8 141.3 L10.8 114.7 L33.4 111.8 L41.9 85.5 L25.3 69.9 L41.0 48.3 L61.0 59.3 L83.3 43.0 L79.1 20.6 L104.4 12.4 L114.2 33.0 L141.8 33.0 L151.6 12.4 L176.9 20.6 L172.7 43.0 L195.0 59.3 L215.0 48.3 L230.7 69.9 L214.1 85.5Z M128 128 A0 0 0 1 0 128 128 A0 0 0 1 0 128 128Z" fill="url(#b)" stroke="url(#b)" stroke-width="4" stroke-linejoin="round"/>
+<circle cx="128" cy="128" r="74" fill="#fff"/>
+<mask id="m4"><rect width="256" height="256" fill="#fff"/><polygon points="108,84 138,84 148.0,108.0 158,84 188,84 148.0,180" fill="#000" stroke="#000" stroke-width="12" stroke-linejoin="round"/></mask>
+<polygon points="52,84 82,84 92.0,108.0 102,84 132,84 92.0,180" fill="url(#b)" stroke="url(#b)" stroke-width="4" stroke-linejoin="round" mask="url(#m4)"/>
+<polygon points="108,84 138,84 148.0,108.0 158,84 188,84 148.0,180" fill="url(#g)" stroke="url(#g)" stroke-width="4" stroke-linejoin="round"/></svg>
