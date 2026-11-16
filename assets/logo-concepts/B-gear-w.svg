@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="WinSolve"><defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3AA3E0"/><stop offset=".55" stop-color="#2B7CC3"/><stop offset="1" stop-color="#1E4F92"/></linearGradient>
+<linearGradient id="gg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8FD893"/><stop offset="1" stop-color="#2A8A4A"/></linearGradient>
+</defs><rect width="256" height="256" rx="56" fill="url(#bg)"/>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="#fff" stroke-width="26">
+<polyline points="40,70 84,196 128,120 172,196 216,70"/></g>
+<g transform="translate(128 78)">
+<circle r="40" fill="#2B7CC3"/>
+<circle r="34" fill="none" stroke="url(#gg)" stroke-width="12"/>
+<circle r="44" fill="none" stroke="url(#gg)" stroke-width="14" stroke-dasharray="15 20.6" transform="rotate(-10)"/>
+<circle r="10" fill="#fff"/></g></svg>

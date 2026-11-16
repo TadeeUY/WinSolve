@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="WinSolve"><defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3AA3E0"/><stop offset=".55" stop-color="#2B7CC3"/><stop offset="1" stop-color="#1E4F92"/></linearGradient>
+<linearGradient id="gg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8FD893"/><stop offset="1" stop-color="#2A8A4A"/></linearGradient>
+</defs><path d="M128 18 L222 52 V122 C222 182 182 222 128 242 C74 222 34 182 34 122 V52 Z" fill="url(#bg)"/>
+<path d="M128 18 L222 52 V122 C222 182 182 222 128 242 Z" fill="#000" opacity=".12"/>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="22">
+<polyline points="72,82 100,160 128,102" stroke="#fff"/>
+<polyline points="128,102 150,150 196,76" stroke="url(#gg)"/></g></svg>
