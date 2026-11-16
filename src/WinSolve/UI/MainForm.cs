@@ -6,9 +6,6 @@ namespace WinSolve.UI;
 
 public sealed class MainForm : Form
 {
-    private const int WM_SYSCOMMAND = 0x0112;
-    private const int SC_MINIMIZE = 0xF020;
-    private const int SC_RESTORE = 0xF120;
 
     private readonly Panel _content = new BufferedPanel { Dock = DockStyle.Fill, BackColor = Theme.Background };
     private readonly Dictionary<string, Func<Page>> _factories;
@@ -17,7 +14,6 @@ public sealed class MainForm : Form
     private readonly NotifyIcon _tray;
     private readonly bool _startHidden;
     private bool _exiting;
-    private bool _animating;
     private bool _trayHintShown;
     private bool _loaded, _shownOnce;
     private readonly InfoBar _infoBar = new() { Dock = DockStyle.Top, Visible = false };
@@ -132,12 +128,19 @@ public sealed class MainForm : Form
             SplashScreen.SetStatus("Ready");
             await SplashScreen.CloseAsync();
             Activate();
-            // When started in the tray, ShowFromTray runs the fade-in itself.
-            if (!_startHidden) await AnimateInAsync();
+            // Appears at once, fully drawn. The window itself is never faded or moved by code any more:
+            // that (a layered window with hundreds of child controls) left torn, half-drawn frames
+            // until the animation ended. Windows' own open/close/minimize animation is used instead.
+            if (!_startHidden)
+            {
+                Opacity = 1;
+                Invalidate(true);
+                Update();
+            }
             if (!_startHidden && AppSettings.Current.IsFirstRun) BeginInvoke(ShowWelcome);
             else if (!_startHidden) BeginInvoke(ShowWhatsNewIfUpdated);
         };
-        HandleCreated += (_, _) => Theme.StyleWindow(this);
+        HandleCreated += (_, _) => Theme.StyleWindow(this, nativeTransitions: true);
         FormClosing += OnFormClosing;
         FormClosed += (_, _) => { if (_wheel is not null) Application.RemoveMessageFilter(_wheel); };
     }
@@ -251,25 +254,21 @@ public sealed class MainForm : Form
         return Done("Explorer restarted", "The taskbar and desktop were reloaded.", "\uE8B7");
     }
 
-    public async void ShowFromTray()
+    public void ShowFromTray()
     {
-        // Only fade in when the window was actually hidden or minimized.
-        var wasHidden = !Visible || WindowState == FormWindowState.Minimized;
         if (!Visible)
         {
-            Opacity = 0;
             Show();
             if (CurrentPage is null) Navigate("home");
             else CurrentPage.OnShown();
         }
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         Activate();
-        if (wasHidden) await AnimateInAsync();
         // Started hidden in the tray after an update: show what's new the first time it opens.
         if (_startHidden && !_whatsNewChecked && !AppSettings.Current.IsFirstRun) BeginInvoke(ShowWhatsNewIfUpdated);
     }
 
-    private async void OnFormClosing(object? sender, FormClosingEventArgs e)
+    private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
         // Elevated with another administrator's password: never stay behind in the tray, where the
         // signed-in (standard) user could keep using the administrator's rights.
@@ -279,10 +278,8 @@ public sealed class MainForm : Form
             return;
         }
         e.Cancel = true;
-        await AnimateOutAsync();
         CurrentPage?.OnHidden();
         Hide();
-        Opacity = 1;
         if (!_trayHintShown)
         {
             _trayHintShown = true;
@@ -596,83 +593,6 @@ public sealed class MainForm : Form
         {
             Navigate(target);
         }
-    }
-
-    // ───────────── Minimize / restore animations ─────────────
-
-    protected override void WndProc(ref Message m)
-    {
-        if (m.Msg == WM_SYSCOMMAND && AppSettings.Current.Animations && !_animating)
-        {
-            var cmd = m.WParam.ToInt64() & 0xFFF0;
-            if (cmd == SC_MINIMIZE)
-            {
-                _ = MinimizeAnimatedAsync();
-                return;
-            }
-            if (cmd == SC_RESTORE && WindowState == FormWindowState.Minimized)
-            {
-                Opacity = 0;
-                base.WndProc(ref m);
-                _ = AnimateInAsync();
-                return;
-            }
-        }
-        base.WndProc(ref m);
-    }
-
-    private async Task MinimizeAnimatedAsync()
-    {
-        await AnimateOutAsync();
-        WindowState = FormWindowState.Minimized;
-        Opacity = 1;
-    }
-
-    /// <summary>Fades out while sliding down, as if dropping into the taskbar.</summary>
-    private async Task AnimateOutAsync()
-    {
-        if (!AppSettings.Current.Animations || _animating) return;
-        _animating = true;
-        var top = Top;
-        const int steps = 12;
-        for (int i = 1; i <= steps; i++)
-        {
-            var t = Ease.InCubic(i / (double)steps);
-            Opacity = 1 - t;
-            if (WindowState == FormWindowState.Normal) Top = top + (int)(36 * t);
-            await Task.Delay(11);
-        }
-        if (WindowState == FormWindowState.Normal) Top = top;
-        _animating = false;
-    }
-
-    /// <summary>Fades in while sliding up.</summary>
-    private async Task AnimateInAsync()
-    {
-        if (!AppSettings.Current.Animations)
-        {
-            Opacity = 1;
-            return;
-        }
-        // Overlapping fades would read Top mid-slide and leave the window lower each time.
-        if (_animating) return;
-        _animating = true;
-        var top = Top;
-        var slide = WindowState == FormWindowState.Normal;
-        // On the animation clock (the screen refresh), not a loop of Task.Delay(11), which is really ~15 ms and uneven.
-        var done = new TaskCompletionSource();
-        double progress = 0;
-        Animator.Animate((this, "fade-in"), () => progress, 1, v =>
-        {
-            progress = v;
-            Opacity = v;
-            if (slide) Top = top + (int)(28 * (1 - v));
-            if (v >= 1) done.TrySetResult();
-        }, 200);
-        await done.Task;
-        if (slide) Top = top;
-        Opacity = 1;
-        _animating = false;
     }
 
     // ───────────── Navigation ─────────────

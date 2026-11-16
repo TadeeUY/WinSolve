@@ -152,14 +152,14 @@ public static class Theme
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
     /// <summary>Dark title bar and, on Windows 11, Mica backdrop and rounded corners.</summary>
-    public static void StyleWindow(Form form)
+    public static void StyleWindow(Form form, bool nativeTransitions = false)
     {
         try
         {
-            // Windows 11 plays its own open/close/minimize animation on a snapshot of the window, and
-            // WinForms windows with many controls showed stale or half-drawn content until it ended.
-            // Every WinSolve window turns it off (the main window has its own fade).
-            int noTransitions = 1;
+            // Windows' own open/close/minimize animation is smooth on the main window, which is never
+            // faded or moved by code; dialogs, toasts and the splash fade themselves or just appear,
+            // and the two together showed stale or half-drawn content until the animation ended.
+            int noTransitions = nativeTransitions ? 0 : 1;
             DwmSetWindowAttribute(form.Handle, 3, ref noTransitions, sizeof(int)); // DWMWA_TRANSITIONS_FORCEDISABLED
             int on = IsLight ? 0 : 1;
             DwmSetWindowAttribute(form.Handle, 20, ref on, sizeof(int)); // DWMWA_USE_IMMERSIVE_DARK_MODE

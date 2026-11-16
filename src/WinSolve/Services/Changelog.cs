@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 8),
+        [
+            new("\uE945", "The window no longer looks torn or half-drawn when it opens, closes or is minimized: WinSolve stopped fading and moving the whole window by itself, and now it appears fully drawn and uses Windows' own smooth animation.",
+                "La ventana ya no se ve cortada ni a medio dibujar al abrirse, cerrarse o minimizarse: WinSolve dejó de desvanecer y mover la ventana entera por su cuenta, y ahora aparece ya dibujada y usa la animación suave de Windows."),
+        ]),
         new(new Version(0, 17, 7),
         [
             new("\uE945", "Windows no longer look broken while they open or close: Windows' own window animation clashed with WinSolve's and showed old, doubled content until it ended. It is now switched off in every WinSolve window.",
