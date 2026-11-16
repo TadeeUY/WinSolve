@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using WinSolve.Core;
 using WinSolve.Services;
 using WinSolve.UI.Pages;
@@ -84,8 +85,8 @@ public sealed class MainForm : Form
         Controls.Add(BuildSidebar());
 
         _tray = BuildTray();
-        // Stay invisible until the first page is fully drawn (no gray flash); the splash covers the wait.
-        if (!startHidden) Opacity = 0;
+        // The window stays cloaked (hidden by DWM, but still painted) until its first page is fully drawn:
+        // no gray flash, no half-painted frames; the splash covers the wait. See RevealAfterPainting.
 
         Load += (_, _) =>
         {
@@ -124,23 +125,33 @@ public sealed class MainForm : Form
             _shownOnce = true;
             SplashScreen.SetStatus("Loading pages...");
             PreloadPages();
-            Refresh();
+            // Fully laid out and painted while still hidden, then shown: the splash fades out over a complete window.
+            if (!_startHidden) RevealAfterPainting();
             SplashScreen.SetStatus("Ready");
             await SplashScreen.CloseAsync();
             Activate();
-            // Appears at once, fully drawn. The window itself is never faded or moved by code any more:
-            // that (a layered window with hundreds of child controls) left torn, half-drawn frames
-            // until the animation ended. Windows' own open/close/minimize animation is used instead.
-            if (!_startHidden)
-            {
-                Opacity = 1;
-                Invalidate(true);
-                Update();
-            }
             if (!_startHidden && AppSettings.Current.IsFirstRun) BeginInvoke(ShowWelcome);
             else if (!_startHidden) BeginInvoke(ShowWhatsNewIfUpdated);
         };
-        HandleCreated += (_, _) => Theme.StyleWindow(this, nativeTransitions: true);
+        HandleCreated += (_, _) =>
+        {
+            Theme.StyleWindow(this, nativeTransitions: true);
+            // Only the first handle: the window is revealed once its content is painted (see Shown).
+            if (!_startHidden && !_cloakedAtStart)
+            {
+                _cloakedAtStart = true;
+                Cloak(true);
+                // Safety net: never leave the window hidden if something goes wrong while it loads.
+                var safety = new System.Windows.Forms.Timer { Interval = 20000 };
+                safety.Tick += (_, _) =>
+                {
+                    safety.Stop();
+                    safety.Dispose();
+                    if (_cloaked) Cloak(false);
+                };
+                safety.Start();
+            }
+        };
         FormClosing += OnFormClosing;
         FormClosed += (_, _) => { if (_wheel is not null) Application.RemoveMessageFilter(_wheel); };
     }
@@ -258,9 +269,22 @@ public sealed class MainForm : Form
     {
         if (!Visible)
         {
-            Show();
-            if (CurrentPage is null) Navigate("home");
-            else CurrentPage.OnShown();
+            // Showing a hidden window makes Windows start its open animation at once, while the many
+            // child controls have not been laid out or painted yet (they paint one by one): the
+            // animation then showed torn, half-drawn and stale frames. Cloaked, everything is laid out
+            // and painted first and the window appears complete.
+            Cloak(true);
+            try
+            {
+                Show();
+                if (CurrentPage is null) Navigate("home");
+                else CurrentPage.OnShown();
+                PaintEverythingNow();
+            }
+            finally
+            {
+                Cloak(false);
+            }
         }
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         Activate();
@@ -595,6 +619,54 @@ public sealed class MainForm : Form
         }
     }
 
+    // ───────────── Showing the window complete ─────────────
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
+
+    [DllImport("user32.dll")]
+    private static extern bool RedrawWindow(IntPtr hwnd, IntPtr rect, IntPtr region, uint flags);
+
+    private const uint RDW_INVALIDATE = 0x0001, RDW_ERASE = 0x0004, RDW_ALLCHILDREN = 0x0080, RDW_UPDATENOW = 0x0100, RDW_FRAME = 0x0400;
+
+    private bool _cloaked, _cloakedAtStart;
+
+    /// <summary>
+    /// Hides (or shows again) the window at the compositor level (DWMWA_CLOAK). A cloaked window is
+    /// still laid out and painted, it just isn't on screen. If cloaking isn't available nothing
+    /// changes: the window is simply shown as before.
+    /// </summary>
+    private void Cloak(bool on)
+    {
+        if (!IsHandleCreated) return;
+        try
+        {
+            var value = on ? 1 : 0;
+            _cloaked = DwmSetWindowAttribute(Handle, 13, ref value, sizeof(int)) == 0 && on;
+        }
+        catch
+        {
+            _cloaked = false;
+        }
+    }
+
+    /// <summary>Lays out and paints the window and every control in it right now, and waits for the compositor to take it.</summary>
+    private void PaintEverythingNow()
+    {
+        PerformLayout();
+        RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_FRAME);
+        try { DwmFlush(); } catch { /* no compositor call: the paint above is enough */ }
+    }
+
+    private void RevealAfterPainting()
+    {
+        try { PaintEverythingNow(); }
+        finally { Cloak(false); }
+    }
+
     // ───────────── Navigation ─────────────
 
     private Control BuildSidebar()
@@ -924,7 +996,7 @@ public sealed class MainForm : Form
         previous?.OnHidden();
         foreach (var b in _nav) b.Selected = b.Key == key;
 
-        var animate = AppSettings.Current.Animations && Visible && Opacity > 0 && previous is not null && WindowState != FormWindowState.Minimized;
+        var animate = AppSettings.Current.Animations && Visible && !_cloaked && previous is not null && WindowState != FormWindowState.Minimized;
 
         // Pages stay in the window once shown and are only hidden: taking a big page out of the
         // window (and back in) made Windows rebuild hundreds of controls, up to ~20 s per switch.
@@ -1006,7 +1078,7 @@ public sealed class MainForm : Form
         timer.Tick += (_, _) =>
         {
             if (pending.Count == 0 || IsDisposed) { timer.Dispose(); return; }
-            if (!Visible || Opacity < 1) return; // during the fade-in or while in the tray
+            if (!Visible || _cloaked) return; // while it is being revealed or in the tray
             var key = pending.Dequeue();
             try
             {

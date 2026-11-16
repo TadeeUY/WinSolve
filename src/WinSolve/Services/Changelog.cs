@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 9),
+        [
+            new("\uE945", "The window no longer opens torn or half-drawn: it is now laid out and painted completely while hidden, and only then shown, on start and when opening it from the notification area.",
+                "La ventana ya no se abre cortada ni a medio dibujar: ahora se organiza y se dibuja por completo mientras está oculta, y solo entonces se muestra, al iniciar y al abrirla desde el área de notificación."),
+        ]),
         new(new Version(0, 17, 8),
         [
             new("\uE945", "The window no longer looks torn or half-drawn when it opens, closes or is minimized: WinSolve stopped fading and moving the whole window by itself, and now it appears fully drawn and uses Windows' own smooth animation.",
