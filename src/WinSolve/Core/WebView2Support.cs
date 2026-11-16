@@ -22,8 +22,18 @@ internal static class WebView2Support
     private static readonly Lazy<bool> Ready = new(Prepare);
     private static Task<CoreWebView2Environment>? _environment;
 
-    /// <summary>True when the web pages can be used on this PC and are turned on.</summary>
-    internal static bool IsAvailable => AppSettings.Current.WebInterface && Ready.Value;
+    /// <summary>True when the web pages can be used on this PC, are turned on and haven't failed in this version.</summary>
+    internal static bool IsAvailable
+        => AppSettings.Current.ChromiumHome && AppSettings.Current.ChromiumHomeFailedOn != CurrentVersion && Ready.Value;
+
+    internal static string CurrentVersion => System.Windows.Forms.Application.ProductVersion.Split('+')[0];
+
+    /// <summary>The web Home page didn't work here: the classic page is used until the next version.</summary>
+    internal static void MarkFailed()
+    {
+        AppSettings.Current.ChromiumHomeFailedOn = CurrentVersion;
+        AppSettings.Current.Save();
+    }
 
     private static bool Prepare()
     {

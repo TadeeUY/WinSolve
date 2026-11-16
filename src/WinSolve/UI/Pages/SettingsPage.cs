@@ -34,7 +34,7 @@ public sealed class SettingsPage : Page
         // Under another administrator's account WinSolve always exits when closed (see MainForm).
         if (InteractiveUser.IsDifferent) _tray.Enabled = false;
         _animations = Theme.Toggle("", s.Animations);
-        _webInterface = Theme.Toggle("", s.WebInterface);
+        _webInterface = Theme.Toggle("", s.ChromiumHome && !Edition.IsPortable);
         if (Edition.IsPortable) _webInterface.Enabled = false; // the portable build leaves nothing behind on the PC
         _autoStart = Theme.Toggle("", false);
         _updates = Theme.Toggle("", s.CheckForUpdates);
@@ -65,8 +65,8 @@ public sealed class SettingsPage : Page
             new Divider(),
             Theme.SettingRow("Minimize and restore animations", null, _animations),
             new Divider(),
-            Theme.SettingRow("Experimental: draw the Home page with the Edge engine (Chromium)",
-                "Like Discord does, so the page never opens torn or half-drawn. Needs the Microsoft Edge WebView2 runtime. Restart WinSolve to apply it.", _webInterface));
+            Theme.SettingRow("Draw the Home page with the Edge engine (Chromium)",
+                "Smoother, and it never opens torn or half-drawn. Needs the Microsoft Edge WebView2 runtime. If it can't start, WinSolve uses the classic page by itself. Restart WinSolve to apply it.", _webInterface));
 
         var background = new StackCard().Add(
             Theme.SectionHeader("\uE9F5", "Background", "What WinSolve does while you're not looking at it."),
@@ -372,7 +372,11 @@ public sealed class SettingsPage : Page
         s.CloseToTray = _tray.Checked;
         s.WeeklySummary = _weekly.Checked;
         s.Animations = _animations.Checked;
-        s.WebInterface = _webInterface.Checked && !Edition.IsPortable;
+        if (!Edition.IsPortable) // the portable build shares settings.json with an installed copy: it never changes this
+        {
+            if (_webInterface.Checked && !s.ChromiumHome) s.ChromiumHomeFailedOn = null; // turned on again: try it again
+            s.ChromiumHome = _webInterface.Checked;
+        }
         s.CheckForUpdates = _updates.Checked || _autoUpdate.Checked;
         // The portable build shares settings.json with an installed copy on the same PC: it never
         // touches the installed copy's scheduled task or automatic updates.

@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 11),
+        [
+            new("\uE80F", "The Home page is now drawn with the Microsoft Edge engine (Chromium), so it opens complete and moves smoothly. If the engine is missing or can't start, WinSolve switches to the classic page by itself. You can turn it off in Settings. The portable edition keeps the classic page.",
+                "La página de Inicio ahora se dibuja con el motor de Microsoft Edge (Chromium), así que se abre completa y se mueve con fluidez. Si el motor falta o no puede arrancar, WinSolve cambia solo a la página clásica. Puedes desactivarlo en Ajustes. La edición portable mantiene la página clásica."),
+        ]),
         new(new Version(0, 17, 10),
         [
             new("\uE80F", "New experimental Home page drawn with the Microsoft Edge engine (Chromium), like Discord, so it never opens torn or half-drawn. Turn it on in Settings (\"Experimental: draw the Home page with the Edge engine\") and restart WinSolve. It needs the Microsoft Edge WebView2 runtime; if it is missing or can't start, the classic page is used. Not available in the portable edition.",

@@ -1039,6 +1039,22 @@ public sealed class MainForm : Form
     private const int SlideDistance = 20;
     private Page? _currentPage;
 
+    /// <summary>
+    /// The Chromium Home page couldn't start or load: swaps it for the classic page, on screen if it
+    /// was the page being shown, so nobody has to restart anything.
+    /// </summary>
+    internal void UseClassicHome(Page failed)
+    {
+        if (IsDisposed || !_pages.TryGetValue("home", out var current) || !ReferenceEquals(current, failed)) return;
+        var wasShown = ReferenceEquals(_currentPage, failed);
+        _factories["home"] = () => new DashboardPage();
+        _pages.Remove("home");
+        if (wasShown) _currentPage = null;
+        _content.Controls.Remove(failed);
+        failed.Dispose();
+        if (wasShown) Navigate("home");
+    }
+
     private bool _slideSkipped;
 
     private void SlideIn(Page page)

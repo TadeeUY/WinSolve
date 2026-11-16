@@ -28,6 +28,8 @@ public sealed class WebHomePage : Page
     private List<Issue> _issues = [];
     private bool _initStarted, _ready, _scanned, _scanning, _weeklyShown;
     private string _lastSummary = "", _lastStatus = "";
+    private System.Windows.Forms.Timer? _watchdog;
+    private bool _gaveUp;
 
     public override string Key => "home";
 
@@ -56,20 +58,54 @@ public sealed class WebHomePage : Page
             core.WebMessageReceived += OnMessage;
             core.WebResourceRequested += OnResourceRequested;
             core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+            core.ProcessFailed += (_, e) =>
+            {
+                // The GPU and helper processes are restarted by WebView2 itself; the browser or page process dying isn't.
+                if (e.ProcessFailedKind is CoreWebView2ProcessFailedKind.BrowserProcessExited or CoreWebView2ProcessFailedKind.RenderProcessExited)
+                    GiveUp($"the browser process failed ({e.ProcessFailedKind})");
+            };
+            core.NavigationCompleted += (_, e) =>
+            {
+                if (!e.IsSuccess && e.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled)
+                    GiveUp($"the page did not load ({e.WebErrorStatus})");
+            };
+            // The page says "ready" as soon as it runs; if it never does, don't leave a blank Home page.
+            _watchdog = new System.Windows.Forms.Timer { Interval = 10_000 };
+            _watchdog.Tick += (_, _) =>
+            {
+                _watchdog?.Stop();
+                if (!_ready) GiveUp("the page did not answer in 10 seconds");
+            };
+            _watchdog.Start();
             core.Navigate(Origin + "/index.html");
         }
         catch (Exception ex)
         {
-            Logger.Write($"The web Home page could not start: {ex}");
-            // Next start uses the classic page.
-            AppSettings.Current.WebInterface = false;
-            AppSettings.Current.Save();
-            var text = Theme.Label(Loc.T("The new Home page could not start. Restart WinSolve to go back to the classic one."), Theme.Body, Theme.Muted);
-            text.Dock = DockStyle.Top;
-            text.Padding = new Padding(32, 28, 32, 0);
-            Controls.Add(text);
-            text.BringToFront();
+            GiveUp($"it could not start: {ex}");
         }
+    }
+
+    /// <summary>
+    /// The engine didn't work on this PC: remember it for this version and show the classic Home page
+    /// instead, right away.
+    /// </summary>
+    private void GiveUp(string reason)
+    {
+        if (_gaveUp || IsDisposed) return;
+        _gaveUp = true;
+        Logger.Write($"The Chromium Home page was dropped, the classic one is used: {reason}");
+        WebView2Support.MarkFailed();
+        BeginInvoke(() => Main.UseClassicHome(this));
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _watchdog?.Dispose();
+            _watchdog = null;
+        }
+        base.Dispose(disposing);
     }
 
     /// <summary>The page is a part of the app, not a browser: no menus, shortcuts, pop-ups, downloads or permissions.</summary>
@@ -146,6 +182,7 @@ public sealed class WebHomePage : Page
             {
                 case "ready":
                     _ready = true;
+                    _watchdog?.Stop();
                     SendInit();
                     SendWeeklyIfDue();
                     await StartIfNeededAsync();
