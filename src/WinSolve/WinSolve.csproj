@@ -63,6 +63,21 @@
     <Using Include="System.Drawing" />
   </ItemGroup>
 
+  <!-- The web pages (served from memory by the app; see UI/Pages/WebHomePage.cs). -->
+  <ItemGroup>
+    <EmbeddedResource Include="Web\index.html" LogicalName="web/index.html" />
+    <EmbeddedResource Include="Web\home.css" LogicalName="web/home.css" />
+    <EmbeddedResource Include="Web\home.js" LogicalName="web/home.js" />
+  </ItemGroup>
+
+  <!-- WebView2 loader (x64), embedded so it can be loaded from the trusted data folder instead of searched for. -->
+  <PropertyGroup>
+    <WebView2LoaderDll>$(NuGetPackageRoot)microsoft.web.webview2\1.0.2903.40\runtimes\win-x64\native\WebView2Loader.dll</WebView2LoaderDll>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Portable)' != 'true' And Exists('$(WebView2LoaderDll)')">
+    <EmbeddedResource Include="$(WebView2LoaderDll)" LogicalName="WebView2Loader.dll" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="WinSolve.Tests" />
     <EmbeddedResource Include="..\..\assets\winsolve.ico" LogicalName="WinSolve.ico" />
@@ -85,6 +100,8 @@
     <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.0" />
     <PackageReference Include="System.Management" Version="8.0.0" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
+    <!-- Edge WebView2 (Chromium) for the pages drawn as web pages. Its loader DLL is embedded below, see Core/WebView2Support.cs. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
   </ItemGroup>
 
 </Project>

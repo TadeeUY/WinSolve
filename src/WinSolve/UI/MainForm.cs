@@ -56,7 +56,7 @@ public sealed class MainForm : Form
 
         _factories = new()
         {
-            ["home"] = () => new DashboardPage(),
+            ["home"] = () => WebView2Support.IsAvailable ? (Page)new WebHomePage() : new DashboardPage(),
             ["optimize"] = () => new OptimizePage(),
             ["space"] = () => new SpacePage(),
             ["tools"] = () => new ToolsPage(),

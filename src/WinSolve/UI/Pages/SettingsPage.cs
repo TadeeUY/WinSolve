@@ -13,7 +13,7 @@ public sealed class SettingsPage : Page
     private readonly FlowLayoutPanel _swatchRow = Theme.Row();
     private ColorSwatch? _customSwatch;
     private readonly CheckBox _weekly;
-    private readonly CheckBox _restorePoint, _confirm, _scanOnStartup, _alerts, _tray, _animations, _autoStart, _updates, _autoUpdate;
+    private readonly CheckBox _restorePoint, _confirm, _scanOnStartup, _alerts, _tray, _animations, _autoStart, _updates, _autoUpdate, _webInterface;
     private readonly ComboBox _schedule = Theme.Combo(Maintenance.Schedules);
     private readonly ComboBox _language = Theme.Combo("English", "Español");
     private readonly ComboBox _themeMode = Theme.Combo("Same as Windows", "Dark mode", "Light mode");
@@ -34,6 +34,8 @@ public sealed class SettingsPage : Page
         // Under another administrator's account WinSolve always exits when closed (see MainForm).
         if (InteractiveUser.IsDifferent) _tray.Enabled = false;
         _animations = Theme.Toggle("", s.Animations);
+        _webInterface = Theme.Toggle("", s.WebInterface);
+        if (Edition.IsPortable) _webInterface.Enabled = false; // the portable build leaves nothing behind on the PC
         _autoStart = Theme.Toggle("", false);
         _updates = Theme.Toggle("", s.CheckForUpdates);
         _autoUpdate = Theme.Toggle("", s.AutoInstallUpdates);
@@ -61,7 +63,10 @@ public sealed class SettingsPage : Page
             new Divider(),
             Theme.SettingRow("Scan the PC when WinSolve opens", null, _scanOnStartup),
             new Divider(),
-            Theme.SettingRow("Minimize and restore animations", null, _animations));
+            Theme.SettingRow("Minimize and restore animations", null, _animations),
+            new Divider(),
+            Theme.SettingRow("Experimental: draw the Home page with the Edge engine (Chromium)",
+                "Like Discord does, so the page never opens torn or half-drawn. Needs the Microsoft Edge WebView2 runtime. Restart WinSolve to apply it.", _webInterface));
 
         var background = new StackCard().Add(
             Theme.SectionHeader("\uE9F5", "Background", "What WinSolve does while you're not looking at it."),
@@ -367,6 +372,7 @@ public sealed class SettingsPage : Page
         s.CloseToTray = _tray.Checked;
         s.WeeklySummary = _weekly.Checked;
         s.Animations = _animations.Checked;
+        s.WebInterface = _webInterface.Checked && !Edition.IsPortable;
         s.CheckForUpdates = _updates.Checked || _autoUpdate.Checked;
         // The portable build shares settings.json with an installed copy on the same PC: it never
         // touches the installed copy's scheduled task or automatic updates.

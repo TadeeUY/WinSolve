@@ -38,6 +38,9 @@ public sealed class AppSettings
     public bool ConfirmActions { get; set; } = true;
     public bool ScanOnStartup { get; set; } = true;
 
+    /// <summary>Experimental: draw the Home page with the Edge WebView2 engine (Chromium) instead of WinForms controls.</summary>
+    public bool WebInterface { get; set; } = false;
+
     /// <summary>Watch the event log and pop up an alert when Windows reports an error.</summary>
     public bool ErrorAlerts { get; set; } = true;
 
