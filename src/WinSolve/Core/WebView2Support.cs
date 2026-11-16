@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using Microsoft.Web.WebView2.Core;
 
 namespace WinSolve.Core;
@@ -85,17 +87,73 @@ internal static class WebView2Support
         }
     }
 
-    /// <summary>One browser environment for the whole app (its profile is in the trusted data folder).</summary>
+    /// <summary>True when this run keeps the browser profile in the account's own folder (see ChromiumProfileInUserFolder).</summary>
+    internal static bool ProfileInUserFolder { get; private set; }
+
+    /// <summary>One browser environment for the whole app.</summary>
     internal static Task<CoreWebView2Environment> GetEnvironmentAsync()
         => _environment ??= CreateEnvironmentAsync();
 
     private static Task<CoreWebView2Environment> CreateEnvironmentAsync()
     {
-        var profile = Path.Combine(SafePath.DataFolder, "WebView2");
+        // First the administrators-only data folder. If the engine ever failed to start on this PC, its browser process
+        // evidently can't use that folder (it runs without the administrator rights WinSolve has), so it gets a folder
+        // of the account's own instead: protected so only that account, SYSTEM and administrators can use it, and
+        // only a browser process that can't use the admin-only folder ends up there.
+        var settings = AppSettings.Current;
+        string? profile = null;
+        if (settings.ChromiumProfileInUserFolder || settings.ChromiumHomeFailedOn is not null)
+            profile = UserProfileFolder();
+        ProfileInUserFolder = profile is not null;
+        profile ??= Path.Combine(SafePath.DataFolder, "WebView2");
+
         var options = new CoreWebView2EnvironmentOptions
         {
-            Language = AppSettings.Current.Language == "es" ? "es" : "en-US",
+            Language = settings.Language == "es" ? "es" : "en-US",
+            // A problem with the engine is handled by WinSolve (it shows the classic page): no Edge dialogs.
+            AdditionalBrowserArguments = "--noerrdialogs",
         };
         return CoreWebView2Environment.CreateAsync(null, profile, options);
+    }
+
+    /// <summary>The browser profile didn't work in the admin-only folder: use the account's own folder from the next start.</summary>
+    internal static void RememberProfileProblem()
+    {
+        if (ProfileInUserFolder || AppSettings.Current.ChromiumProfileInUserFolder) return;
+        AppSettings.Current.ChromiumProfileInUserFolder = true;
+        AppSettings.Current.Save();
+    }
+
+    /// <summary>%LOCALAPPDATA%\WinSolve\WebView2 of the running account, readable and writable only by it, SYSTEM and administrators.</summary>
+    private static string? UserProfileFolder()
+    {
+        try
+        {
+            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinSolve");
+            var dir = Path.Combine(root, "WebView2");
+            Directory.CreateDirectory(dir);
+            // Never through a link someone put there.
+            foreach (var d in new[] { root, dir })
+                if ((File.GetAttributes(d) & FileAttributes.ReparsePoint) != 0)
+                {
+                    Logger.Write($"WebView2 profile folder {d} is a link; not using it.");
+                    return null;
+                }
+
+            var me = WindowsIdentity.GetCurrent().User;
+            if (me is null) return null;
+            var security = new DirectorySecurity();
+            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            var inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+            foreach (var sid in new[] { me, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null) })
+                security.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+            new DirectoryInfo(dir).SetAccessControl(security);
+            return dir;
+        }
+        catch (Exception ex)
+        {
+            Logger.Write($"Could not prepare the WebView2 profile folder: {ex.Message}");
+            return null;
+        }
     }
 }

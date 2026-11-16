@@ -47,6 +47,12 @@ public sealed class AppSettings
     /// </summary>
     public string? ChromiumHomeFailedOn { get; set; }
 
+    /// <summary>
+    /// The engine couldn't use the administrators-only profile folder here (its browser process doesn't run with
+    /// the administrator rights WinSolve has), so its profile lives in the account's own folder from now on.
+    /// </summary>
+    public bool ChromiumProfileInUserFolder { get; set; }
+
     /// <summary>Watch the event log and pop up an alert when Windows reports an error.</summary>
     public bool ErrorAlerts { get; set; } = true;
 

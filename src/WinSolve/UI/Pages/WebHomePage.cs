@@ -81,7 +81,9 @@ public sealed class WebHomePage : Page
         }
         catch (Exception ex)
         {
-            GiveUp($"it could not start: {ex}");
+            // Most often the browser process can't use the profile folder: try the account's own folder next time.
+            WebView2Support.RememberProfileProblem();
+            GiveUp($"it could not start (profile in {(WebView2Support.ProfileInUserFolder ? "the account's folder" : "the admin-only folder")}): 0x{ex.HResult:X8} {ex}");
         }
     }
 

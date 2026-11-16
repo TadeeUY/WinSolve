@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 13),
+        [
+            new("\uE80F", "Fixes the \"We couldn't create the data directory\" message from the Edge engine on the Home page: if it can't use WinSolve's protected folder, it now keeps its data in your own account's folder, and its error dialogs are off. If it still can't start, the classic Home page is shown.",
+                "Corrige el mensaje \"No pudimos crear el directorio de datos\" del motor de Edge en la página de Inicio: si no puede usar la carpeta protegida de WinSolve, ahora guarda sus datos en la carpeta de tu propia cuenta, y sus diálogos de error están desactivados. Si aun así no arranca, se muestra la página de Inicio clásica."),
+        ]),
         new(new Version(0, 17, 12),
         [
             new("\uE945", "Pages no longer show torn or half-painted pieces and move more smoothly: text and layout areas now take the color behind them instead of being transparent, so Windows no longer repaints the whole chain of containers behind every label.",
