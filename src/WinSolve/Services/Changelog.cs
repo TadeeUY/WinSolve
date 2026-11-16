@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 12),
+        [
+            new("\uE945", "Pages no longer show torn or half-painted pieces and move more smoothly: text and layout areas now take the color behind them instead of being transparent, so Windows no longer repaints the whole chain of containers behind every label.",
+                "Las páginas ya no muestran partes cortadas o a medio pintar y se mueven con más fluidez: el texto y las áreas de diseño ahora toman el color que tienen detrás en vez de ser transparentes, así Windows ya no repinta toda la cadena de contenedores detrás de cada etiqueta."),
+        ]),
         new(new Version(0, 17, 11),
         [
             new("\uE80F", "The Home page is now drawn with the Microsoft Edge engine (Chromium), so it opens complete and moves smoothly. If the engine is missing or can't start, WinSolve switches to the classic page by itself. You can turn it off in Settings. The portable edition keeps the classic page.",

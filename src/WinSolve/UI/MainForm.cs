@@ -1011,6 +1011,7 @@ public sealed class MainForm : Form
         }
         else page.Dock = DockStyle.Fill;
         if (page.Parent != _content) _content.Controls.Add(page);
+        Theme.FlattenTransparency(page); // pages built or filled since the last visit: opaque backgrounds, no parent repaints
         // Showing a page makes every control in it report "visible" to its container, and each
         // report re-measures the whole page: hundreds of passes on a big page. Freeze layout
         // while it appears and measure once at the end.
@@ -1103,6 +1104,7 @@ public sealed class MainForm : Form
                 page.Visible = false;
                 page.Dock = DockStyle.Fill;
                 _content.Controls.Add(page);
+                Theme.FlattenTransparency(page);
                 CreateHandles(page);
             }
             catch (Exception ex) { Logger.Write($"Preloading page '{key}' failed: {ex.Message}"); }
