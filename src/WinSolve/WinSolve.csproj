@@ -70,6 +70,21 @@
     <EmbeddedResource Include="Web\home.js" LogicalName="web/home.js" />
   </ItemGroup>
 
+  <!--
+    The package ships WebView2Loader.dll as a native asset; published as is, the single-file exe would
+    unpack it into %TEMP%\.net on every start (the portable edition must leave nothing there, and an
+    elevated app shouldn't load DLLs from a user-writable folder). WinSolve embeds its own copy below
+    and loads it from the trusted data folder, so the package's copies are left out of the publish.
+  -->
+  <PropertyGroup>
+    <WebView2NeverCopyLoaderDllToOutputDirectory>true</WebView2NeverCopyLoaderDllToOutputDirectory>
+  </PropertyGroup>
+  <Target Name="DropWebView2LoaderFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'WebView2Loader.dll'" />
+    </ItemGroup>
+  </Target>
+
   <!-- WebView2 loader (x64), embedded so it can be loaded from the trusted data folder instead of searched for. -->
   <PropertyGroup>
     <WebView2LoaderDll>$(NuGetPackageRoot)microsoft.web.webview2\1.0.2903.40\runtimes\win-x64\native\WebView2Loader.dll</WebView2LoaderDll>
