@@ -44,6 +44,17 @@ dotnet publish src/WinSolve/WinSolve.csproj -c Release -o out
 
 The UI is Windows Forms written entirely in code, so it builds on Windows, Linux or CI (`EnableWindowsTargeting`).
 
+**Native core (optional, Rust).** The disk scan and the duplicate-file hashing have a faster implementation in
+`native/winsolve-native`. To include it, build it first and then publish as above (the DLL is embedded in the exe):
+
+```
+rustup target add x86_64-pc-windows-msvc
+cargo build --release --target x86_64-pc-windows-msvc --manifest-path native/winsolve-native/Cargo.toml
+```
+
+Without it the app uses its built-in C# code (same results). `cargo test --manifest-path native/winsolve-native/Cargo.toml` runs on any OS.
+Set `WINSOLVE_NO_NATIVE=1` to make a build ignore the native core.
+
 ## Tests
 
 ```

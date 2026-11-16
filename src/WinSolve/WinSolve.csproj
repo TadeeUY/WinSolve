@@ -68,6 +68,19 @@
     <EmbeddedResource Include="..\..\assets\winsolve.ico" LogicalName="WinSolve.ico" />
   </ItemGroup>
 
+  <!--
+    Native core (Rust, native/winsolve-native): disk scan and duplicate hashing. CI builds it before this
+    project; without the DLL (e.g. a local build without Rust) it is simply left out and the app uses
+    its managed code. Embedded, never shipped next to the exe: see Core/NativeCore.cs. Not in the
+    portable edition (it must leave nothing on the PC).
+  -->
+  <PropertyGroup>
+    <NativeCoreDll Condition="'$(NativeCoreDll)' == ''">$(MSBuildThisFileDirectory)..\..\native\winsolve-native\target\x86_64-pc-windows-msvc\release\winsolve_native.dll</NativeCoreDll>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Portable)' != 'true' And Exists('$(NativeCoreDll)')">
+    <EmbeddedResource Include="$(NativeCoreDll)" LogicalName="winsolve_native.dll" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.0" />
     <PackageReference Include="System.Management" Version="8.0.0" />

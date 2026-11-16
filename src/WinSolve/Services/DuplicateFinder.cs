@@ -119,6 +119,15 @@ public static class DuplicateFinder
         }
         Walk(root, root.FullPath);
 
+        // The native core (Rust) reads and hashes the candidates when it is available.
+        if (NativeCore.TryFindDuplicates(files, status, ct) is { } native)
+        {
+            return native
+                .Select(g => new DuplicateGroup(g.Hash, g.Size,
+                    g.Members.Select(i => new DuplicateFile(files[i].Path, files[i].Size, SafeModified(files[i].Path))).OrderBy(f => f.Modified).ToList()))
+                .OrderByDescending(g => g.Wasted).ToList();
+        }
+
         var bySize = files.GroupBy(f => f.Size).Where(g => g.Count() > 1).ToList();
         status($"{files.Count:N0} files checked, {bySize.Sum(g => g.Count()):N0} share a size with another file. Comparing contents...");
 

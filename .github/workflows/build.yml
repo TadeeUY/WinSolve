@@ -27,6 +27,13 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Build native core (Rust)
+        shell: pwsh
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          cargo test --manifest-path native/winsolve-native/Cargo.toml --locked
+          cargo build --release --locked --target x86_64-pc-windows-msvc --manifest-path native/winsolve-native/Cargo.toml
+
       - name: Run tests
         run: dotnet test tests/WinSolve.Tests/WinSolve.Tests.csproj -c Release --logger "console;verbosity=normal"
 
