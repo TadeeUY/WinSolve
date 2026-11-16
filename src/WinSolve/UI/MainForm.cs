@@ -730,7 +730,7 @@ public sealed class MainForm : Form
         var brand = new Panel { Dock = DockStyle.Top, Height = 62, BackColor = Theme.Sidebar };
         brand.Controls.Add(_logo = new PictureBox
         {
-            // The logo is wider than tall: a bigger box keeps it legible.
+            // A 42 px box keeps the multitool mark legible.
             Image = Theme.AppIcon(64).ToBitmap(),
             SizeMode = PictureBoxSizeMode.Zoom,
             Size = new Size(42, 42),

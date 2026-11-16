@@ -78,7 +78,7 @@ img, svg { display: block; max-width: 100%; }
 .nav.scrolled { border-bottom-color: var(--border); background: rgba(7, 9, 15, 0.78); }
 .nav .wrap { display: flex; align-items: center; gap: 24px; height: 68px; }
 .brand { display: flex; align-items: center; gap: 10px; font: 700 19px/1 var(--display); letter-spacing: -0.02em; }
-.brand img { width: 38px; height: auto; }
+.brand img { width: 34px; height: auto; }
 .nav .links { display: flex; gap: 6px; margin-left: auto; }
 .nav .links a {
   padding: 8px 14px; border-radius: 999px; color: var(--muted); font-size: 15px;
