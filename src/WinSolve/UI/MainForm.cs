@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using WinSolve.Core;
 using WinSolve.Services;
 using WinSolve.UI.Pages;
@@ -138,11 +137,7 @@ public sealed class MainForm : Form
             if (!_startHidden && AppSettings.Current.IsFirstRun) BeginInvoke(ShowWelcome);
             else if (!_startHidden) BeginInvoke(ShowWhatsNewIfUpdated);
         };
-        HandleCreated += (_, _) =>
-        {
-            Theme.StyleWindow(this);
-            ApplyNativeTransitions();
-        };
+        HandleCreated += (_, _) => Theme.StyleWindow(this);
         FormClosing += OnFormClosing;
         FormClosed += (_, _) => { if (_wheel is not null) Application.RemoveMessageFilter(_wheel); };
     }
@@ -612,13 +607,11 @@ public sealed class MainForm : Form
             var cmd = m.WParam.ToInt64() & 0xFFF0;
             if (cmd == SC_MINIMIZE)
             {
-                ApplyNativeTransitions();
                 _ = MinimizeAnimatedAsync();
                 return;
             }
             if (cmd == SC_RESTORE && WindowState == FormWindowState.Minimized)
             {
-                ApplyNativeTransitions();
                 Opacity = 0;
                 base.WndProc(ref m);
                 _ = AnimateInAsync();
@@ -626,30 +619,6 @@ public sealed class MainForm : Form
             }
         }
         base.WndProc(ref m);
-    }
-
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-
-    /// <summary>
-    /// WinSolve fades and slides its own window in and out. Windows 11 also plays its own open, close,
-    /// minimize and restore animation, which works on a snapshot of the window taken earlier (for
-    /// example before the side menu was collapsed or the window was resized); both at once showed
-    /// stale, doubled content until the animation ended. With animations on, the system ones are
-    /// switched off for this window (DWMWA_TRANSITIONS_FORCEDISABLED); with them off, the system's stay.
-    /// </summary>
-    private void ApplyNativeTransitions()
-    {
-        if (!IsHandleCreated) return;
-        try
-        {
-            var disable = AppSettings.Current.Animations ? 1 : 0;
-            DwmSetWindowAttribute(Handle, 3, ref disable, sizeof(int));
-        }
-        catch
-        {
-            // Older Windows: nothing to switch off.
-        }
     }
 
     private async Task MinimizeAnimatedAsync()
@@ -663,7 +632,6 @@ public sealed class MainForm : Form
     private async Task AnimateOutAsync()
     {
         if (!AppSettings.Current.Animations || _animating) return;
-        ApplyNativeTransitions();
         _animating = true;
         var top = Top;
         const int steps = 12;
@@ -688,7 +656,6 @@ public sealed class MainForm : Form
         }
         // Overlapping fades would read Top mid-slide and leave the window lower each time.
         if (_animating) return;
-        ApplyNativeTransitions();
         _animating = true;
         var top = Top;
         var slide = WindowState == FormWindowState.Normal;

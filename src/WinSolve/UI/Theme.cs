@@ -156,6 +156,11 @@ public static class Theme
     {
         try
         {
+            // Windows 11 plays its own open/close/minimize animation on a snapshot of the window, and
+            // WinForms windows with many controls showed stale or half-drawn content until it ended.
+            // Every WinSolve window turns it off (the main window has its own fade).
+            int noTransitions = 1;
+            DwmSetWindowAttribute(form.Handle, 3, ref noTransitions, sizeof(int)); // DWMWA_TRANSITIONS_FORCEDISABLED
             int on = IsLight ? 0 : 1;
             DwmSetWindowAttribute(form.Handle, 20, ref on, sizeof(int)); // DWMWA_USE_IMMERSIVE_DARK_MODE
             int round = 2;

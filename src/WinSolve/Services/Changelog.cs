@@ -10,6 +10,13 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 7),
+        [
+            new("\uE945", "Windows no longer look broken while they open or close: Windows' own window animation clashed with WinSolve's and showed old, doubled content until it ended. It is now switched off in every WinSolve window.",
+                "Las ventanas ya no se ven rotas al abrirse o cerrarse: la animación propia de Windows chocaba con la de WinSolve y mostraba contenido viejo y duplicado hasta que terminaba. Ahora está desactivada en todas las ventanas de WinSolve."),
+            new("\uE721", "Faster disk space scan and duplicate finder in the installed version: they now run on a new native engine. If it can't be loaded, WinSolve uses the previous one by itself, with the same results.",
+                "Análisis de espacio en disco y buscador de duplicados más rápidos en la versión instalada: ahora usan un nuevo motor nativo. Si no se puede cargar, WinSolve usa el anterior por sí solo, con los mismos resultados."),
+        ]),
         new(new Version(0, 17, 6),
         [
             new("\uE945", "More fluid animations: the window now fades in on the screen-refresh clock too, and when changing page the slide is skipped by itself if a page takes long to draw, so it never makes the app feel stuck.",
