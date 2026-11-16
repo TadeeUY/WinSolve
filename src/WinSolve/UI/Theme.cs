@@ -154,7 +154,7 @@ public static class Theme
     {
         foreach (Control child in root.Controls)
         {
-            if (child.BackColor.A == 0 && child is Panel or FlowLayoutPanel or TableLayoutPanel or Label)
+            if (child.BackColor.A == 0 && child is Panel or FlowLayoutPanel or TableLayoutPanel or System.Windows.Forms.Label)
             {
                 var behind = BehindColor(root);
                 if (behind.A == 255) child.BackColor = behind;
