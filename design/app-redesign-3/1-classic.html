@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>WinSolve · option 1 · classic utility</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Option 1: a classic Windows utility. Dense, flat, no cards: menu, toolbar, tabs, a list view, details, status bar. */
+:root { --face:#f0f0f0; --win:#fff; --line:#d4d4d4; --line-d:#a0a0a0; --text:#1a1a1a; --mut:#606060; --sel:#cce8ff; --sel-b:#99d1ff; --hot:#e5f3ff;
+  --ok:#2e8b3c; --warn:#d98200; --bad:#c42b1c; --acc:#0067c0; --font:"Segoe UI","Inter",system-ui,sans-serif; }
+* { box-sizing:border-box; } html,body { margin:0; } body { background:#9aa5b1; font:12px/1.4 var(--font); color:var(--text); font-variant-numeric:tabular-nums; }
+.stage { padding:28px; display:grid; place-items:center; }
+.win { width:1280px; height:800px; background:var(--face); border:1px solid #6b6b6b; display:grid; grid-template-rows:32px 24px 44px 30px 1fr 24px; box-shadow:0 24px 60px -20px rgba(0,0,0,.5); }
+.title { display:flex; align-items:center; background:#fff; padding-left:10px; gap:8px; }
+.title img { width:16px; height:16px; } .title .t { font-size:12px; }
+.title .c { margin-left:auto; display:flex; height:100%; } .title .c span { width:46px; display:grid; place-items:center; font-size:13px; color:#333; }
+.menu { display:flex; background:#fff; border-bottom:1px solid var(--line); padding-left:4px; } .menu span { padding:3px 9px; }
+.tool { display:flex; align-items:center; gap:2px; padding:0 6px; background:var(--face); border-bottom:1px solid var(--line); }
+.tb { display:flex; align-items:center; gap:7px; height:32px; padding:0 10px; border:1px solid transparent; border-radius:2px; }
+.tb.pri { background:#e1e1e1; border-color:var(--line-d); } .tb svg { width:16px; height:16px; fill:none; stroke:#333; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.sep { width:1px; height:24px; background:var(--line-d); margin:0 6px; }
+.find { margin-left:auto; display:flex; align-items:center; width:260px; height:26px; border:1px solid var(--line-d); background:#fff; padding:0 8px; color:var(--mut); }
+.find kbd { margin-left:auto; font:11px var(--font); color:#888; }
+.tabs { display:flex; align-items:flex-end; padding:6px 8px 0; background:var(--face); border-bottom:1px solid var(--line-d); gap:0; }
+.tabs span { padding:5px 14px; border:1px solid transparent; border-bottom:0; margin-bottom:-1px; color:#333; }
+.tabs span.on { background:#fff; border-color:var(--line-d); font-weight:600; }
+.body { display:grid; grid-template-columns:268px 1fr; gap:0; background:#fff; border-left:1px solid var(--line-d); border-right:1px solid var(--line-d); margin:0 8px; min-height:0; }
+.side { background:var(--face); border-right:1px solid var(--line); padding:12px 12px; }
+.side h4 { margin:0 0 6px; font-size:12px; font-weight:600; }
+.score { display:flex; align-items:baseline; gap:6px; border:1px solid var(--line-d); background:#fff; padding:8px 12px; margin-bottom:14px; }
+.score b { font-size:34px; font-weight:600; letter-spacing:-.02em; color:var(--ok); } .score span { color:var(--mut); }
+dl { margin:0; display:grid; grid-template-columns:78px 1fr; gap:5px 8px; } dt { color:var(--mut); } dd { margin:0; }
+.main { display:grid; grid-template-rows:auto 1fr 150px; min-width:0; }
+table { width:100%; border-collapse:collapse; } th { text-align:left; font-weight:400; color:var(--mut); padding:4px 8px; border-bottom:1px solid var(--line); border-right:1px solid #ececec; background:#fff; }
+td { padding:4px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:360px; } td.r, th.r { text-align:right; }
+tr.sel td { background:var(--sel); box-shadow:inset 0 1px 0 var(--sel-b), inset 0 -1px 0 var(--sel-b); }
+.grp td { background:#f7f7f7; font-weight:600; color:#333; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.cb { display:inline-block; width:13px; height:13px; border:1px solid #555; background:#fff; vertical-align:-2px; text-align:center; line-height:11px; font-size:11px; }
+.dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:7px; vertical-align:0; } .dot.w { background:var(--warn); } .dot.i { background:var(--acc); } .dot.o { background:var(--ok); }
+.list { overflow:hidden; border-bottom:1px solid var(--line-d); }
+.det { padding:10px 14px; background:#fff; display:grid; grid-template-columns:1fr 280px; gap:20px; overflow:hidden; }
+.det h4 { margin:0 0 4px; font-size:13px; font-weight:600; } .det p { margin:0 0 6px; color:#333; } .det .m { color:var(--mut); }
+.det .acts { display:flex; gap:8px; margin-top:8px; } .btn { padding:3px 14px; border:1px solid var(--line-d); background:#e1e1e1; } .btn.d { border-color:var(--acc); box-shadow:inset 0 0 0 1px var(--acc); }
+.log { font:11.5px/1.5 Consolas,"Cascadia Mono",monospace; background:#fafafa; border:1px solid var(--line); padding:6px 8px; color:#333; overflow:hidden; }
+.status { display:flex; align-items:center; gap:0; background:var(--face); border-top:1px solid var(--line-d); } .status span { padding:0 12px; border-right:1px solid var(--line-d); height:100%; display:flex; align-items:center; }
+.status span:last-child { border:0; margin-left:auto; }
+</style></head><body><div class="stage"><div class="win">
+<div class="title"><img src="logo.svg" alt=""><span class="t">WinSolve (Administrator)</span><span class="c"><span>—</span><span>▢</span><span>✕</span></span></div>
+<div class="menu"><span>File</span><span>Scan</span><span>View</span><span>Tools</span><span>Help</span></div>
+<div class="tool">
+ <span class="tb pri"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4"/></svg>Scan again</span>
+ <span class="tb"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2.6-.6-.6-2.6z"/></svg>Fix selected</span>
+ <span class="sep"></span>
+ <span class="tb"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 8v5l3 2"/></svg>Restore point</span>
+ <span class="tb"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></svg>Undo last change</span>
+ <span class="find">Find a page, task or tool<kbd>Ctrl+K</kbd></span>
+</div>
+<div class="tabs"><span class="on">Overview</span><span>Cleanup</span><span>Disk space</span><span>Startup apps</span><span>Apps</span><span>Drivers</span><span>Hardware</span><span>Tweaks</span><span>Toolbox</span><span>Windows Update</span></div>
+<div class="body">
+ <div class="side">
+  <div class="score"><b>94</b><span>/ 100<br>Last scan 09:14</span></div>
+  <h4>This PC</h4>
+  <dl><dt>Windows</dt><dd>11 Pro 23H2 (22631)</dd><dt>CPU</dt><dd>Core i5-13400F</dd><dt>Memory</dt><dd>9.4 of 16 GB used</dd><dt>Graphics</dt><dd>GeForce RTX 4060</dd><dt>C:</dt><dd>64 GB free of 476 GB</dd><dt>D:</dt><dd>700 GB free of 1.8 TB</dd><dt>E:</dt><dd>130 GB free of 1.8 TB</dd><dt>Uptime</dt><dd>2 days 4 h</dd><dt>Restore</dt><dd>Last: today 09:11</dd></dl>
+  <h4 style="margin-top:16px">Selected</h4>
+  <dl><dt>Findings</dt><dd>3 of 3</dd><dt>Frees</dt><dd>4.3 GB</dd><dt>Risk</dt><dd>Low</dd></dl>
+ </div>
+ <div class="main">
+  <div class="list">
+  <table>
+   <tr><th style="width:26px"></th><th style="width:22px"></th><th style="width:120px">Area</th><th>Finding</th><th>What it means</th><th class="r" style="width:90px">Impact</th><th style="width:70px">Risk</th></tr>
+   <tr class="grp"><td colspan="7">Needs attention (3)</td></tr>
+   <tr class="sel"><td><span class="cb">✓</span></td><td><span class="dot w"></span></td><td>Cleanup</td><td>Temporary files and caches</td><td>Temp folders, update cache, thumbnails</td><td class="r">4.3 GB</td><td>Low</td></tr>
+   <tr><td><span class="cb">✓</span></td><td><span class="dot w"></span></td><td>Startup apps</td><td>4 apps slow down sign-in</td><td>Adds about 18 s; each can be turned back on</td><td class="r">−18 s</td><td>Low</td></tr>
+   <tr><td><span class="cb">✓</span></td><td><span class="dot i"></span></td><td>Drivers</td><td>NVIDIA 551.23 → 560.94</td><td>Clean install; current driver is backed up first</td><td class="r">1 driver</td><td>Medium</td></tr>
+   <tr class="grp"><td colspan="7">Checked, nothing to do (9)</td></tr>
+   <tr><td></td><td><span class="dot o"></span></td><td>Hardware</td><td>Disk health, 3 drives</td><td>C: and D: good, E: caution (reallocated sectors 0, pending 0)</td><td class="r"></td><td></td></tr>
+   <tr><td></td><td><span class="dot o"></span></td><td>Windows Update</td><td>Up to date</td><td>Last installed 12 Nov, no pending restart</td><td class="r"></td><td></td></tr>
+   <tr><td></td><td><span class="dot o"></span></td><td>Security</td><td>Defender on, signatures current</td><td>Real-time protection on, last quick scan yesterday</td><td class="r"></td><td></td></tr>
+   <tr><td></td><td><span class="dot o"></span></td><td>System files</td><td>No integrity violations</td><td>SFC and DISM last run 3 Nov</td><td class="r"></td><td></td></tr>
+   <tr><td></td><td><span class="dot o"></span></td><td>Network</td><td>Router, Internet and DNS reachable</td><td>Gateway 2 ms, DNS 14 ms</td><td class="r"></td><td></td></tr>
+  </table></div>
+  <div class="det">
+   <div><h4>Temporary files and caches</h4>
+    <p>Removes files that apps and Windows can rebuild: the Temp folders (2.6 GB), the Windows Update download cache (1.1 GB), the thumbnail and icon cache (420 MB) and old error reports (180 MB).</p>
+    <p class="m">Nothing in Documents, Desktop or Downloads is touched. A restore point is created first.</p>
+    <div class="acts"><span class="btn d">Fix selected (3)</span><span class="btn">Details…</span><span class="btn">Skip</span></div></div>
+   <div class="log">09:14:02 Scan started<br>09:14:09 Cleanup: 4.3 GB found<br>09:14:11 Startup: 4 slow entries<br>09:14:14 Drivers: 1 update<br>09:14:16 Scan finished (14 s)</div>
+  </div>
+ </div>
+</div>
+<div class="status"><span>3 findings selected · 4.3 GB can be freed</span><span>Restore point will be created</span><span>Administrator</span></div>
+</div></div></body></html>

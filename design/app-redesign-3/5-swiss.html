@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>WinSolve · option 5 · typographic</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* Option 5: typography does the work. One huge number, black rules, no cards, no radius, no shadows, one accent. */
+:root { --ink:#0d0d0d; --mut:#6b6b6b; --faint:#a3a3a3; --line:#d9d9d9; --acc:#1d6fc4; --font:"Inter","Segoe UI Variable Display","Segoe UI",sans-serif; }
+* { box-sizing:border-box; } html,body { margin:0; } body { background:#8d8d8d; font:14px/1.45 var(--font); color:var(--ink); font-variant-numeric:tabular-nums; }
+.stage { padding:28px; display:grid; place-items:center; }
+.win { width:1280px; height:800px; background:#fff; border:1px solid #666; display:grid; grid-template-columns:232px 1fr; grid-template-rows:32px 1fr; box-shadow:0 24px 60px -20px rgba(0,0,0,.5); }
+.top { grid-column:1 / 3; display:flex; align-items:center; border-bottom:1px solid var(--ink); font-size:12px; padding-left:12px; gap:8px; } .top img { width:15px; }
+.top .c { margin-left:auto; display:flex; height:100%; } .top .c span { width:46px; display:grid; place-items:center; font-size:13px; }
+.nav { border-right:1px solid var(--ink); padding:22px 0 18px 20px; display:flex; flex-direction:column; }
+.brand { display:flex; align-items:center; gap:10px; font-weight:800; font-size:20px; letter-spacing:-.03em; margin-bottom:26px; } .brand img { width:26px; }
+.nav a { display:grid; grid-template-columns:30px 1fr; padding:5px 0; color:var(--mut); font-size:14px; font-weight:500; } .nav a i { font-style:normal; font-size:11px; color:var(--faint); padding-top:3px; }
+.nav a.on { color:var(--ink); font-weight:700; } .nav a.on i { color:var(--ink); } .nav a.on::after { content:""; }
+.nav .g { margin:16px 0 4px; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); font-weight:600; }
+.nav .sp { flex:1; } .nav .k { font-size:12px; color:var(--mut); }
+.main { padding:26px 36px 20px 40px; display:flex; flex-direction:column; min-width:0; }
+.eye { display:flex; justify-content:space-between; font-size:11px; letter-spacing:.1em; text-transform:uppercase; font-weight:600; color:var(--mut); }
+.hero { display:grid; grid-template-columns:auto 1fr; gap:44px; align-items:end; padding-bottom:20px; border-bottom:3px solid var(--ink); }
+.big { font-weight:800; font-size:236px; line-height:.8; letter-spacing:-.075em; margin:14px 0 0 -10px; }
+.big small { font-size:34px; font-weight:600; letter-spacing:-.02em; color:var(--faint); margin-left:6px; }
+.say h1 { margin:0 0 10px; font:800 34px/1.08 var(--font); letter-spacing:-.035em; } .say p { margin:0 0 16px; color:var(--mut); max-width:32em; font-size:15px; }
+.btn { display:inline-flex; height:40px; padding:0 22px; align-items:center; background:var(--acc); color:#fff; font-weight:700; margin-right:18px; } .lnk { font-weight:600; border-bottom:2px solid var(--ink); padding-bottom:1px; }
+.cols { display:grid; grid-template-columns:repeat(3,1fr); border-bottom:1px solid var(--ink); }
+.col { padding:16px 22px 18px 0; } .col + .col { padding-left:22px; border-left:1px solid var(--line); }
+.col .n { font-size:11px; letter-spacing:.1em; font-weight:600; color:var(--faint); } .col .k { font-size:11px; letter-spacing:.1em; text-transform:uppercase; font-weight:700; margin-top:2px; }
+.col .v { font-weight:800; font-size:46px; letter-spacing:-.045em; line-height:1.05; margin:8px 0 4px; } .col .v small { font-size:18px; font-weight:600; letter-spacing:-.01em; color:var(--mut); }
+.col p { margin:0 0 10px; color:var(--mut); font-size:13px; } .col a { font-weight:700; font-size:13px; border-bottom:2px solid var(--acc); padding-bottom:1px; }
+.rows { display:grid; grid-template-columns:repeat(4,1fr); margin-top:14px; }
+.r { padding:6px 22px 0 0; } .r + .r { padding-left:22px; border-left:1px solid var(--line); }
+.r .k { font-size:11px; letter-spacing:.1em; text-transform:uppercase; font-weight:600; color:var(--mut); } .r .v { font-weight:700; font-size:20px; letter-spacing:-.02em; margin:3px 0 7px; } .r .v small { font-size:12px; font-weight:500; color:var(--mut); letter-spacing:0; }
+.line { height:4px; background:#e6e6e6; } .line i { display:block; height:100%; background:var(--ink); }
+.ok4 { margin-top:22px; border-top:1px solid var(--ink); padding-top:10px; } .ok4 .k { font-size:11px; letter-spacing:.1em; text-transform:uppercase; font-weight:600; color:var(--mut); margin-bottom:8px; } .ol { display:grid; grid-template-columns:repeat(3,1fr); gap:6px 22px; } .ol span { display:flex; justify-content:space-between; border-bottom:1px solid var(--line); padding:5px 0; color:var(--mut); font-size:13px; } .ol b { color:var(--ink); font-weight:600; }
+.foot { margin-top:auto; display:flex; justify-content:space-between; padding-top:10px; border-top:1px solid var(--line); font-size:12px; color:var(--mut); }
+</style></head><body><div class="stage"><div class="win">
+<div class="top"><img src="logo.svg" alt="">WinSolve<span class="c"><span>—</span><span>▢</span><span>✕</span></span></div>
+<nav class="nav">
+ <div class="brand"><img src="logo.svg" alt="">WinSolve</div>
+ <a class="on"><i>01</i>Home</a><a><i>02</i>Optimize</a>
+ <div class="g">Maintain</div>
+ <a><i>03</i>Cleanup</a><a><i>04</i>Disk space</a><a><i>05</i>Startup</a><a><i>06</i>Apps</a><a><i>07</i>Drivers</a>
+ <div class="g">Diagnose</div>
+ <a><i>08</i>Monitor</a><a><i>09</i>Hardware</a>
+ <div class="g">System</div>
+ <a><i>10</i>Toolbox</a><a><i>11</i>Windows Update</a><a><i>12</i>Tweaks</a>
+ <div class="sp"></div><div class="k">Ctrl K — find anything</div>
+</nav>
+<div class="main">
+ <div class="eye"><span>Health</span><span>Scanned 09:14 · Admin</span></div>
+ <div class="hero">
+  <div class="big">94<small>/100</small></div>
+  <div class="say"><h1>Three things are worth doing today.</h1><p>Nothing is broken. Disks, updates and security are fine. The three items below would free space, speed up sign-in and update one driver.</p><span class="btn">Fix all three</span><span class="lnk">Scan again</span></div>
+ </div>
+ <div class="cols">
+  <div class="col"><div class="n">01</div><div class="k">Cleanup</div><div class="v">4.3<small> GB</small></div><p>Temp files, update cache and thumbnails. A restore point is made first.</p><a>Remove</a></div>
+  <div class="col"><div class="n">02</div><div class="k">Startup</div><div class="v">−18<small> s</small></div><p>Four apps start with Windows and delay sign-in. Each can be turned back on.</p><a>Review</a></div>
+  <div class="col"><div class="n">03</div><div class="k">Drivers</div><div class="v">560.94</div><p>NVIDIA update. 551.23 is backed up before the clean install.</p><a>Update</a></div>
+ </div>
+ <div class="rows">
+  <div class="r"><div class="k">Storage C:</div><div class="v">412 <small>of 476 GB</small></div><div class="line"><i style="width:87%"></i></div></div>
+  <div class="r"><div class="k">Memory</div><div class="v">9.4 <small>of 16 GB</small></div><div class="line"><i style="width:59%"></i></div></div>
+  <div class="r"><div class="k">Processor</div><div class="v">18% <small>47 °C</small></div><div class="line"><i style="width:18%"></i></div></div>
+  <div class="r"><div class="k">SSD life</div><div class="v">94% <small>3 drives</small></div><div class="line"><i style="width:94%"></i></div></div>
+ </div>
+ <div class="ok4"><div class="k">Checked, nothing to do</div><div class="ol"><span><b>Disks</b>3 drives, none failing</span><span><b>Windows Update</b>Up to date</span><span><b>Security</b>Defender on</span><span><b>System files</b>No problems</span><span><b>Network</b>Router and DNS fine</span><span><b>Restore points</b>3 kept</span></div></div>
+ <div class="foot"><span>Last 7 days: 6.8 GB freed · 12 problems fixed</span><span>Restore point today 09:11</span></div>
+</div>
+</div></div></body></html>

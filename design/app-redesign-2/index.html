@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WinSolve · app redesign mockup, direction 2</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* Direction 2: top navigation, a guided Home, colors taken from the three blades of the logo.
+   Screens: ?s=home|drivers|health   Theme: ?t=dark|light */
+:root {
+  --bg: #0c1220; --bar: #0a0f1b; --card: #131b2e; --card-2: #182238; --line: #22304a; --line-2: #2f4165;
+  --text: #edf2fb; --muted: #9aa9c2; --dim: #6b7b97;
+  --b1: #1e4f92; --b2: #2b7cc3; --b3: #5bc0f5;           /* the three blades */
+  --t1: rgba(30,79,146,.30); --t2: rgba(43,124,195,.24); --t3: rgba(91,192,245,.18);
+  --accent: #5bc0f5; --accent-ink: #05121d; --accent-soft: rgba(91,192,245,.14);
+  --good: #5fd18a; --good-soft: rgba(95,209,138,.14); --warn: #f2c14e; --warn-soft: rgba(242,193,78,.14); --bad: #ff6b6b;
+  --track: #1f2c46; --shadow: 0 30px 80px -30px rgba(0,0,0,.85);
+  --font: "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, sans-serif;
+}
+:root[data-t="light"] {
+  --bg: #eef3fa; --bar: #ffffff; --card: #ffffff; --card-2: #f4f7fc; --line: #dde5f1; --line-2: #c5d2e6;
+  --text: #11203a; --muted: #52627d; --dim: #7a89a3;
+  --b1: #1e4f92; --b2: #2b7cc3; --b3: #3aa3e0;
+  --t1: rgba(30,79,146,.10); --t2: rgba(43,124,195,.10); --t3: rgba(58,163,224,.13);
+  --accent: #0b6cb8; --accent-ink: #fff; --accent-soft: rgba(11,108,184,.1);
+  --good: #12803f; --good-soft: rgba(18,128,63,.11); --warn: #9a5b00; --warn-soft: rgba(154,91,0,.11); --bad: #c4301f;
+  --track: #e2e9f4; --shadow: 0 30px 80px -30px rgba(20,40,80,.35);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: #070b14; font: 400 14px/1.45 var(--font); color: var(--text); font-variant-numeric: tabular-nums; }
+:root[data-t="light"] body { background: #d9e2ef; }
+svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.stage { padding: 28px; display: grid; place-items: center; }
+.win { width: 1280px; height: 800px; display: grid; grid-template-rows: 56px 40px 1fr; background: var(--bg); border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+
+/* Header with the top navigation */
+.hd { display: grid; grid-template-columns: 220px 1fr 330px; align-items: center; background: var(--bar); border-bottom: 1px solid var(--line); padding: 0 16px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+.brand img { width: 26px; height: 26px; }
+.nav { justify-self: center; display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); }
+.nav span { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 16px; border-radius: 9px; font-weight: 600; font-size: 13.5px; color: var(--muted); }
+.nav span.on { background: var(--accent); color: var(--accent-ink); }
+.nav .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.nav span.on .dot { background: var(--accent-ink); opacity: .6; }
+.tools { justify-self: end; display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12.5px; }
+.sbtn { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+.sbtn svg { width: 15px; height: 15px; } .sbtn kbd { font: 11px var(--font); color: var(--dim); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }
+.adm { display: inline-flex; align-items: center; gap: 6px; color: var(--good); font-weight: 600; }
+.adm::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--good); }
+.ctl { display: flex; gap: 18px; color: var(--muted); }
+
+/* Sub navigation */
+.sub { display: flex; align-items: center; gap: 4px; padding: 0 24px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.sub span { position: relative; padding: 0 12px; height: 40px; display: flex; align-items: center; gap: 8px; color: var(--muted); font-weight: 600; font-size: 13px; }
+.sub span.on { color: var(--text); }
+.sub span.on::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2px; background: var(--accent); border-radius: 2px; }
+.sub .pill { height: 18px; padding: 0 6px; font-size: 11px; }
+
+.main { padding: 22px 28px 20px; overflow: hidden; min-width: 0; }
+.screen { display: none; height: 100%; flex-direction: column; gap: 16px; min-height: 0; }
+:root[data-s="home"] .s-home, :root[data-s="drivers"] .s-drivers, :root[data-s="health"] .s-health { display: flex; }
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; min-width: 0; }
+.card h2 { margin: 0 0 12px; font: 700 15px/1.3 var(--font); display: flex; align-items: center; gap: 8px; }
+.card h2 .more { margin-left: auto; font-weight: 600; font-size: 12.5px; color: var(--accent); }
+.btn { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--card-2); color: var(--text); font: 600 13.5px var(--font); white-space: nowrap; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.sm { height: 30px; padding: 0 14px; font-size: 12.5px; border-radius: 8px; }
+.btn svg { width: 16px; height: 16px; }
+.muted { color: var(--muted); } .dim { color: var(--dim); } .sm { font-size: 12.5px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 10px; border-radius: 11px; font-size: 11.5px; font-weight: 700; }
+.pill.good { background: var(--good-soft); color: var(--good); } .pill.warn { background: var(--warn-soft); color: var(--warn); } .pill.acc { background: var(--accent-soft); color: var(--accent); }
+.bar { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; } .bar i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+
+/* HOME */
+.ga { display: grid; grid-template-columns: 1fr 380px; gap: 16px; }
+.hero { display: grid; grid-template-columns: 250px 1fr; gap: 24px; padding: 22px 24px; }
+.gauge { position: relative; width: 250px; }
+.gauge svg { width: 250px; height: 150px; }
+.gauge .num { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; }
+.gauge .num b { display: block; font: 800 54px/1 var(--font); letter-spacing: -.03em; }
+.gauge .num span { color: var(--muted); font-size: 12.5px; }
+.hero h2 { display: block; font: 800 24px/1.2 var(--font); margin: 8px 0 6px; letter-spacing: -.01em; }
+.hero .acts { display: flex; gap: 10px; margin-top: 16px; }
+.spark { grid-column: 1 / 3; border-top: 1px solid var(--line); padding-top: 12px; display: flex; align-items: center; gap: 18px; }
+.spark svg { flex: 1; height: 46px; }
+.feed { display: grid; gap: 0; }
+.ev { display: grid; grid-template-columns: 30px 1fr auto; gap: 11px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+.ev:first-of-type { border-top: 0; padding-top: 0; }
+.ev .ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.ev .ic.g { background: var(--good-soft); color: var(--good); }
+.ev .t { font-weight: 600; font-size: 13px; } .ev .d { color: var(--dim); font-size: 12px; }
+.ev a { color: var(--accent); font-weight: 700; font-size: 12.5px; }
+.gb { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.cat { border-radius: 16px; padding: 18px; border: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.cat.c1 { background: var(--t1); } .cat.c2 { background: var(--t2); } .cat.c3 { background: var(--t3); } .cat.c4 { background: var(--good-soft); }
+.cat .top { display: flex; align-items: center; gap: 10px; color: var(--muted); font-weight: 600; font-size: 13px; }
+.cat .top .ic { width: 32px; height: 32px; border-radius: 10px; background: var(--card); display: grid; place-items: center; color: var(--accent); }
+.cat.c4 .top .ic { color: var(--good); }
+.cat .big { font: 800 34px/1.1 var(--font); letter-spacing: -.02em; margin-top: 10px; }
+.cat .big small { font-size: 15px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+.cat .go { margin-top: 10px; color: var(--accent); font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.cat.c4 .go { color: var(--good); }
+.cat .go svg { width: 14px; height: 14px; }
+.chips { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 14px; }
+.chips .k { color: var(--muted); font-size: 12.5px; margin-right: 6px; }
+.chip { height: 28px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 14px; display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; background: var(--card-2); }
+.chip svg { width: 14px; height: 14px; color: var(--accent); }
+
+/* DRIVERS */
+.ph { display: flex; align-items: flex-end; gap: 16px; } .ph h1 { margin: 0; font: 800 26px/1.15 var(--font); letter-spacing: -.015em; } .ph p { margin: 4px 0 0; color: var(--muted); } .ph .sp { flex: 1; }
+.gpu { display: grid; grid-template-columns: 76px 1fr auto; gap: 20px; align-items: center; padding: 0 0 18px; }
+.gpu .logo { width: 76px; height: 76px; border-radius: 18px; background: var(--t2); display: grid; place-items: center; color: var(--accent); }
+.gpu .logo svg { width: 36px; height: 36px; }
+.gpu h2 { display: block; margin: 0; font: 800 20px/1.2 var(--font); }
+.vers { display: flex; align-items: center; gap: 26px; margin-top: 10px; }
+.vers .k { color: var(--dim); font-size: 12px; } .vers .v { font: 700 17px var(--font); } .vers .arrow { color: var(--dim); }
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; position: relative; }
+.stp { padding: 6px 14px 0 0; }
+.stp .n { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 13px; background: var(--accent-soft); color: var(--accent); margin-bottom: 10px; position: relative; z-index: 1; }
+.stp .n.done { background: var(--good-soft); color: var(--good); }
+.stp .n svg { width: 15px; height: 15px; stroke-width: 3; }
+.steps::before { content: ""; position: absolute; left: 14px; right: 40px; top: 20px; height: 2px; background: var(--line-2); }
+.stp .t { font-weight: 700; } .stp .d { color: var(--muted); font-size: 12.5px; }
+.opts { display: flex; gap: 22px; align-items: center; padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--line); }
+.sw { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 13px; }
+.sw i { width: 34px; height: 20px; border-radius: 10px; background: var(--track); position: relative; border: 1px solid var(--line-2); }
+.sw i::after { content: ""; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); }
+.sw.on i { background: var(--accent); border-color: var(--accent); } .sw.on i::after { left: 17px; background: var(--accent-ink); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; flex: 1; min-height: 0; align-items: start; }
+.dev { display: grid; grid-template-columns: 1fr auto auto; gap: 14px; align-items: center; padding: 11px 0; border-top: 1px solid var(--line); }
+.dev:first-of-type { border-top: 0; padding-top: 0; }
+.dev .t { font-weight: 600; } .dev .d { color: var(--dim); font-size: 12px; }
+
+/* DISK HEALTH */
+.drv { display: flex; gap: 12px; }
+.dtab { display: flex; align-items: center; gap: 12px; padding: 11px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); min-width: 250px; }
+.dtab.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.dtab .ic { width: 34px; height: 34px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; }
+.dtab b { display: block; } .dtab span { color: var(--muted); font-size: 12px; }
+.dtab .pill { margin-left: auto; }
+.hl { display: grid; grid-template-columns: 330px 1fr; gap: 16px; }
+.big-h { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 4px; padding: 22px; }
+.big-h .badge { width: 104px; height: 104px; border-radius: 50%; border: 8px solid var(--good); display: grid; place-items: center; color: var(--good); margin-bottom: 10px; }
+.big-h .badge svg { width: 46px; height: 46px; stroke-width: 2.6; }
+.big-h h2 { display: block; font: 800 24px/1.2 var(--font); margin: 0; } .big-h .pct { font: 800 34px var(--font); }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.st { padding: 14px 16px; border-radius: 14px; background: var(--card-2); border: 1px solid var(--line); }
+.st .k { color: var(--muted); font-size: 12.5px; } .st .v { font: 800 24px/1.2 var(--font); margin: 2px 0 8px; } .st .v small { font-size: 13px; color: var(--muted); font-weight: 600; }
+.stats2 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 16px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--dim); font-weight: 600; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 8px 8px; border-bottom: 1px solid var(--line); } td.n { text-align: right; font-family: Consolas, "Cascadia Mono", monospace; font-size: 12.5px; }
+td .pill { height: 20px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="home" viewBox="0 0 24 24"><path d="M3 11 12 3l9 8M5 10v10h5v-6h4v6h5V10"/></symbol>
+  <symbol id="bolt" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></symbol>
+  <symbol id="clean" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14"/></symbol>
+  <symbol id="disk" viewBox="0 0 24 24"><path d="M3 3h8v10H3zM13 3h8v6h-8zM13 11h8v10h-8zM3 15h8v6H3z"/></symbol>
+  <symbol id="power" viewBox="0 0 24 24"><path d="M12 3v8M6.3 7a8 8 0 1 0 11.4 0"/></symbol>
+  <symbol id="screen" viewBox="0 0 24 24"><path d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM7 20h10M9 16v4m6-4v4"/></symbol>
+  <symbol id="tool" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.4 2.4-2.6-.6-.6-2.6z"/></symbol>
+  <symbol id="sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4"/></symbol>
+  <symbol id="wifi" viewBox="0 0 24 24"><path d="M2 8.8a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></symbol>
+  <symbol id="search" viewBox="0 0 24 24"><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></symbol>
+  <symbol id="arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+  <symbol id="shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.4 8.6 8 9 4.6-.4 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="restore" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 8v5l3 2"/></symbol>
+  <symbol id="drive" viewBox="0 0 24 24"><path d="M4 14h16v5H4zM4 14l2.5-8h11L20 14M16 16.5h.01"/></symbol>
+  <symbol id="doc" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM14 3v5h5"/></symbol>
+  <symbol id="lock" viewBox="0 0 24 24"><path d="M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+</defs></svg>
+
+<div class="stage"><div class="win">
+  <div class="hd">
+    <div class="brand"><img src="logo.svg" alt="">WinSolve</div>
+    <div class="nav" id="nav">
+      <span data-n="home"><svg class="i"><use href="#home"/></svg>Home</span>
+      <span><svg class="i"><use href="#bolt"/></svg>Optimize</span>
+      <span data-n="maintain"><svg class="i"><use href="#tool"/></svg>Maintain<i class="dot"></i></span>
+      <span data-n="diagnose"><svg class="i"><use href="#shield"/></svg>Diagnose</span>
+      <span><svg class="i"><use href="#wifi"/></svg>System</span>
+    </div>
+    <div class="tools"><span class="sbtn"><svg class="i"><use href="#search"/></svg>Search<kbd>Ctrl K</kbd></span><span class="adm">Admin</span><span class="ctl"><span>—</span><span>▢</span><span>✕</span></span></div>
+  </div>
+  <div class="sub" id="sub"></div>
+
+  <main class="main">
+    <!-- ───────── HOME ───────── -->
+    <section class="screen s-home">
+      <div class="ga">
+        <div class="card hero">
+          <div class="gauge">
+            <svg viewBox="0 0 250 150"><path d="M 35 135 A 90 90 0 0 1 215 135" fill="none" stroke="var(--track)" stroke-width="18" stroke-linecap="round"/><path d="M 35 135 A 90 90 0 0 1 215 135" fill="none" stroke="var(--good)" stroke-width="18" stroke-linecap="round" stroke-dasharray="282.74" stroke-dashoffset="17"/></svg>
+            <div class="num"><b>94</b><span>PC health · out of 100</span></div>
+          </div>
+          <div>
+            <span class="pill good">Healthy</span>
+            <h2>Good shape. 3 things to tidy up.</h2>
+            <div class="muted">Nothing urgent. WinSolve checked your drives, drivers, startup and Windows Update 2 minutes ago.</div>
+            <div class="acts"><span class="btn primary"><svg class="i"><use href="#bolt"/></svg>Fix 3 things</span><span class="btn"><svg class="i"><use href="#sync"/></svg>Scan again</span></div>
+          </div>
+          <div class="spark">
+            <div><div class="muted sm">Last 30 days</div><b>+6 points</b></div>
+            <svg viewBox="0 0 400 46" preserveAspectRatio="none"><polyline fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" points="0,38 20,36 40,37 60,32 80,34 100,30 120,31 140,26 160,28 180,24 200,25 220,20 240,22 260,18 280,19 300,14 320,15 340,10 360,12 380,7 400,6"/></svg>
+          </div>
+        </div>
+        <div class="card">
+          <h2>What WinSolve did<span class="more">History</span></h2>
+          <div class="feed">
+            <div class="ev"><div class="ic g"><svg class="i"><use href="#check"/></svg></div><div><div class="t">Freed 2.6 GB of temp files</div><div class="d">Today, 09:12</div></div></div>
+            <div class="ev"><div class="ic"><svg class="i"><use href="#restore"/></svg></div><div><div class="t">Restore point created</div><div class="d">Today, 09:11</div></div><a>Open</a></div>
+            <div class="ev"><div class="ic"><svg class="i"><use href="#power"/></svg></div><div><div class="t">Turned off 2 startup apps</div><div class="d">Yesterday, 21:40</div></div><a>Undo</a></div>
+            <div class="ev"><div class="ic"><svg class="i"><use href="#screen"/></svg></div><div><div class="t">Updated NVIDIA driver</div><div class="d">Mon · previous driver kept</div></div><a>Roll back</a></div>
+            <div class="ev"><div class="ic g"><svg class="i"><use href="#shield"/></svg></div><div><div class="t">Drive health check: all good</div><div class="d">Mon, 08:00</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="gb">
+        <div class="cat c1"><div class="top"><span class="ic"><svg class="i"><use href="#clean"/></svg></span>Cleanup</div><div class="big">4.3 <small>GB to free</small></div><div class="muted sm">Temp files, update cache, thumbnails</div><div class="go">Clean now<svg class="i"><use href="#arrow"/></svg></div></div>
+        <div class="cat c2"><div class="top"><span class="ic"><svg class="i"><use href="#power"/></svg></span>Startup</div><div class="big">4 <small>slow apps</small></div><div class="muted sm">About 18 seconds added to boot</div><div class="go">Review<svg class="i"><use href="#arrow"/></svg></div></div>
+        <div class="cat c3"><div class="top"><span class="ic"><svg class="i"><use href="#screen"/></svg></span>Drivers</div><div class="big">2 <small>updates</small></div><div class="muted sm">NVIDIA graphics and chipset</div><div class="go">Update<svg class="i"><use href="#arrow"/></svg></div></div>
+        <div class="cat c4"><div class="top"><span class="ic"><svg class="i"><use href="#shield"/></svg></span>Disk health</div><div class="big">Good</div><div class="muted sm">3 drives · SSD life 94%</div><div class="go">Details<svg class="i"><use href="#arrow"/></svg></div></div>
+      </div>
+      <div class="card chips"><span class="k">Jump to a tool</span><span class="chip"><svg class="i"><use href="#disk"/></svg>Disk speed test</span><span class="chip"><svg class="i"><use href="#wifi"/></svg>Wi-Fi QR code</span><span class="chip"><svg class="i"><use href="#lock"/></svg>Locked files</span><span class="chip"><svg class="i"><use href="#doc"/></svg>PC report (PDF)</span><span class="chip"><svg class="i"><use href="#restore"/></svg>Restore points</span></div>
+    </section>
+
+    <!-- ───────── DRIVERS ───────── -->
+    <section class="screen s-drivers">
+      <div class="ph"><div><h1>Drivers</h1><p>Clean installs with a backup of what you have now.</p></div><div class="sp"></div><span class="btn"><svg class="i"><use href="#sync"/></svg>Check again</span></div>
+      <div class="card">
+        <div class="gpu">
+          <div class="logo"><svg class="i"><use href="#screen"/></svg></div>
+          <div>
+            <h2>NVIDIA GeForce RTX 4060</h2>
+            <div class="vers"><div><div class="k">Installed</div><div class="v">551.23</div></div><span class="arrow"><svg class="i"><use href="#arrow"/></svg></span><div><div class="k">Latest Game Ready</div><div class="v" style="color:var(--accent)">560.94</div></div><span class="pill warn">Update available</span></div>
+          </div>
+          <span class="btn primary"><svg class="i"><use href="#bolt"/></svg>Clean install</span>
+        </div>
+        <div class="steps">
+          <div class="stp"><div class="n done"><svg class="i"><use href="#check"/></svg></div><div class="t">Back up current</div><div class="d">Saves 551.23 so you can go back.</div></div>
+          <div class="stp"><div class="n">2</div><div class="t">Remove old drivers</div><div class="d">All display driver packages, so nothing is left over.</div></div>
+          <div class="stp"><div class="n">3</div><div class="t">Install 560.94</div><div class="d">Downloaded and checked first.</div></div>
+          <div class="stp"><div class="n">4</div><div class="t">Restart</div><div class="d">Only when you say so.</div></div>
+        </div>
+        <div class="opts"><span class="sw on"><i></i>Create a restore point</span><span class="sw on"><i></i>Keep my graphics settings</span><span class="sw"><i></i>Install the control panel only</span></div>
+      </div>
+      <div class="two">
+        <div class="card">
+          <h2>Other devices</h2>
+          <div class="dev"><div><div class="t">Intel chipset</div><div class="d">10.1.19444 · Windows Update</div></div><span class="pill warn">Update</span><span class="btn sm">Install</span></div>
+          <div class="dev"><div><div class="t">Realtek audio</div><div class="d">6.0.9549</div></div><span class="pill good">Up to date</span><span></span></div>
+          <div class="dev"><div><div class="t">Wi-Fi 6E adapter</div><div class="d">23.30.0.4</div></div><span class="pill good">Up to date</span><span></span></div>
+        </div>
+        <div class="card">
+          <h2>Old driver copies</h2>
+          <div style="font:800 34px/1.1 var(--font)">1.8 <small style="font-size:15px;color:var(--muted);font-weight:600">GB can be removed</small></div>
+          <p class="muted" style="margin:8px 0 14px">Windows keeps older versions of drivers after every update. The ones in use are never touched.</p>
+          <div class="bar" style="margin-bottom:6px"><i style="width:7%"></i></div><div class="dim sm">7 old packages · 4 in use are kept</div>
+          <div style="margin-top:16px;display:flex;gap:10px"><span class="btn">See the list</span><span class="btn primary">Remove 7 copies</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── DISK HEALTH ───────── -->
+    <section class="screen s-health">
+      <div class="ph"><div><h1>Disk health</h1><p>S.M.A.R.T. in plain words, and repair that explains itself.</p></div><div class="sp"></div><span class="btn"><svg class="i"><use href="#doc"/></svg>Export report</span></div>
+      <div class="drv">
+        <div class="dtab on"><span class="ic"><svg class="i"><use href="#drive"/></svg></span><div><b>Samsung 980 Pro</b><span>C: · 476 GB · NVMe</span></div><span class="pill good">Good</span></div>
+        <div class="dtab"><span class="ic"><svg class="i"><use href="#drive"/></svg></span><div><b>WD Blue SN580</b><span>D: · 1 TB · NVMe</span></div><span class="pill good">Good</span></div>
+        <div class="dtab"><span class="ic"><svg class="i"><use href="#drive"/></svg></span><div><b>Seagate Barracuda</b><span>E: · 2 TB · HDD</span></div><span class="pill warn">Caution</span></div>
+      </div>
+      <div class="hl">
+        <div class="card big-h"><div class="badge"><svg class="i"><use href="#check"/></svg></div><h2>Good</h2><div class="pct">94%</div><div class="muted">of the SSD’s life is left</div><div class="muted sm" style="margin-top:6px">Nothing to do. Checked today at 08:00.</div></div>
+        <div class="card">
+          <div class="stats">
+            <div class="st"><div class="k">Temperature</div><div class="v">38 <small>°C</small></div><div class="bar"><i style="width:30%"></i></div></div>
+            <div class="st"><div class="k">Power-on time</div><div class="v">4,212 <small>h</small></div><div class="bar"><i style="width:18%"></i></div></div>
+            <div class="st"><div class="k">Written</div><div class="v">21.4 <small>TB</small></div><div class="bar"><i style="width:6%"></i></div></div>
+            <div class="st"><div class="k">Errors</div><div class="v" style="color:var(--good)">0</div><div class="bar"><i style="width:0%"></i></div></div>
+          </div>
+          <div style="margin-top:16px">
+            <table>
+              <tr><th>Attribute</th><th>In plain words</th><th style="text-align:right">Value</th><th style="text-align:right">Status</th></tr>
+              <tr><td>Available spare</td><td class="muted">Spare space the drive keeps for worn cells</td><td class="n">100%</td><td style="text-align:right"><span class="pill good">OK</span></td></tr>
+              <tr><td>Percentage used</td><td class="muted">How much of the rated life is used</td><td class="n">6%</td><td style="text-align:right"><span class="pill good">OK</span></td></tr>
+              <tr><td>Unsafe shutdowns</td><td class="muted">Power cuts while the drive was writing</td><td class="n">11</td><td style="text-align:right"><span class="pill good">OK</span></td></tr>
+              <tr><td>Media errors</td><td class="muted">Data the drive could not read back</td><td class="n">0</td><td style="text-align:right"><span class="pill good">OK</span></td></tr>
+              <tr><td>Critical warning</td><td class="muted">Flags the drive raises when something is wrong</td><td class="n">0</td><td style="text-align:right"><span class="pill good">OK</span></td></tr>
+              <tr><td>Error log entries</td><td class="muted">Problems the drive has written down</td><td class="n">0</td><td style="text-align:right"><span class="pill good">OK</span></td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="card chips" style="margin-top:auto"><span class="k">Repair</span><span class="chip">Check file system</span><span class="chip">Repair file system</span><span class="chip">Scan for bad sectors</span><span class="muted sm" style="margin-left:auto">Advice depends on the drive’s health.</span></div>
+    </section>
+  </main>
+</div></div>
+<script>
+const q = new URLSearchParams(location.search);
+const s = q.get('s') || 'home', t = q.get('t') || 'dark';
+const r = document.documentElement; r.dataset.s = s; r.dataset.t = t;
+const topKey = { home: 'home', drivers: 'maintain', health: 'diagnose' }[s];
+document.querySelectorAll('#nav [data-n]').forEach(e => { if (e.dataset.n === topKey) e.classList.add('on'); });
+const subs = {
+  home: [],
+  drivers: [['Cleanup & repair'], ['Disk space'], ['Startup apps', '4'], ['Apps'], ['Drivers', '2', true]],
+  health: [['Monitor'], ['Hardware', '', true]],
+};
+const el = document.getElementById('sub');
+(subs[s] || []).forEach(([n, b, on]) => { const e = document.createElement('span'); if (on) e.className = 'on'; e.textContent = n; if (b) { const p = document.createElement('i'); p.className = 'pill warn'; p.textContent = b; p.style.fontStyle = 'normal'; e.append(p); } el.append(e); });
+if (!subs[s].length) { el.style.display = 'flex'; el.innerHTML = '<span class="muted sm" style="font-weight:500">Overall PC health and what needs attention.</span>'; }
+</script>
+</body>
+</html>
