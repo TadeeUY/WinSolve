@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 18, 0),
+        [
+            new("\uE790", "New logo: a fan of tools, like a Swiss Army knife, in Windows blue. It replaces the old icon in the window, the notification area, the installer and the shortcuts. The website has a new, simpler look too.",
+                "Logo nuevo: un abanico de herramientas, como una navaja suiza, en azul Windows. Reemplaza al icono anterior en la ventana, el área de notificación, el instalador y los accesos directos. La web también tiene un aspecto nuevo y más simple."),
+        ]),
         new(new Version(0, 17, 14),
         [
             new("\uE945", "Opening or closing the side menu and changing page no longer leave the window looking broken (shifted copies, gaps, old and new layout mixed) until the animation ends: every animation frame is now painted, and the page is rearranged out of sight and shown finished.",
