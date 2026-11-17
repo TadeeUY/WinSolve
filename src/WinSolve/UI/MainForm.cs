@@ -634,6 +634,44 @@ public sealed class MainForm : Form
 
     private bool _cloaked, _cloakedAtStart;
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    private const int WM_SETREDRAW = 0x000B;
+
+    /// <summary>
+    /// Makes a big change (showing a page, re-measuring everything next to the menu) appear in one go.
+    /// Every control is its own window: Windows moves and paints them one by one, and painting waits
+    /// until the app is idle, so a change that takes a moment used to be visible half-done (shifted
+    /// copies, black gaps, old and new layout mixed). Drawing is switched off for <paramref name="area"/>
+    /// while <paramref name="change"/> runs, then everything in it is painted at once.
+    /// </summary>
+    private static void Atomically(Control area, Action change)
+    {
+        if (!area.IsHandleCreated || !area.Visible)
+        {
+            change();
+            return;
+        }
+        SendMessage(area.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+        try { change(); }
+        finally
+        {
+            SendMessage(area.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+            RedrawWindow(area.Handle, IntPtr.Zero, IntPtr.Zero, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_FRAME);
+        }
+    }
+
+    /// <summary>
+    /// Paints, right now, whatever is waiting to be painted in a control and everything inside it.
+    /// Animation steps are posted messages and painting only happens when no message is waiting: an
+    /// animation whose steps take longer than a frame would otherwise show nothing until it ends.
+    /// </summary>
+    private static void PaintPending(Control area)
+    {
+        if (area.IsHandleCreated) RedrawWindow(area.Handle, IntPtr.Zero, IntPtr.Zero, RDW_ALLCHILDREN | RDW_UPDATENOW);
+    }
+
     /// <summary>
     /// Hides (or shows again) the window at the compositor level (DWMWA_CLOAK). A cloaked window is
     /// still laid out and painted, it just isn't on screen. If cloaking isn't available nothing
@@ -822,13 +860,19 @@ public sealed class MainForm : Form
         {
             _side.Width = (int)Math.Round(w);
             FitNav();
-            if (Math.Abs(w - target) >= 0.5) return;
+            if (Math.Abs(w - target) >= 0.5)
+            {
+                PaintPending(this); // every frame is drawn, not just the last one
+                return;
+            }
             ApplyCompact(collapsed);
             if (_mainSuspended)
             {
                 _mainSuspended = false;
-                _main?.ResumeLayout(true);
+                // Re-measuring the page can take a moment: it shows up finished, not while it is being rearranged.
+                if (_main is { } main) Atomically(main, () => main.ResumeLayout(true));
             }
+            PaintPending(this);
         }, 160);
     }
 
@@ -1000,28 +1044,32 @@ public sealed class MainForm : Form
 
         // Pages stay in the window once shown and are only hidden: taking a big page out of the
         // window (and back in) made Windows rebuild hundreds of controls, up to ~20 s per switch.
-        _content.SuspendLayout();
-        if (animate)
+        // The switch is drawn in one go: the old page stays on screen until the new one is in place and painted.
+        Atomically(_content, () =>
         {
-            // The new page slides up into place (Windows 11 Settings style); moving an already
-            // drawn window is cheap, so this stays smooth even on heavy pages.
-            page.Dock = DockStyle.None;
-            page.Bounds = new Rectangle(0, SlideDistance, _content.ClientSize.Width, _content.ClientSize.Height);
-            page.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
-        }
-        else page.Dock = DockStyle.Fill;
-        if (page.Parent != _content) _content.Controls.Add(page);
-        Theme.FlattenTransparency(page); // pages built or filled since the last visit: opaque backgrounds, no parent repaints
-        // Showing a page makes every control in it report "visible" to its container, and each
-        // report re-measures the whole page: hundreds of passes on a big page. Freeze layout
-        // while it appears and measure once at the end.
-        LayoutBatch.Run(page, () =>
-        {
-            page.Visible = true;
-            page.BringToFront();
-            if (previous is not null) previous.Visible = false;
+            _content.SuspendLayout();
+            if (animate)
+            {
+                // The new page slides up into place (Windows 11 Settings style); moving an already
+                // drawn window is cheap, so this stays smooth even on heavy pages.
+                page.Dock = DockStyle.None;
+                page.Bounds = new Rectangle(0, SlideDistance, _content.ClientSize.Width, _content.ClientSize.Height);
+                page.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            }
+            else page.Dock = DockStyle.Fill;
+            if (page.Parent != _content) _content.Controls.Add(page);
+            Theme.FlattenTransparency(page); // pages built or filled since the last visit: opaque backgrounds, no parent repaints
+            // Showing a page makes every control in it report "visible" to its container, and each
+            // report re-measures the whole page: hundreds of passes on a big page. Freeze layout
+            // while it appears and measure once at the end.
+            LayoutBatch.Run(page, () =>
+            {
+                page.Visible = true;
+                page.BringToFront();
+                if (previous is not null) previous.Visible = false;
+            });
+            _content.ResumeLayout(true);
         });
-        _content.ResumeLayout(true);
 
         _currentPage = page;
         page.OnShown();
@@ -1061,7 +1109,7 @@ public sealed class MainForm : Form
     private void SlideIn(Page page)
     {
         _slideSkipped = false;
-        page.Update();
+        PaintPending(page);
         double offset = SlideDistance;
         Animator.Animate((this, "page"), () => offset, 0, v =>
         {
@@ -1076,7 +1124,7 @@ public sealed class MainForm : Form
             // just takes its place (the slide is decoration, never worth a delay).
             var frame = System.Diagnostics.Stopwatch.StartNew();
             page.Top = (int)Math.Round(v);
-            page.Update();
+            PaintPending(_content);
             if (frame.ElapsedMilliseconds > 30)
             {
                 _slideSkipped = true;

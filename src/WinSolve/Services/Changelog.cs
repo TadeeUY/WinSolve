@@ -10,6 +10,11 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 14),
+        [
+            new("\uE945", "Opening or closing the side menu and changing page no longer leave the window looking broken (shifted copies, gaps, old and new layout mixed) until the animation ends: every animation frame is now painted, and the page is rearranged out of sight and shown finished.",
+                "Abrir o cerrar el menú lateral y cambiar de página ya no dejan la ventana rota (copias desplazadas, huecos, diseño viejo y nuevo mezclados) hasta que termina la animación: ahora se pinta cada cuadro de la animación, y la página se reorganiza sin mostrarse y aparece ya terminada."),
+        ]),
         new(new Version(0, 17, 13),
         [
             new("\uE80F", "Fixes the \"We couldn't create the data directory\" message from the Edge engine on the Home page: if it can't use WinSolve's protected folder, it now keeps its data in your own account's folder, and its error dialogs are off. If it still can't start, the classic Home page is shown.",
