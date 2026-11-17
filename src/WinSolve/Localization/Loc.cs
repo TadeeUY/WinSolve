@@ -134,6 +134,15 @@ public class LocLabel : Label
         get => base.Text;
         set => base.Text = Loc.T(value);
     }
+
+    // Labels are created transparent; once placed they take the color behind them (see Theme.BehindColor).
+    protected override void OnParentChanged(EventArgs e)
+    {
+        base.OnParentChanged(e);
+        if (Parent is null || BackColor.A != 0) return;
+        var behind = UI.Theme.BehindColor(Parent);
+        if (behind.A == 255) BackColor = behind;
+    }
 }
 
 /// <summary>

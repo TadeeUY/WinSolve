@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WinSolve</title>
+<link rel="stylesheet" href="home.css">
+</head>
+<body>
+<main class="page">
+  <header class="head">
+    <div class="icon-tile glyph" aria-hidden="true">&#xE80F;</div>
+    <div class="titles">
+      <h1 id="title">Home</h1>
+      <p id="subtitle" class="muted"></p>
+    </div>
+    <button id="search" class="pill" type="button">
+      <span class="glyph" aria-hidden="true">&#xE721;</span>
+      <span id="searchText">Search</span>
+      <kbd>Ctrl+K</kbd>
+    </button>
+  </header>
+
+  <section id="weekly" class="card" hidden></section>
+
+  <section class="card hero">
+    <div id="ring" class="ring" role="img"></div>
+    <div class="hero-text">
+      <h2 id="summary"></h2>
+      <p id="status" class="muted small" aria-live="polite"></p>
+      <div class="row">
+        <button id="optimize" class="btn primary" type="button"><span class="glyph" aria-hidden="true">&#xE945;</span><span id="optimizeText"></span></button>
+        <button id="scan" class="btn" type="button"><span class="glyph" aria-hidden="true">&#xE72C;</span><span id="scanText"></span></button>
+      </div>
+    </div>
+  </section>
+
+  <section id="quick" class="quick"></section>
+
+  <h2 id="thisPc" class="section"></h2>
+  <section id="tiles" class="tiles"></section>
+
+  <section id="issues" class="card issues"></section>
+</main>
+<script src="home.js"></script>
+</body>
+</html>

@@ -104,6 +104,10 @@ public static class DiskScanner
             var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
             string? winSxS = windows.Length > 0 ? Path.Combine(windows, "WinSxS") : null;
 
+            // The native core (Rust) does the whole scan when it is available; otherwise the code below does.
+            if (NativeCore.TryScan(path, root, progress, winSxS, Workers, ct, out var nativeExtensions, out var nativeInaccessible))
+                return new SpaceScanResult { Root = root, Extensions = nativeExtensions, Elapsed = sw.Elapsed, Inaccessible = nativeInaccessible };
+
             // Several folders are read at once: a directory read mostly waits for the disk.
             var queue = new System.Collections.Concurrent.BlockingCollection<(SpaceNode Node, string Path, int Depth)>();
             var pending = 1;

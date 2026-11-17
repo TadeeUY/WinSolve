@@ -28,6 +28,21 @@ Fixed in 0.8.0:
 - **Over-the-shoulder elevation:** when a standard user elevates with an administrator's password, HKCU, %TEMP%, AppData, Startup, Start Menu, per-user uninstallers, Store app removal and Explorer restarts now target the signed-in user (`Core/InteractiveUser.cs`: `HKEY_USERS\<SID>`, their profile folders, and `CreateProcessWithTokenW` with a token from their own session processes) instead of the administrator's account.
 - **Updates:** the new `WinSolve.exe` is written to a temporary file and swapped in with `File.Replace` (the old version survives any failure); setup waits for the running WinSolve to exit instead of killing it, updates the folder the running copy came from, and reopens the previous version if an automatic update fails.
 
+## Native core (Rust)
+
+The disk scan and the duplicate hashing run in a small Rust library (`native/winsolve-native`) that
+WinSolve loads as a DLL. It is **read-only** (it never deletes, moves or writes), and it is optional: if
+it is missing or fails any check, the built-in C# code does the same work.
+
+Because WinSolve runs elevated and only loads DLLs from System32, the DLL is **not** put next to the exe:
+
+- It is embedded in `WinSolve.exe` (so it is covered by the same code signature).
+- On first use it is written to `%ProgramData%\WinSolve\Native` (Administrators/SYSTEM only), named after its SHA-256.
+- Before it is loaded, the file on disk is hashed again while a read-only handle blocks writers, and must match the embedded copy.
+- It is loaded by its full path (never searched for), is built with a static C runtime and only depends on System32 DLLs.
+- The portable edition does not use it and writes nothing for it.
+- Its input is the paths to scan or compare; all results come back as a length-checked buffer that the C# side validates before using, and a panic never crosses into the app.
+
 ## Reviewed and considered safe
 
 - **PowerShell scripts** that embed data (Store package names, scheduled task names, file paths) quote it as single-quoted literals with `'` doubled.
