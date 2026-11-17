@@ -11,7 +11,7 @@
     <ApplicationIcon>..\..\assets\winsolve.ico</ApplicationIcon>
     <AssemblyName>WinSolve</AssemblyName>
     <RootNamespace>WinSolve</RootNamespace>
-    <Version>0.17.6</Version>
+    <Version>0.17.14</Version>
     <Product>WinSolve</Product>
     <Description>Diagnóstico, reparación y optimización de Windows</Description>
     <Company>WinSolve</Company>
@@ -63,15 +63,60 @@
     <Using Include="System.Drawing" />
   </ItemGroup>
 
+  <!-- The web pages (served from memory by the app; see UI/Pages/WebHomePage.cs). -->
+  <ItemGroup>
+    <EmbeddedResource Include="Web\index.html" LogicalName="web/index.html" />
+    <EmbeddedResource Include="Web\home.css" LogicalName="web/home.css" />
+    <EmbeddedResource Include="Web\home.js" LogicalName="web/home.js" />
+  </ItemGroup>
+
+  <!--
+    The package ships WebView2Loader.dll as a native asset; published as is, the single-file exe would
+    unpack it into %TEMP%\.net on every start (the portable edition must leave nothing there, and an
+    elevated app shouldn't load DLLs from a user-writable folder). WinSolve embeds its own copy below
+    and loads it from the trusted data folder, so the package's copies are left out of the publish.
+  -->
+  <PropertyGroup>
+    <WebView2NeverCopyLoaderDllToOutputDirectory>true</WebView2NeverCopyLoaderDllToOutputDirectory>
+  </PropertyGroup>
+  <Target Name="DropWebView2LoaderFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'WebView2Loader.dll'" />
+    </ItemGroup>
+  </Target>
+
+  <!-- WebView2 loader (x64), embedded so it can be loaded from the trusted data folder instead of searched for. -->
+  <PropertyGroup>
+    <WebView2LoaderDll>$(NuGetPackageRoot)microsoft.web.webview2\1.0.2903.40\runtimes\win-x64\native\WebView2Loader.dll</WebView2LoaderDll>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Portable)' != 'true' And Exists('$(WebView2LoaderDll)')">
+    <EmbeddedResource Include="$(WebView2LoaderDll)" LogicalName="WebView2Loader.dll" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="WinSolve.Tests" />
     <EmbeddedResource Include="..\..\assets\winsolve.ico" LogicalName="WinSolve.ico" />
+  </ItemGroup>
+
+  <!--
+    Native core (Rust, native/winsolve-native): disk scan and duplicate hashing. CI builds it before this
+    project; without the DLL (e.g. a local build without Rust) it is simply left out and the app uses
+    its managed code. Embedded, never shipped next to the exe: see Core/NativeCore.cs. Not in the
+    portable edition (it must leave nothing on the PC).
+  -->
+  <PropertyGroup>
+    <NativeCoreDll Condition="'$(NativeCoreDll)' == ''">$(MSBuildThisFileDirectory)..\..\native\winsolve-native\target\x86_64-pc-windows-msvc\release\winsolve_native.dll</NativeCoreDll>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Portable)' != 'true' And Exists('$(NativeCoreDll)')">
+    <EmbeddedResource Include="$(NativeCoreDll)" LogicalName="winsolve_native.dll" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.0" />
     <PackageReference Include="System.Management" Version="8.0.0" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
+    <!-- Edge WebView2 (Chromium) for the pages drawn as web pages. Its loader DLL is embedded below, see Core/WebView2Support.cs. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
   </ItemGroup>
 
 </Project>

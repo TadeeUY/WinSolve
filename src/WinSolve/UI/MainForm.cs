@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using WinSolve.Core;
 using WinSolve.Services;
 using WinSolve.UI.Pages;
@@ -6,9 +7,6 @@ namespace WinSolve.UI;
 
 public sealed class MainForm : Form
 {
-    private const int WM_SYSCOMMAND = 0x0112;
-    private const int SC_MINIMIZE = 0xF020;
-    private const int SC_RESTORE = 0xF120;
 
     private readonly Panel _content = new BufferedPanel { Dock = DockStyle.Fill, BackColor = Theme.Background };
     private readonly Dictionary<string, Func<Page>> _factories;
@@ -17,7 +15,6 @@ public sealed class MainForm : Form
     private readonly NotifyIcon _tray;
     private readonly bool _startHidden;
     private bool _exiting;
-    private bool _animating;
     private bool _trayHintShown;
     private bool _loaded, _shownOnce;
     private readonly InfoBar _infoBar = new() { Dock = DockStyle.Top, Visible = false };
@@ -59,7 +56,7 @@ public sealed class MainForm : Form
 
         _factories = new()
         {
-            ["home"] = () => new DashboardPage(),
+            ["home"] = () => WebView2Support.IsAvailable ? (Page)new WebHomePage() : new DashboardPage(),
             ["optimize"] = () => new OptimizePage(),
             ["space"] = () => new SpacePage(),
             ["tools"] = () => new ToolsPage(),
@@ -88,8 +85,8 @@ public sealed class MainForm : Form
         Controls.Add(BuildSidebar());
 
         _tray = BuildTray();
-        // Stay invisible until the first page is fully drawn (no gray flash); the splash covers the wait.
-        if (!startHidden) Opacity = 0;
+        // The window stays cloaked (hidden by DWM, but still painted) until its first page is fully drawn:
+        // no gray flash, no half-painted frames; the splash covers the wait. See RevealAfterPainting.
 
         Load += (_, _) =>
         {
@@ -128,16 +125,33 @@ public sealed class MainForm : Form
             _shownOnce = true;
             SplashScreen.SetStatus("Loading pages...");
             PreloadPages();
-            Refresh();
+            // Fully laid out and painted while still hidden, then shown: the splash fades out over a complete window.
+            if (!_startHidden) RevealAfterPainting();
             SplashScreen.SetStatus("Ready");
             await SplashScreen.CloseAsync();
             Activate();
-            // When started in the tray, ShowFromTray runs the fade-in itself.
-            if (!_startHidden) await AnimateInAsync();
             if (!_startHidden && AppSettings.Current.IsFirstRun) BeginInvoke(ShowWelcome);
             else if (!_startHidden) BeginInvoke(ShowWhatsNewIfUpdated);
         };
-        HandleCreated += (_, _) => Theme.StyleWindow(this);
+        HandleCreated += (_, _) =>
+        {
+            Theme.StyleWindow(this, nativeTransitions: true);
+            // Only the first handle: the window is revealed once its content is painted (see Shown).
+            if (!_startHidden && !_cloakedAtStart)
+            {
+                _cloakedAtStart = true;
+                Cloak(true);
+                // Safety net: never leave the window hidden if something goes wrong while it loads.
+                var safety = new System.Windows.Forms.Timer { Interval = 20000 };
+                safety.Tick += (_, _) =>
+                {
+                    safety.Stop();
+                    safety.Dispose();
+                    if (_cloaked) Cloak(false);
+                };
+                safety.Start();
+            }
+        };
         FormClosing += OnFormClosing;
         FormClosed += (_, _) => { if (_wheel is not null) Application.RemoveMessageFilter(_wheel); };
     }
@@ -251,25 +265,34 @@ public sealed class MainForm : Form
         return Done("Explorer restarted", "The taskbar and desktop were reloaded.", "\uE8B7");
     }
 
-    public async void ShowFromTray()
+    public void ShowFromTray()
     {
-        // Only fade in when the window was actually hidden or minimized.
-        var wasHidden = !Visible || WindowState == FormWindowState.Minimized;
         if (!Visible)
         {
-            Opacity = 0;
-            Show();
-            if (CurrentPage is null) Navigate("home");
-            else CurrentPage.OnShown();
+            // Showing a hidden window makes Windows start its open animation at once, while the many
+            // child controls have not been laid out or painted yet (they paint one by one): the
+            // animation then showed torn, half-drawn and stale frames. Cloaked, everything is laid out
+            // and painted first and the window appears complete.
+            Cloak(true);
+            try
+            {
+                Show();
+                if (CurrentPage is null) Navigate("home");
+                else CurrentPage.OnShown();
+                PaintEverythingNow();
+            }
+            finally
+            {
+                Cloak(false);
+            }
         }
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         Activate();
-        if (wasHidden) await AnimateInAsync();
         // Started hidden in the tray after an update: show what's new the first time it opens.
         if (_startHidden && !_whatsNewChecked && !AppSettings.Current.IsFirstRun) BeginInvoke(ShowWhatsNewIfUpdated);
     }
 
-    private async void OnFormClosing(object? sender, FormClosingEventArgs e)
+    private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
         // Elevated with another administrator's password: never stay behind in the tray, where the
         // signed-in (standard) user could keep using the administrator's rights.
@@ -279,10 +302,8 @@ public sealed class MainForm : Form
             return;
         }
         e.Cancel = true;
-        await AnimateOutAsync();
         CurrentPage?.OnHidden();
         Hide();
-        Opacity = 1;
         if (!_trayHintShown)
         {
             _trayHintShown = true;
@@ -598,81 +619,90 @@ public sealed class MainForm : Form
         }
     }
 
-    // ───────────── Minimize / restore animations ─────────────
+    // ───────────── Showing the window complete ─────────────
 
-    protected override void WndProc(ref Message m)
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
+
+    [DllImport("user32.dll")]
+    private static extern bool RedrawWindow(IntPtr hwnd, IntPtr rect, IntPtr region, uint flags);
+
+    private const uint RDW_INVALIDATE = 0x0001, RDW_ERASE = 0x0004, RDW_ALLCHILDREN = 0x0080, RDW_UPDATENOW = 0x0100, RDW_FRAME = 0x0400;
+
+    private bool _cloaked, _cloakedAtStart;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    private const int WM_SETREDRAW = 0x000B;
+
+    /// <summary>
+    /// Makes a big change (showing a page, re-measuring everything next to the menu) appear in one go.
+    /// Every control is its own window: Windows moves and paints them one by one, and painting waits
+    /// until the app is idle, so a change that takes a moment used to be visible half-done (shifted
+    /// copies, black gaps, old and new layout mixed). Drawing is switched off for <paramref name="area"/>
+    /// while <paramref name="change"/> runs, then everything in it is painted at once.
+    /// </summary>
+    private static void Atomically(Control area, Action change)
     {
-        if (m.Msg == WM_SYSCOMMAND && AppSettings.Current.Animations && !_animating)
+        if (!area.IsHandleCreated || !area.Visible)
         {
-            var cmd = m.WParam.ToInt64() & 0xFFF0;
-            if (cmd == SC_MINIMIZE)
-            {
-                _ = MinimizeAnimatedAsync();
-                return;
-            }
-            if (cmd == SC_RESTORE && WindowState == FormWindowState.Minimized)
-            {
-                Opacity = 0;
-                base.WndProc(ref m);
-                _ = AnimateInAsync();
-                return;
-            }
-        }
-        base.WndProc(ref m);
-    }
-
-    private async Task MinimizeAnimatedAsync()
-    {
-        await AnimateOutAsync();
-        WindowState = FormWindowState.Minimized;
-        Opacity = 1;
-    }
-
-    /// <summary>Fades out while sliding down, as if dropping into the taskbar.</summary>
-    private async Task AnimateOutAsync()
-    {
-        if (!AppSettings.Current.Animations || _animating) return;
-        _animating = true;
-        var top = Top;
-        const int steps = 12;
-        for (int i = 1; i <= steps; i++)
-        {
-            var t = Ease.InCubic(i / (double)steps);
-            Opacity = 1 - t;
-            if (WindowState == FormWindowState.Normal) Top = top + (int)(36 * t);
-            await Task.Delay(11);
-        }
-        if (WindowState == FormWindowState.Normal) Top = top;
-        _animating = false;
-    }
-
-    /// <summary>Fades in while sliding up.</summary>
-    private async Task AnimateInAsync()
-    {
-        if (!AppSettings.Current.Animations)
-        {
-            Opacity = 1;
+            change();
             return;
         }
-        // Overlapping fades would read Top mid-slide and leave the window lower each time.
-        if (_animating) return;
-        _animating = true;
-        var top = Top;
-        var slide = WindowState == FormWindowState.Normal;
-        // On the animation clock (the screen refresh), not a loop of Task.Delay(11), which is really ~15 ms and uneven.
-        var done = new TaskCompletionSource();
-        double progress = 0;
-        Animator.Animate((this, "fade-in"), () => progress, 1, v =>
+        SendMessage(area.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+        try { change(); }
+        finally
         {
-            progress = v;
-            Opacity = v;
-            if (slide) Top = top + (int)(28 * (1 - v));
-            if (v >= 1) done.TrySetResult();
-        }, 200);
-        await done.Task;
-        if (slide) Top = top;
-        Opacity = 1;
-        _animating = false;
+            SendMessage(area.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+            RedrawWindow(area.Handle, IntPtr.Zero, IntPtr.Zero, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_FRAME);
+        }
+    }
+
+    /// <summary>
+    /// Paints, right now, whatever is waiting to be painted in a control and everything inside it.
+    /// Animation steps are posted messages and painting only happens when no message is waiting: an
+    /// animation whose steps take longer than a frame would otherwise show nothing until it ends.
+    /// </summary>
+    private static void PaintPending(Control area)
+    {
+        if (area.IsHandleCreated) RedrawWindow(area.Handle, IntPtr.Zero, IntPtr.Zero, RDW_ALLCHILDREN | RDW_UPDATENOW);
+    }
+
+    /// <summary>
+    /// Hides (or shows again) the window at the compositor level (DWMWA_CLOAK). A cloaked window is
+    /// still laid out and painted, it just isn't on screen. If cloaking isn't available nothing
+    /// changes: the window is simply shown as before.
+    /// </summary>
+    private void Cloak(bool on)
+    {
+        if (!IsHandleCreated) return;
+        try
+        {
+            var value = on ? 1 : 0;
+            _cloaked = DwmSetWindowAttribute(Handle, 13, ref value, sizeof(int)) == 0 && on;
+        }
+        catch
+        {
+            _cloaked = false;
+        }
+    }
+
+    /// <summary>Lays out and paints the window and every control in it right now, and waits for the compositor to take it.</summary>
+    private void PaintEverythingNow()
+    {
+        PerformLayout();
+        RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_FRAME);
+        try { DwmFlush(); } catch { /* no compositor call: the paint above is enough */ }
+    }
+
+    private void RevealAfterPainting()
+    {
+        try { PaintEverythingNow(); }
+        finally { Cloak(false); }
     }
 
     // ───────────── Navigation ─────────────
@@ -830,13 +860,19 @@ public sealed class MainForm : Form
         {
             _side.Width = (int)Math.Round(w);
             FitNav();
-            if (Math.Abs(w - target) >= 0.5) return;
+            if (Math.Abs(w - target) >= 0.5)
+            {
+                PaintPending(this); // every frame is drawn, not just the last one
+                return;
+            }
             ApplyCompact(collapsed);
             if (_mainSuspended)
             {
                 _mainSuspended = false;
-                _main?.ResumeLayout(true);
+                // Re-measuring the page can take a moment: it shows up finished, not while it is being rearranged.
+                if (_main is { } main) Atomically(main, () => main.ResumeLayout(true));
             }
+            PaintPending(this);
         }, 160);
     }
 
@@ -1004,31 +1040,36 @@ public sealed class MainForm : Form
         previous?.OnHidden();
         foreach (var b in _nav) b.Selected = b.Key == key;
 
-        var animate = AppSettings.Current.Animations && Visible && Opacity > 0 && previous is not null && WindowState != FormWindowState.Minimized;
+        var animate = AppSettings.Current.Animations && Visible && !_cloaked && previous is not null && WindowState != FormWindowState.Minimized;
 
         // Pages stay in the window once shown and are only hidden: taking a big page out of the
         // window (and back in) made Windows rebuild hundreds of controls, up to ~20 s per switch.
-        _content.SuspendLayout();
-        if (animate)
+        // The switch is drawn in one go: the old page stays on screen until the new one is in place and painted.
+        Atomically(_content, () =>
         {
-            // The new page slides up into place (Windows 11 Settings style); moving an already
-            // drawn window is cheap, so this stays smooth even on heavy pages.
-            page.Dock = DockStyle.None;
-            page.Bounds = new Rectangle(0, SlideDistance, _content.ClientSize.Width, _content.ClientSize.Height);
-            page.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
-        }
-        else page.Dock = DockStyle.Fill;
-        if (page.Parent != _content) _content.Controls.Add(page);
-        // Showing a page makes every control in it report "visible" to its container, and each
-        // report re-measures the whole page: hundreds of passes on a big page. Freeze layout
-        // while it appears and measure once at the end.
-        LayoutBatch.Run(page, () =>
-        {
-            page.Visible = true;
-            page.BringToFront();
-            if (previous is not null) previous.Visible = false;
+            _content.SuspendLayout();
+            if (animate)
+            {
+                // The new page slides up into place (Windows 11 Settings style); moving an already
+                // drawn window is cheap, so this stays smooth even on heavy pages.
+                page.Dock = DockStyle.None;
+                page.Bounds = new Rectangle(0, SlideDistance, _content.ClientSize.Width, _content.ClientSize.Height);
+                page.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            }
+            else page.Dock = DockStyle.Fill;
+            if (page.Parent != _content) _content.Controls.Add(page);
+            Theme.FlattenTransparency(page); // pages built or filled since the last visit: opaque backgrounds, no parent repaints
+            // Showing a page makes every control in it report "visible" to its container, and each
+            // report re-measures the whole page: hundreds of passes on a big page. Freeze layout
+            // while it appears and measure once at the end.
+            LayoutBatch.Run(page, () =>
+            {
+                page.Visible = true;
+                page.BringToFront();
+                if (previous is not null) previous.Visible = false;
+            });
+            _content.ResumeLayout(true);
         });
-        _content.ResumeLayout(true);
 
         _currentPage = page;
         page.OnShown();
@@ -1047,12 +1088,28 @@ public sealed class MainForm : Form
     private const int SlideDistance = 20;
     private Page? _currentPage;
 
+    /// <summary>
+    /// The Chromium Home page couldn't start or load: swaps it for the classic page, on screen if it
+    /// was the page being shown, so nobody has to restart anything.
+    /// </summary>
+    internal void UseClassicHome(Page failed)
+    {
+        if (IsDisposed || !_pages.TryGetValue("home", out var current) || !ReferenceEquals(current, failed)) return;
+        var wasShown = ReferenceEquals(_currentPage, failed);
+        _factories["home"] = () => new DashboardPage();
+        _pages.Remove("home");
+        if (wasShown) _currentPage = null;
+        _content.Controls.Remove(failed);
+        failed.Dispose();
+        if (wasShown) Navigate("home");
+    }
+
     private bool _slideSkipped;
 
     private void SlideIn(Page page)
     {
         _slideSkipped = false;
-        page.Update();
+        PaintPending(page);
         double offset = SlideDistance;
         Animator.Animate((this, "page"), () => offset, 0, v =>
         {
@@ -1067,7 +1124,7 @@ public sealed class MainForm : Form
             // just takes its place (the slide is decoration, never worth a delay).
             var frame = System.Diagnostics.Stopwatch.StartNew();
             page.Top = (int)Math.Round(v);
-            page.Update();
+            PaintPending(_content);
             if (frame.ElapsedMilliseconds > 30)
             {
                 _slideSkipped = true;
@@ -1086,7 +1143,7 @@ public sealed class MainForm : Form
         timer.Tick += (_, _) =>
         {
             if (pending.Count == 0 || IsDisposed) { timer.Dispose(); return; }
-            if (!Visible || Opacity < 1) return; // during the fade-in or while in the tray
+            if (!Visible || _cloaked) return; // while it is being revealed or in the tray
             var key = pending.Dequeue();
             try
             {
@@ -1095,6 +1152,7 @@ public sealed class MainForm : Form
                 page.Visible = false;
                 page.Dock = DockStyle.Fill;
                 _content.Controls.Add(page);
+                Theme.FlattenTransparency(page);
                 CreateHandles(page);
             }
             catch (Exception ex) { Logger.Write($"Preloading page '{key}' failed: {ex.Message}"); }

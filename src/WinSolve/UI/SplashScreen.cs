@@ -119,6 +119,8 @@ public static class SplashScreen
             {
                 try
                 {
+                    int noTransitions = 1;
+                    DwmSetWindowAttribute(Handle, 3, ref noTransitions, sizeof(int)); // DWMWA_TRANSITIONS_FORCEDISABLED: it fades itself
                     int round = 2;
                     DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int)); // rounded corners (Windows 11)
                 }

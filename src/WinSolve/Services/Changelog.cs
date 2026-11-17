@@ -10,6 +10,48 @@ public static class Changelog
 {
     public static IReadOnlyList<ChangelogEntry> Entries { get; } =
     [
+        new(new Version(0, 17, 14),
+        [
+            new("\uE945", "Opening or closing the side menu and changing page no longer leave the window looking broken (shifted copies, gaps, old and new layout mixed) until the animation ends: every animation frame is now painted, and the page is rearranged out of sight and shown finished.",
+                "Abrir o cerrar el menú lateral y cambiar de página ya no dejan la ventana rota (copias desplazadas, huecos, diseño viejo y nuevo mezclados) hasta que termina la animación: ahora se pinta cada cuadro de la animación, y la página se reorganiza sin mostrarse y aparece ya terminada."),
+        ]),
+        new(new Version(0, 17, 13),
+        [
+            new("\uE80F", "Fixes the \"We couldn't create the data directory\" message from the Edge engine on the Home page: if it can't use WinSolve's protected folder, it now keeps its data in your own account's folder, and its error dialogs are off. If it still can't start, the classic Home page is shown.",
+                "Corrige el mensaje \"No pudimos crear el directorio de datos\" del motor de Edge en la página de Inicio: si no puede usar la carpeta protegida de WinSolve, ahora guarda sus datos en la carpeta de tu propia cuenta, y sus diálogos de error están desactivados. Si aun así no arranca, se muestra la página de Inicio clásica."),
+        ]),
+        new(new Version(0, 17, 12),
+        [
+            new("\uE945", "Pages no longer show torn or half-painted pieces and move more smoothly: text and layout areas now take the color behind them instead of being transparent, so Windows no longer repaints the whole chain of containers behind every label.",
+                "Las páginas ya no muestran partes cortadas o a medio pintar y se mueven con más fluidez: el texto y las áreas de diseño ahora toman el color que tienen detrás en vez de ser transparentes, así Windows ya no repinta toda la cadena de contenedores detrás de cada etiqueta."),
+        ]),
+        new(new Version(0, 17, 11),
+        [
+            new("\uE80F", "The Home page is now drawn with the Microsoft Edge engine (Chromium), so it opens complete and moves smoothly. If the engine is missing or can't start, WinSolve switches to the classic page by itself. You can turn it off in Settings. The portable edition keeps the classic page.",
+                "La página de Inicio ahora se dibuja con el motor de Microsoft Edge (Chromium), así que se abre completa y se mueve con fluidez. Si el motor falta o no puede arrancar, WinSolve cambia solo a la página clásica. Puedes desactivarlo en Ajustes. La edición portable mantiene la página clásica."),
+        ]),
+        new(new Version(0, 17, 10),
+        [
+            new("\uE80F", "New experimental Home page drawn with the Microsoft Edge engine (Chromium), like Discord, so it never opens torn or half-drawn. Turn it on in Settings (\"Experimental: draw the Home page with the Edge engine\") and restart WinSolve. It needs the Microsoft Edge WebView2 runtime; if it is missing or can't start, the classic page is used. Not available in the portable edition.",
+                "Nueva página de Inicio experimental dibujada con el motor de Microsoft Edge (Chromium), como Discord, para que nunca se abra cortada o a medio dibujar. Actívala en Ajustes (\"Experimental: dibujar la página de Inicio con el motor de Edge\") y reinicia WinSolve. Necesita el runtime Microsoft Edge WebView2; si falta o no puede arrancar, se usa la página clásica. No está disponible en la edición portable."),
+        ]),
+        new(new Version(0, 17, 9),
+        [
+            new("\uE945", "The window no longer opens torn or half-drawn: it is now laid out and painted completely while hidden, and only then shown, on start and when opening it from the notification area.",
+                "La ventana ya no se abre cortada ni a medio dibujar: ahora se organiza y se dibuja por completo mientras está oculta, y solo entonces se muestra, al iniciar y al abrirla desde el área de notificación."),
+        ]),
+        new(new Version(0, 17, 8),
+        [
+            new("\uE945", "The window no longer looks torn or half-drawn when it opens, closes or is minimized: WinSolve stopped fading and moving the whole window by itself, and now it appears fully drawn and uses Windows' own smooth animation.",
+                "La ventana ya no se ve cortada ni a medio dibujar al abrirse, cerrarse o minimizarse: WinSolve dejó de desvanecer y mover la ventana entera por su cuenta, y ahora aparece ya dibujada y usa la animación suave de Windows."),
+        ]),
+        new(new Version(0, 17, 7),
+        [
+            new("\uE945", "Windows no longer look broken while they open or close: Windows' own window animation clashed with WinSolve's and showed old, doubled content until it ended. It is now switched off in every WinSolve window.",
+                "Las ventanas ya no se ven rotas al abrirse o cerrarse: la animación propia de Windows chocaba con la de WinSolve y mostraba contenido viejo y duplicado hasta que terminaba. Ahora está desactivada en todas las ventanas de WinSolve."),
+            new("\uE721", "Faster disk space scan and duplicate finder in the installed version: they now run on a new native engine. If it can't be loaded, WinSolve uses the previous one by itself, with the same results.",
+                "Análisis de espacio en disco y buscador de duplicados más rápidos en la versión instalada: ahora usan un nuevo motor nativo. Si no se puede cargar, WinSolve usa el anterior por sí solo, con los mismos resultados."),
+        ]),
         new(new Version(0, 17, 6),
         [
             new("\uE945", "More fluid animations: the window now fades in on the screen-refresh clock too, and when changing page the slide is skipped by itself if a page takes long to draw, so it never makes the app feel stuck.",

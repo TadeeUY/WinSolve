@@ -128,6 +128,41 @@ public static class Theme
         return path;
     }
 
+    /// <summary>
+    /// The opaque color a control placed in <paramref name="parent"/> sits on: the first opaque ancestor
+    /// (a card's fill). Controls use it instead of <see cref="Color.Transparent"/>: a transparent control
+    /// makes Windows repaint every ancestor behind it each time it paints, which is slow and, while a
+    /// window opens or resizes, leaves half-painted rectangles (a label's own box without the card behind).
+    /// Returns <see cref="Color.Transparent"/> when no ancestor is known to be opaque yet (the container
+    /// isn't inside its card or page yet): the caller then leaves the control alone for now.
+    /// </summary>
+    public static Color BehindColor(Control? parent)
+    {
+        for (var p = parent; p is not null; p = p.Parent)
+        {
+            if (p is Card card) return card.Fill;
+            if (p.BackColor.A == 255) return p.BackColor;
+        }
+        return Color.Transparent;
+    }
+
+    /// <summary>
+    /// Gives the transparent layout containers and labels under <paramref name="root"/> (panels, flow and
+    /// table layouts, text) the color behind them, top down. Looks the same, paints without the parent chain.
+    /// </summary>
+    public static void FlattenTransparency(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            if (child.BackColor.A == 0 && child is Panel or FlowLayoutPanel or TableLayoutPanel or System.Windows.Forms.Label)
+            {
+                var behind = BehindColor(root);
+                if (behind.A == 255) child.BackColor = behind;
+            }
+            FlattenTransparency(child);
+        }
+    }
+
     /// <summary>First opaque background behind a control (transparent containers are skipped).</summary>
     public static Color SurfaceColor(Control? c)
     {
@@ -152,10 +187,15 @@ public static class Theme
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
     /// <summary>Dark title bar and, on Windows 11, Mica backdrop and rounded corners.</summary>
-    public static void StyleWindow(Form form)
+    public static void StyleWindow(Form form, bool nativeTransitions = false)
     {
         try
         {
+            // Windows' own open/close/minimize animation is smooth on the main window, which is never
+            // faded or moved by code; dialogs, toasts and the splash fade themselves or just appear,
+            // and the two together showed stale or half-drawn content until the animation ended.
+            int noTransitions = nativeTransitions ? 0 : 1;
+            DwmSetWindowAttribute(form.Handle, 3, ref noTransitions, sizeof(int)); // DWMWA_TRANSITIONS_FORCEDISABLED
             int on = IsLight ? 0 : 1;
             DwmSetWindowAttribute(form.Handle, 20, ref on, sizeof(int)); // DWMWA_USE_IMMERSIVE_DARK_MODE
             int round = 2;

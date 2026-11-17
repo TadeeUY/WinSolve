@@ -83,6 +83,9 @@ public static class InteractiveUser
     /// <summary>The account of the person at the keyboard (signed-in user, or WinSolve's own account).</summary>
     public static SecurityIdentifier Sid => Other?.Sid ?? WindowsIdentity.GetCurrent().User!;
 
+    /// <summary>Other Windows users' profile folders (full paths, no trailing separator), for the native disk scan.</summary>
+    internal static IReadOnlyList<string> OtherProfileFoldersForScan => OtherProfileFolders.Value;
+
     private static readonly Lazy<string[]> OtherProfileFolders = new(() =>
     {
         var list = new List<string>();

@@ -1,0 +1,4 @@
+# The Windows DLL carries its own C runtime: it must not need the Visual C++ redistributable,
+# and the app only ever loads it from an absolute path it has verified.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

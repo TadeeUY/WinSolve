@@ -38,6 +38,21 @@ public sealed class AppSettings
     public bool ConfirmActions { get; set; } = true;
     public bool ScanOnStartup { get; set; } = true;
 
+    /// <summary>Draw the Home page with the Edge WebView2 engine (Chromium) instead of WinForms controls.</summary>
+    public bool ChromiumHome { get; set; } = true;
+
+    /// <summary>
+    /// The version in which the Chromium Home page failed to start or load on this PC. WinSolve then uses the
+    /// classic page for that version and tries again after the next update.
+    /// </summary>
+    public string? ChromiumHomeFailedOn { get; set; }
+
+    /// <summary>
+    /// The engine couldn't use the administrators-only profile folder here (its browser process doesn't run with
+    /// the administrator rights WinSolve has), so its profile lives in the account's own folder from now on.
+    /// </summary>
+    public bool ChromiumProfileInUserFolder { get; set; }
+
     /// <summary>Watch the event log and pop up an alert when Windows reports an error.</summary>
     public bool ErrorAlerts { get; set; } = true;
 
